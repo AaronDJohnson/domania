@@ -184,8 +184,12 @@ REFUSALS = {
             r"channel 'A': 1 of 128 entries are not finite \(1 nan, 0 inf\); first at index 3"),
     "inf-fourier": ({"A": _with(_FOUR, 5, np.inf)}, FOURIER, TIME, ValueError,
                     r"channel 'A': 1 of 65 entries are not finite \(0 nan, 1 inf\); first at index 5"),
+    "nan-wdm": ({"A": _with(_WDMV, (2, 3), np.nan)}, WDM, TIME, ValueError,
+                r"channel 'A': 1 of 144 entries are not finite \(1 nan, 0 inf\); first at index 35\. .*"
+                r"\(Index 35 is WDM cell \(m=2, n=3\) of the dense \(9, 16\) layout\.\)$"),
     "masked": ({"A": np.ma.MaskedArray(X["A"], mask=_with(np.zeros(N, bool), 5, True))}, TIME, WDM,
                TypeError, "masked"),
+    "masked-none": ({"A": np.ma.MaskedArray(X["A"])}, TIME, WDM, TypeError, "masked"),
     "complex-time": ({"A": X["A"] + 0j}, TIME, WDM, ValueError, "complex"),
     "complex-wdm": ({"A": _WDMV + 0j}, WDM, TIME, ValueError, "complex"),
     "strings": ({"A": np.array(["x"] * N)}, TIME, WDM, TypeError, "numeric"),
@@ -220,6 +224,28 @@ def test_the_canonical_form_refusals_name_their_remedy(case, remedy):
     assert remedy in str(info.value)
 
 
+def _relative_size(message):
+    found = re.search(r"\(([-+.e0-9]+) of the channel's largest \|value\|\)", message)
+    assert found, message
+    return float(found.group(1))
+
+
+@pytest.mark.parametrize("size", [1e-16, 2.0])
+@pytest.mark.parametrize("domain", ["wdm", "fourier"])
+def test_the_canonical_form_refusals_size_the_value_against_the_channel_peak(domain, size):
+    """Round-off (~1e-16 of the peak) is what the named remedy is for; a value at the peak is
+    another layout or convention.  The message prints the relative size so the reader can tell."""
+    if domain == "wdm":
+        a, src, remedy = _with(_WDMV, (0, 1), -size * np.max(np.abs(_WDMV))), WDM, _ZERO_INACTIVE
+    else:
+        a, src, remedy = _with(_FOUR, 0, _FOUR[0] + 1j * size * np.max(np.abs(_FOUR))), FOURIER, _REAL_ENDS
+    with pytest.raises(ValueError) as info:
+        transform({"A": a}, src, TIME)
+    message = str(info.value)
+    assert f"if that is round-off, {remedy}; a value near the peak means another layout" in message
+    assert _relative_size(message) == pytest.approx(min(size, 1.0), rel=0.15)
+
+
 def test_an_odd_record_refusal_names_the_dc_remedy_only():
     y = transform(ODD_X, ODD_TIME, ODD_FOURIER)["A"]
     with pytest.raises(ValueError, match=r"bin 0 \(DC\) must be real") as info:
@@ -229,16 +255,20 @@ def test_an_odd_record_refusal_names_the_dc_remedy_only():
 
 def test_the_named_remedies_make_raw_kernel_and_fft_outputs_valid_inputs():
     """Raw kernel outputs and full-FFT slices may carry ~1e-16 residue where transform needs
-    exact zeros (on (6, 12) they do); after the remedies the refusals name, transform takes them
-    and agrees with its own route."""
+    exact zeros.  On (6, 12) all three forms do, so each is refused as it is; after the remedy
+    its refusal names, transform takes it and agrees with its own route."""
     Nf, Nt, dt = 6, 12, 0.3
     n = Nf * Nt
     t, f, w = TimeDomain(n, dt), FourierDomain.full(n, dt), WDMDomain.full(wilson.Grid(Nf, Nt, dt))
     x = {"A": np.random.default_rng(6).standard_normal(n)}
     coeffs = wilson.forward_time(x["A"], Nf, Nt, dt)
+    with pytest.raises(ValueError, match="inactive WDM cell"):
+        transform({"A": coeffs}, w, t)
     coeffs[..., ~wilson.active_mask(Nf, Nt)] = 0
     _close(transform({"A": coeffs}, w, t), x)
     for spec in (dt * wilson.inverse(coeffs, Nf, Nt, dt), dt * np.fft.fft(x["A"])[: n // 2 + 1]):
+        with pytest.raises(ValueError, match="must be real"):
+            transform({"A": spec}, f, t)
         spec[..., [0, n // 2]] = spec[..., [0, n // 2]].real
         _close(transform({"A": spec}, f, t), x)
 

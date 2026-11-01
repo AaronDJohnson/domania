@@ -19,11 +19,17 @@ Test windows (``domainia.wilson.windows``):
 * :func:`smoothstep`: a non-Meyer ramp for :class:`~domainia.wilson.RampWindow`.
 * :func:`wide_profile`, :data:`ALT_WINDOW`: a non-Meyer admissible profile and the
   :class:`~domainia.wilson.SampledWindow` built from it.
+
+Test operators (``domainia.translate``):
+
+* :class:`PointwiseOperator`: a minimal native :class:`~domainia.translate.Operator`
+  (independent time samples or WDM cells with per-channel variances).
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -33,10 +39,11 @@ from domainia import wilson
 from domainia.wilson.evolutionary import eq45_direct, eq45_plan
 from domainia.wilson.windows import MEYER, SampledWindow, Window
 
-from .domains import CellSet
+from .domains import CellSet, TimeDomain, WDMDomain
 
 __all__ = [
     "ALT_WINDOW",
+    "PointwiseOperator",
     "blocktri_dense",
     "dense_W",
     "dense_lambda_generic",
@@ -149,3 +156,76 @@ def wide_profile(u: Any) -> Array:
 
 #: A non-default admissible window for tests (other flat width, other ramp than Meyer).
 ALT_WINDOW = SampledWindow(wide_profile, "wide-smoothstep")
+
+
+@dataclass(frozen=True, eq=False)
+class PointwiseOperator:
+    """A minimal native :class:`domainia.translate.Operator` for tests: independent samples
+    (``TimeDomain``) or independent active cells (``WDMDomain.full``, dense layout,
+    inactive cells masked out) with per-channel variances."""
+
+    domain: TimeDomain | WDMDomain
+    variances: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        if isinstance(self.domain, TimeDomain):
+            mask = np.ones(self.domain.N, dtype=bool)
+        elif isinstance(self.domain, WDMDomain):
+            g = self.domain.cells.grid
+            if self.domain.cells.size != g.N:
+                raise ValueError("PointwiseOperator needs every active cell: use WDMDomain.full(grid)")
+            mask = wilson.active_mask(g.Nf, g.Nt)
+        else:
+            raise TypeError(f"PointwiseOperator needs a TimeDomain or WDMDomain; got "
+                            f"{type(self.domain).__name__}")
+        if not isinstance(self.variances, Mapping) or not self.variances:
+            raise ValueError("variances must be a non-empty {channel: array} mapping")
+        var = {}
+        for name, v in self.variances.items():
+            a = np.array(v, dtype=np.float64)
+            if a.shape != mask.shape:
+                raise ValueError(f"channel {name!r}: variances have shape {a.shape}; need {mask.shape}")
+            if not np.all(np.isfinite(a[mask])) or np.any(a[mask] <= 0.0):
+                raise ValueError(f"channel {name!r}: variances must be finite and positive")
+            a = np.where(mask, a, 1.0)
+            a.setflags(write=False)
+            var[name] = a
+        object.__setattr__(self, "variances", var)
+        object.__setattr__(self, "_mask", mask)
+
+    @property
+    def channel_names(self) -> tuple[str, ...]:
+        return tuple(self.variances)
+
+    @property
+    def degrees_of_freedom(self) -> int:
+        return len(self.variances) * int(self._mask.sum())
+
+    def _values(self, values: Any) -> dict[str, Array]:
+        if not isinstance(values, Mapping):
+            raise TypeError(f"values must be a mapping; got {type(values).__name__}")
+        if set(values) != set(self.variances):
+            raise ValueError(f"values have channels {tuple(values)}; need {self.channel_names}")
+        out = {}
+        for name in self.variances:
+            a = np.asarray(values[name], dtype=np.float64)
+            if a.shape != self._mask.shape:
+                raise ValueError(f"channel {name!r}: shape {a.shape}; need {self._mask.shape}")
+            out[name] = a
+        return out
+
+    def apply(self, values: Any) -> dict[str, Array]:
+        return {k: np.where(self._mask, self.variances[k] * v, 0.0) for k, v in self._values(values).items()}
+
+    def solve(self, values: Any) -> dict[str, Array]:
+        return {k: np.where(self._mask, v / self.variances[k], 0.0) for k, v in self._values(values).items()}
+
+    def project(self, values: Any) -> dict[str, Array]:
+        return {k: np.where(self._mask, v, 0.0) for k, v in self._values(values).items()}
+
+    def quadratic_form(self, values: Any) -> float:
+        return float(sum(np.sum(np.where(self._mask, v * v / self.variances[k], 0.0))
+                         for k, v in self._values(values).items()))
+
+    def log_determinant(self) -> float:
+        return float(sum(np.sum(np.log(a[self._mask])) for a in self.variances.values()))

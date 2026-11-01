@@ -1,9 +1,9 @@
 """Move full-record data between the time, Fourier and WDM domains (spec section 3).
 
-NumPy only: a JAX array is copied to host NumPy (float64 results), and ``transform`` cannot
-be traced under ``jax.jit`` or ``jax.grad``, where it raises JAX's
-``TracerArrayConversionError`` (a ``TypeError``).  Data are ``{channel: ndarray}`` dicts
-(insertion order kept) on one of the full-record domains:
+NumPy only: a JAX array is copied to host NumPy (results have float64 dtype; a float32
+input keeps its float32 precision), and ``transform`` cannot be traced under ``jax.jit`` or
+``jax.grad``, where it raises JAX's ``TracerArrayConversionError`` (a ``TypeError``).  Data
+are ``{channel: ndarray}`` dicts (insertion order kept) on one of the full-record domains:
 
 * ``TimeDomain(N, dt, t0)``: real ``(N,)`` per channel;
 * ``FourierDomain.full(N, dt)``: complex ``(N // 2 + 1,)`` per channel, ``dt * numpy.fft.rfft(x)``;
@@ -17,20 +17,29 @@ or packed cell sets stay with :mod:`domainia.maps`.
 In the real coordinates (time samples; WDM cells; Fourier ``Re X_0``, ``sqrt(2) Re/Im X_k``,
 ``Re X_{N/2}``) every domain is the time record scaled by ``exp(log_coordinate_scale(domain))``:
 1 for time, ``sqrt(dt)`` for WDM (any admissible window), ``dt sqrt(N)`` for Fourier.
+
+A covariance :class:`Operator` lives on one full-record domain.  :func:`translate_operator`
+gives a :class:`TranslatedOperator` that sees it from another domain lazily: every call
+moves the dicts with :func:`transform` and applies the coordinate Jacobian
+``Delta = log_coordinate_scale(target) - log_coordinate_scale(native)``.  The
+real-coordinate convention (sqrt(2) Re/Im interiors, real endpoints, masks) stays inside
+the native operator.
 """
 
 from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 
 from domainia import wilson
 from domainia.domains import FourierDomain, TimeDomain, WDMDomain
 
-__all__ = ["Domain", "log_coordinate_scale", "transform"]
+__all__ = ["Domain", "Operator", "TranslatedOperator", "log_coordinate_scale", "transform",
+           "translate_operator"]
 
 #: The domains :func:`transform` and :func:`log_coordinate_scale` take (full-record ones only).
 type Domain = TimeDomain | FourierDomain | WDMDomain
@@ -84,6 +93,13 @@ def _active(domain: WDMDomain) -> np.ndarray:
     return wilson.active_mask(g.Nf, g.Nt)
 
 
+def _relative(value: float, a: np.ndarray) -> str:
+    """``|value|`` as a fraction of the channel's largest ``|a|``: the canonical-form refusals
+    tell round-off (~1e-16) from another convention (near 1) by it."""
+    peak = max(float(np.max(np.abs(a))), float(np.finfo(np.float64).tiny))
+    return f"{abs(value) / peak:.2g} of the channel's largest |value|"
+
+
 def _stack(channel_data: Any, domain: Domain) -> tuple[tuple[str, ...], np.ndarray]:
     """Validate ``channel_data`` on ``domain``; ``(names, (C, *shape) float64/complex128)``."""
     if not isinstance(channel_data, Mapping):
@@ -111,7 +127,15 @@ def _stack(channel_data: Any, domain: Domain) -> tuple[tuple[str, ...], np.ndarr
             raise ValueError(f"channel {name!r}: complex values on a real {kind}")
         if a.shape != shape:
             raise ValueError(f"channel {name!r}: shape {a.shape}, but this {kind} needs shape {shape}")
-        wilson.validate_finite(a, f"channel {name!r}")
+        try:
+            wilson.validate_finite(a, f"channel {name!r}")
+        except ValueError as err:
+            if not isinstance(domain, WDMDomain):
+                raise
+            first = int(np.flatnonzero(~np.isfinite(a))[0])
+            m, n = (int(i) for i in np.unravel_index(first, shape))
+            raise ValueError(f"{err} (Index {first} is WDM cell (m={m}, n={n}) of the dense "
+                             f"{shape} layout.)") from None
         if isinstance(domain, FourierDomain):
             a = a.astype(np.complex128)
             even = domain.N % 2 == 0
@@ -121,8 +145,11 @@ def _stack(channel_data: Any, domain: Domain) -> tuple[tuple[str, ...], np.ndarr
                    "take the real part of the DC bin first, e.g. X[..., 0] = X[..., 0].real")
             for k, label in ends:
                 if a[k].imag != 0.0:
+                    im = float(a[k].imag)
                     raise ValueError(f"channel {name!r}: rfft bin {k} ({label}) must be real; its "
-                                     f"imaginary part is {float(a[k].imag)!r}; {fix}")
+                                     f"imaginary part is {im!r} ({_relative(im, a)}); if that is "
+                                     f"round-off, {fix}; a value near the peak means another "
+                                     f"layout or FFT convention")
         else:
             a = a.astype(np.float64)
             if isinstance(domain, WDMDomain):
@@ -130,10 +157,13 @@ def _stack(channel_data: Any, domain: Domain) -> tuple[tuple[str, ...], np.ndarr
                 if np.any(bad):
                     m, n = (int(i) for i in np.argwhere(bad)[0])
                     g = domain.cells.grid
+                    v = float(a[m, n])
                     raise ValueError(f"channel {name!r}: inactive WDM cell (m={m}, n={n}) is "
-                                     f"{float(a[m, n])!r}; inactive cells must be exactly 0; zero "
-                                     f"them first, e.g. w[..., ~domainia.wilson.active_mask("
-                                     f"{g.Nf}, {g.Nt})] = 0")
+                                     f"{v!r} ({_relative(v, a)}); inactive cells must be exactly "
+                                     f"0; if that is round-off, zero them first, e.g. "
+                                     f"w[..., ~domainia.wilson.active_mask({g.Nf}, {g.Nt})] = 0; "
+                                     f"a value near the peak means another layout or active-cell "
+                                     f"convention")
         names.append(name)
         arrays.append(a)
     return tuple(names), np.stack(arrays)
@@ -186,11 +216,12 @@ def transform(channel_data: Mapping[str, Any], source: Domain, target: Domain) -
     inactive cells, or take the real part of the end bins).  The canonical routes are
     ``transform`` itself and ``numpy.fft.rfft``.
 
-    Raises ``TypeError`` for a non-mapping, a non-domain, a masked array or non-numeric
-    values, and ``ValueError`` for a partial domain, another record (``N``, ``dt``, or ``t0``
-    between time domains), an empty dict, a wrong shape, non-finite values, complex values on
-    a real domain, a non-real DC (or even-``N`` Nyquist) bin, a non-zero inactive WDM cell,
-    or a non-finite result.
+    Raises ``TypeError`` for a non-mapping, a non-domain, a masked array (any
+    ``numpy.ma.MaskedArray``, even one with no masked entries) or non-numeric values, and
+    ``ValueError`` for a partial domain, another record (``N``, ``dt``, or ``t0`` between time
+    domains), an empty dict, a wrong shape, non-finite values, complex values on a real
+    domain, a non-real DC (or even-``N`` Nyquist) bin, a non-zero inactive WDM cell, or a
+    non-finite result.
     """
     _check_pair(source, target)
     names, X = _stack(channel_data, source)
@@ -214,3 +245,119 @@ def log_coordinate_scale(domain: Domain) -> float:
     if isinstance(domain, WDMDomain):
         return 0.5 * math.log(dt)
     return math.log(dt) + 0.5 * math.log(N)
+
+
+@runtime_checkable
+class Operator(Protocol):
+    """A covariance on a full-record domain, acting on ``{channel: array}`` dicts in that
+    domain's layout.  ``degrees_of_freedom`` counts the real coordinates it covers, summed
+    over channels (masked-out coordinates excluded).
+
+    The dicts that ``apply``, ``solve`` and ``project`` return must meet :func:`transform`'s
+    input rules exactly, because :class:`TranslatedOperator` sends them through it unchanged
+    (no tolerance, no repair): inactive WDM cells exactly 0, and the Fourier DC bin (and the
+    even-``N`` Nyquist bin) exactly real.  An output computed with the ``domainia.wilson``
+    kernels or a full FFT can carry ~1e-16 there, and ``TranslatedOperator`` then raises
+    ``transform``'s ``ValueError``.  Meet the rules before returning: zero the inactive
+    cells (``w[..., ~domainia.wilson.active_mask(Nf, Nt)] = 0``) and take the real part of
+    the end bins (``X[..., 0] = X[..., 0].real``, likewise ``X[..., -1]`` for even ``N``).
+    """
+
+    @property
+    def domain(self) -> Domain: ...
+
+    @property
+    def channel_names(self) -> tuple[str, ...]: ...
+
+    @property
+    def degrees_of_freedom(self) -> int: ...
+
+    def apply(self, values: Mapping[str, Any]) -> dict[str, np.ndarray]: ...
+
+    def solve(self, values: Mapping[str, Any]) -> dict[str, np.ndarray]: ...
+
+    def project(self, values: Mapping[str, Any]) -> dict[str, np.ndarray]: ...
+
+    def quadratic_form(self, values: Mapping[str, Any]) -> float: ...
+
+    def log_determinant(self) -> float: ...
+
+
+@dataclass(frozen=True, eq=False)
+class TranslatedOperator:
+    """``native`` seen from ``target`` (module docstring).  It stores only these two: no
+    dense matrix is ever built.
+
+    * ``apply(x)`` = to_target(native.apply(to_native(x))) * exp(2 Delta)
+    * ``solve(x)`` = to_target(native.solve(to_native(x))) * exp(-2 Delta)
+    * ``project(x)`` = to_target(native.project(to_native(x)))
+    * ``quadratic_form(x)`` = native.quadratic_form(to_native(x))
+    * ``log_determinant()`` = native.log_determinant() + 2 * degrees_of_freedom * Delta
+
+    ``to_target`` is :func:`transform`, so a native output off the canonical form is refused
+    (:class:`Operator`).
+    """
+
+    native: Operator
+    target: Domain
+
+    def __post_init__(self) -> None:
+        if isinstance(self.native, TranslatedOperator) or not isinstance(self.native, Operator):
+            raise TypeError(f"native must be a native domainia.translate.Operator (translate_operator "
+                            f"re-targets a TranslatedOperator); got {type(self.native).__name__}")
+        _check_pair(self.native.domain, self.target)
+
+    @property
+    def domain(self) -> Domain:
+        return self.target
+
+    @property
+    def channel_names(self) -> tuple[str, ...]:
+        return tuple(self.native.channel_names)
+
+    @property
+    def degrees_of_freedom(self) -> int:
+        return int(self.native.degrees_of_freedom)
+
+    def _delta(self) -> float:
+        return log_coordinate_scale(self.target) - log_coordinate_scale(self.native.domain)
+
+    def _to_native(self, values: Any) -> dict[str, np.ndarray]:
+        if not isinstance(values, Mapping):
+            raise TypeError(f"values must be a mapping {{channel: array}}; got {type(values).__name__}")
+        if set(values) != set(self.channel_names):
+            raise ValueError(f"values have channels {tuple(values)}; the operator has channels "
+                             f"{self.channel_names}")
+        return transform(values, self.target, self.native.domain)
+
+    def _to_target(self, values: Mapping[str, Any], factor: float = 1.0) -> dict[str, np.ndarray]:
+        out = transform(values, self.native.domain, self.target)
+        return out if factor == 1.0 else {k: v * factor for k, v in out.items()}
+
+    def apply(self, values: Mapping[str, Any]) -> dict[str, np.ndarray]:
+        return self._to_target(self.native.apply(self._to_native(values)), np.exp(2.0 * self._delta()))
+
+    def solve(self, values: Mapping[str, Any]) -> dict[str, np.ndarray]:
+        return self._to_target(self.native.solve(self._to_native(values)), np.exp(-2.0 * self._delta()))
+
+    def project(self, values: Mapping[str, Any]) -> dict[str, np.ndarray]:
+        return self._to_target(self.native.project(self._to_native(values)))
+
+    def quadratic_form(self, values: Mapping[str, Any]) -> float:
+        return float(self.native.quadratic_form(self._to_native(values)))
+
+    def log_determinant(self) -> float:
+        return float(self.native.log_determinant()) + 2.0 * self.degrees_of_freedom * self._delta()
+
+
+def translate_operator(op: Operator, target: Domain) -> Operator:
+    """``op`` seen from ``target``.  A :class:`TranslatedOperator` is re-targeted (its native
+    operator is reused, never nested), and a target equal to the native domain returns the
+    native operator itself."""
+    if not isinstance(op, Operator):
+        raise TypeError(f"op must implement domainia.translate.Operator; got {type(op).__name__}")
+    native = op.native if isinstance(op, TranslatedOperator) else op
+    _check_pair(native.domain, target)
+    if target == native.domain:
+        return native
+    return TranslatedOperator(native, target)
