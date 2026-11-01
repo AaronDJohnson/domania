@@ -22,6 +22,10 @@ verification.
 All variance grids return shape ``(Nf+1, Nt)`` so they slot directly
 into the inner-product functions.
 
+Every kernel here that reaches the window takes ``window=`` (a
+:class:`domainia.wilson.windows.Window`; default :data:`domainia.wilson.MEYER`) and
+computes in the Wilson basis of that window.
+
 Argument order follows the package convention: the grid first
 (``Nf, Nt, dt``), then the PSD. It matches :mod:`domainia.wilson.matrix` and
 :mod:`domainia.wilson.inner_product`, so the PSD is always the trailing argument.
@@ -34,7 +38,6 @@ from collections.abc import Callable
 import numpy as np
 from numpy.typing import NDArray
 
-from .filter import phi_centered
 from .grid import (
     band_frequencies,
     delta_F,
@@ -46,6 +49,7 @@ from .grid import (
     validate_grid,
 )
 from .transform import forward
+from .windows import MEYER, Window, sample_window
 
 type Array = NDArray[np.floating]
 type CArray = NDArray[np.complexfloating]
@@ -178,6 +182,8 @@ def band_averaged_variance(
     Nt: int,
     dt: float,
     Sn_func: PsdFunc,
+    *,
+    window: Window = MEYER,
 ) -> Array:
     """Filter-weighted mean of $S_n$ over each band, divided by 2.
 
@@ -206,6 +212,9 @@ def band_averaged_variance(
     Nf, Nt : int
     dt : float
     Sn_func : callable
+    window : Window, optional
+        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
+        See :mod:`domainia.wilson.windows`.
 
     Returns
     -------
@@ -226,7 +235,7 @@ def band_averaged_variance(
     """
     validate_grid(Nf, Nt)
     validate_dt(dt)
-    phi = phi_centered(Nf, Nt, dt)
+    phi = sample_window(window, Nf, Nt, dt)
     phi2 = phi**2
     f_offsets = (np.arange(Nt) - Nt // 2) / (n_samples(Nf, Nt) * dt)
 
@@ -257,8 +266,10 @@ def band_averaged_variance(
     # weight and overstates a band with a spectral cutoff in it by up to 3.2x.
     # The Meyer window always has positive bins -- measured 3/4 of them at
     # Nf=2, Nt=4 and 1535/2048 at Nf=1024, Nt=2048, across dt from 1e-6 to 1e6 --
-    # so ``in_band`` is never empty. An earlier revision carried an
-    # ``if not np.any(in_band): Sn_eff = inf`` fallback for that case. It was
+    # and so does every admissible window (its partition of unity makes phi(f) or
+    # phi(f - dF) nonzero at every bin), so ``in_band`` is never empty. An earlier
+    # revision carried an ``if not np.any(in_band): Sn_eff = inf`` fallback for
+    # that case. It was
     # unreachable, and a silent infinite variance is the last thing this
     # package should produce, so it is gone rather than merely untested.
     in_band = phi2 > 0
@@ -392,6 +403,8 @@ def empirical_variance(
     Sn_func: PsdFunc,
     n_realizations: int = 1000,
     seed: int | None = None,
+    *,
+    window: Window = MEYER,
 ) -> Array:
     """Monte-Carlo estimate of $\\langle w_{mn}^2 \\rangle$.
 
@@ -409,6 +422,9 @@ def empirical_variance(
         Number of realizations to average (default 1000).
     seed : int or None, optional
         Seed for the RNG.
+    window : Window, optional
+        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
+        See :mod:`domainia.wilson.windows`.
 
     Returns
     -------
@@ -431,7 +447,7 @@ def empirical_variance(
     accum = np.zeros((Nf + 1, Nt))
     for _ in range(n_realizations):
         x_rfft = colored_noise(N, dt, Sn_func, rng)
-        w = forward(x_rfft, Nf, Nt, dt)
+        w = forward(x_rfft, Nf, Nt, dt, window=window)
         accum += w * w
     return accum / n_realizations
 
@@ -452,7 +468,8 @@ def _psd_at(Sn: PsdFtFunc, f: Array, t: Array, context: str) -> Array:
 
 
 def evolutionary_band_variance(Nf: int, Nt: int, dt: float, Sn: PsdFtFunc, *,
-                               bands: Array | None = None) -> Array:
+                               bands: Array | None = None,
+                               window: Window = MEYER) -> Array:
     r"""The filter-weighted band average of :math:`S(f, t_n)` at every cell centre,
 
     .. math::  \sigma^2_{mn} = \frac12\,
@@ -465,11 +482,23 @@ def evolutionary_band_variance(Nf: int, Nt: int, dt: float, Sn: PsdFtFunc, *,
     :func:`band_averaged_variance`.  Returns ``(Nf + 1, Nt)``, or
     ``(len(bands), Nt)`` for selected bands.  Was wdm_dev
     ``evolutionary.band_averaged_evolutionary_variance``.
+
+    Parameters
+    ----------
+    Nf, Nt : int
+    dt : float
+    Sn : callable
+        ``(f, t) -> S(f, t)``, elementwise and broadcasting.
+    bands : array of int, optional
+        The bands to return (all by default).
+    window : Window, optional
+        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
+        See :mod:`domainia.wilson.windows`.
     """
     validate_grid(Nf, Nt)
     N = Nf * Nt
-    phi2 = phi_centered(Nf, Nt, dt) ** 2
-    # The Meyer window has compact support: a slab weight of exactly 0 cannot
+    phi2 = sample_window(window, Nf, Nt, dt) ** 2
+    # An admissible window has compact support: a slab weight of exactly 0 cannot
     # contribute, so dropping those bins is an exact restriction.
     sup = np.flatnonzero(phi2)
     phi2 = phi2[sup]

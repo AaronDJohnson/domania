@@ -43,6 +43,10 @@ the PSD is fixed during parameter estimation):
 * :func:`loglike_whittle`, :func:`loglike_band_averaged`,
   :func:`loglike_evolutionary_whittle` — diagonal-covariance forms.
 * :func:`loglike_gaussian` — full-covariance form.
+
+The exact forms (:func:`gaussian`, :func:`gaussian_from_func`, :func:`loglike_gaussian`,
+:func:`loglike_gaussian_many`) inverse-transform, so they take ``window=`` (default
+:data:`domainia.wilson.MEYER`); the diagonal forms take a variance grid and never see it.
 """
 
 from __future__ import annotations
@@ -55,6 +59,7 @@ from numpy.typing import NDArray
 
 from .grid import active_mask, n_samples, sanitize_psd, validate_finite
 from .transform import inverse, inverse_many
+from .windows import MEYER, Window
 
 type Array = NDArray[np.floating]
 type CArray = NDArray[np.complexfloating]
@@ -484,6 +489,8 @@ def gaussian(
     Nt: int,
     dt: float,
     Sn_array: Array,
+    *,
+    window: Window = MEYER,
 ) -> float:
     """Exact inner product via inverse-WDM and frequency-domain weighting.
 
@@ -502,6 +509,9 @@ def gaussian(
     Sn_array : ndarray, shape (N//2+1,)
         Precomputed $S_n$ on the rfft frequency grid
         (``np.fft.rfftfreq(N, d=dt)``).
+    window : Window, optional
+        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
+        See :mod:`domainia.wilson.windows`.
 
     Returns
     -------
@@ -520,8 +530,8 @@ def gaussian(
     """
     N = n_samples(Nf, Nt)
     Sn_array = _check_psd_grid(Sn_array, N, "gaussian")
-    a_rfft = inverse(w_a, Nf, Nt, dt)
-    b_rfft = inverse(w_b, Nf, Nt, dt)
+    a_rfft = inverse(w_a, Nf, Nt, dt, window=window)
+    b_rfft = inverse(w_b, Nf, Nt, dt, window=window)
     return _frequency_inner(a_rfft, b_rfft, Sn_array, dt, N)
 
 
@@ -532,6 +542,8 @@ def gaussian_from_func(
     Nt: int,
     dt: float,
     Sn_func: PsdFunc,
+    *,
+    window: Window = MEYER,
 ) -> float:
     """Convenience wrapper around :func:`gaussian` with a callable PSD.
 
@@ -544,6 +556,9 @@ def gaussian_from_func(
     dt : float
     Sn_func : callable
         ``f -> S_n(f)``.
+    window : Window, optional
+        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
+        See :mod:`domainia.wilson.windows`.
 
     Returns
     -------
@@ -565,7 +580,7 @@ def gaussian_from_func(
     N = n_samples(Nf, Nt)
     freqs = np.fft.rfftfreq(N, d=dt)
     Sn_array = np.asarray(Sn_func(freqs), dtype=float)
-    return gaussian(w_a, w_b, Nf, Nt, dt, Sn_array)
+    return gaussian(w_a, w_b, Nf, Nt, dt, Sn_array, window=window)
 
 
 def _diagonal_logdet(var: Array, Nf: int, cells: Cells = "active") -> Array:
@@ -870,6 +885,7 @@ def loglike_gaussian_many(
     Sn_array: Array,
     *,
     include_logdet: bool = True,
+    window: Window = MEYER,
 ) -> Array:
     """Batched :func:`loglike_gaussian`: $(B, N_f+1, N_t) \\to (B,)$.
 
@@ -891,6 +907,9 @@ def loglike_gaussian_many(
     Sn_array : ndarray, float, shape (N//2+1,)
         One-sided PSD on the ``rfftfreq(N, dt)`` grid, shared across the stack.
     include_logdet : bool, optional
+    window : Window, optional
+        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
+        See :mod:`domainia.wilson.windows`.
 
     Returns
     -------
@@ -928,7 +947,7 @@ def loglike_gaussian_many(
             f"coefficient grids must broadcast to (B, Nf+1, Nt) with Nf+1 = "
             f"{Nf + 1} bands for Nf={Nf}; got {out_shape}"
         )
-    r_rfft = inverse_many(np.ascontiguousarray(residual), Nf, Nt, dt)
+    r_rfft = inverse_many(np.ascontiguousarray(residual), Nf, Nt, dt, window=window)
     quad = _frequency_quadratic_axis(r_rfft, Sn_array, dt, N)
     if not include_logdet:
         return -0.5 * quad
@@ -944,6 +963,7 @@ def loglike_gaussian(
     Sn_array: Array,
     *,
     include_logdet: bool = True,
+    window: Window = MEYER,
 ) -> float:
     """Exact Gaussian log-likelihood via the inverse-WDM quadratic form.
 
@@ -988,6 +1008,9 @@ def loglike_gaussian(
     Sn_array : ndarray, shape (N//2+1,)
     include_logdet : bool, optional
         If True (default), include the log-determinant term.
+    window : Window, optional
+        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
+        See :mod:`domainia.wilson.windows`.
 
     Returns
     -------
@@ -1011,7 +1034,7 @@ def loglike_gaussian(
     # than letting gaussian() run two identical inverse WDM transforms.
     N = n_samples(Nf, Nt)
     Sn_array = _check_psd_grid(Sn_array, N, "loglike_gaussian")
-    r_rfft = inverse(_residual(w_d, w_h), Nf, Nt, dt)
+    r_rfft = inverse(_residual(w_d, w_h), Nf, Nt, dt, window=window)
     quad = _frequency_quadratic(r_rfft, Sn_array, dt, N)
     if not include_logdet:
         return -0.5 * quad

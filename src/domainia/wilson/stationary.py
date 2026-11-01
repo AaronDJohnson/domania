@@ -4,9 +4,13 @@ For stationary Gaussian noise, the frequency-domain covariance is
 diagonal: $\\langle X_j X_{j'}^*\\rangle = \\sigma_j^2\\,\\delta_{jj'}$
 with $\\sigma_j^2 = N\\,S_n(|f_j|)/(2\\,\\delta t)$.  In the WDM basis,
 the resulting covariance $\\Lambda = W\\,\\Sigma_{\\rm time}\\,W^T$ is
-block-tridiagonal in the band index $m$ — the Meyer filter
-$\\hat\\phi$ has compact frequency support so only $|m - m'|\\le 1$
-band pairs overlap.
+block-tridiagonal in the band index $m$ — the window
+$\\hat\\phi$ (Meyer by default; any admissible window) has compact frequency
+support so only $|m - m'|\\le 1$ band pairs overlap.
+
+Every kernel here that reaches the window takes ``window=`` (a
+:class:`domainia.wilson.windows.Window`; default :data:`domainia.wilson.MEYER`) and
+computes in the Wilson basis of that window.
 
 This module implements the slab-IFFT algorithm from
 ``notes/Time_Frequency_Analysis/wdm_Lambda_stationary_fast.tex`` (and
@@ -67,8 +71,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from .backend import Backend, get_backend, is_tracer
-from .filter import phi_centered
 from .grid import n_samples, sanitize_psd, validate_dt, validate_grid
+from .windows import MEYER, Window, sample_window
 
 type Array = NDArray[np.floating]
 type CArray = NDArray[np.complexfloating]
@@ -330,7 +334,7 @@ def _block_from_K_with_carrier(
 
 
 def _slab_K(
-    Nf: int, Nt: int, dt: float, sigma2_rfft: Array
+    Nf: int, Nt: int, dt: float, sigma2_rfft: Array, *, window: Window = MEYER
 ) -> tuple[list[CArray], list[CArray]]:
     """Toeplitz-coefficient vectors $K^{(m,m)}$ and $K^{(m,m+1)}$ for every band.
 
@@ -350,6 +354,9 @@ def _slab_K(
     dt : float
     sigma2_rfft : ndarray
         Per-bin variance on the one-sided grid, already divided by $N$.
+    window : Window, optional
+        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
+        See :mod:`domainia.wilson.windows`.
 
     Returns
     -------
@@ -358,7 +365,7 @@ def _slab_K(
     """
     N = n_samples(Nf, Nt)
     half = Nt // 2
-    phi_c = phi_centered(Nf, Nt, dt)
+    phi_c = sample_window(window, Nf, Nt, dt)
 
     K_diag: list[CArray] = [np.zeros(Nt, dtype=complex) for _ in range(Nf + 1)]
     K_off: list[CArray] = [np.zeros(Nt, dtype=complex) for _ in range(Nf)]
@@ -412,6 +419,7 @@ def build_lambda_blocks_full_active(
     noise: NoiseInput,
     *,
     rtol: float = 1e-10,
+    window: Window = MEYER,
 ) -> tuple[list[Array], list[Array], list[NDArray[np.integer]]]:
     r"""Stationary $\Lambda$ for the **full** active subspace, including edge bands.
 
@@ -454,6 +462,9 @@ def build_lambda_blocks_full_active(
         ``fftfreq`` (length ``N``) or ``rfftfreq`` (length ``N//2+1``) grid, or
         a diagonal 2D array of either size.  Never pre-scaled.
     rtol : float, optional
+    window : Window, optional
+        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
+        See :mod:`domainia.wilson.windows`.
 
     Returns
     -------
@@ -505,7 +516,7 @@ def build_lambda_blocks_full_active(
         return carrier[int(m_l) % 2, (int(m_l) + 1) % 2]
 
     n_active = [_active_indices(m, Nf, Nt) for m in range(Nf + 1)]
-    K_diag, K_off = _slab_K(Nf, Nt, dt, sigma2_rfft)
+    K_diag, K_off = _slab_K(Nf, Nt, dt, sigma2_rfft, window=window)
 
     diag_blocks: list[Array] = []
     for m in range(Nf + 1):
@@ -602,6 +613,7 @@ def build_K_full_active(
     noise: NoiseInput,
     *,
     rtol: float = 1e-10,
+    window: Window = MEYER,
 ) -> tuple[list[CArray], list[CArray]]:
     r"""Build the $K$ vectors that parameterise the stationary $\Lambda$.
 
@@ -624,6 +636,9 @@ def build_K_full_active(
     noise : callable, 1D ndarray, or 2D ndarray
         Same accepted forms as :func:`build_lambda_blocks_full_active`.
     rtol : float, optional
+    window : Window, optional
+        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
+        See :mod:`domainia.wilson.windows`.
 
     Returns
     -------
@@ -643,7 +658,7 @@ def build_K_full_active(
     N = n_samples(Nf, Nt)
     sigma2_full = _normalize_noise_to_sigma2(noise, N, dt, rtol=rtol)
     sigma2_rfft = sigma2_full[: N // 2 + 1] / N
-    return _slab_K(Nf, Nt, dt, sigma2_rfft)
+    return _slab_K(Nf, Nt, dt, sigma2_rfft, window=window)
 
 
 def psd_from_K(
@@ -651,6 +666,8 @@ def psd_from_K(
     Nf: int,
     Nt: int,
     dt: float,
+    *,
+    window: Window = MEYER,
 ) -> Array:
     r"""Slab-extraction backward: recover $\mathcal{S}_n$ from the
     diagonal $K$ vectors.
@@ -672,6 +689,9 @@ def psd_from_K(
         As produced by :func:`build_K_full_active`.
     Nf, Nt : int
     dt : float
+    window : Window, optional
+        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform):
+        the one ``K_diag`` was built with.  See :mod:`domainia.wilson.windows`.
 
     Returns
     -------
@@ -725,7 +745,7 @@ def psd_from_K(
         raise ValueError(f"K_diag must have Nf+1 = {Nf + 1} entries; got {len(K_diag)}")
     N = n_samples(Nf, Nt)
     n_rfft = N // 2 + 1
-    phi_c = phi_centered(Nf, Nt, dt)
+    phi_c = sample_window(window, Nf, Nt, dt)
     eps = 1e-30
 
     # One batched FFT for every band, then a single vectorised
@@ -785,6 +805,7 @@ def apply_lambda_from_psd(
     Sn_rfft: Array,
     *,
     be: Backend | None = None,
+    window: Window = MEYER,
 ) -> Array:
     r"""Apply $\Lambda$ to a WDM vector via the operator-form forward.
 
@@ -821,6 +842,9 @@ def apply_lambda_from_psd(
     dt : float
     be : Backend, optional
         Array backend; inferred from ``x_wmn`` and ``Sn_rfft`` when omitted.
+    window : Window, optional
+        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
+        See :mod:`domainia.wilson.windows`.
 
     Returns
     -------
@@ -871,9 +895,9 @@ def apply_lambda_from_psd(
             f"apply_lambda_from_psd: Sn_rfft must have shape ({n_rfft},) -- the "
             f"np.fft.rfftfreq(N, dt) grid; got {Sn_rfft.shape}"
         )
-    y = _inverse(x_wmn, Nf, Nt, dt, be=be)
+    y = _inverse(x_wmn, Nf, Nt, dt, be=be, window=window)
     z = (Sn_rfft / 2.0) * y
-    return _forward(z, Nf, Nt, dt, be=be)
+    return _forward(z, Nf, Nt, dt, be=be, window=window)
 
 
 def psd_from_lambda_blocks(
@@ -883,6 +907,8 @@ def psd_from_lambda_blocks(
     Nf: int,
     Nt: int,
     dt: float,
+    *,
+    window: Window = MEYER,
 ) -> Array:
     r"""Fast inverse of :func:`build_lambda_blocks_full_active`:
     recover the one-sided PSD $\mathcal{S}_n(f)$ from $\Lambda$.
@@ -915,6 +941,9 @@ def psd_from_lambda_blocks(
         :func:`build_lambda_blocks_full_active`.
     Nf, Nt : int
     dt : float
+    window : Window, optional
+        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform):
+        the one $\Lambda$ was built with.  See :mod:`domainia.wilson.windows`.
 
     Returns
     -------
@@ -947,11 +976,11 @@ def psd_from_lambda_blocks(
     N = n_samples(Nf, Nt)
 
     ones_rfft = np.ones(N // 2 + 1, dtype=complex)
-    bar_w = _forward_wdm(ones_rfft, Nf, Nt, dt)
+    bar_w = _forward_wdm(ones_rfft, Nf, Nt, dt, window=window)
 
     u = _block_tridiag_matvec(diag_blocks, offd_blocks, n_active, bar_w)
 
-    X = _inverse_wdm(u, Nf, Nt, dt)
+    X = _inverse_wdm(u, Nf, Nt, dt, window=window)
 
     return 2.0 * X.real
 

@@ -27,6 +27,11 @@ state, a factorisation or a density (the wdm_dev ``PackedGrid``, ``BlockTri``,
     :func:`eq45_separable_kernels`, :func:`eq45_separable_assemble`;
   - :func:`eq45_direct` -- the direct sum, the oracle.
 
+Every kernel here that reaches the window takes ``window=`` (a
+:class:`domainia.wilson.windows.Window`; default :data:`domainia.wilson.MEYER`) and
+computes in the Wilson basis of that window.  For Eq. (45) that is :func:`eq45_plan`:
+the plan's atoms (``plan.base``) carry the window to every builder downstream.
+
 PSDs are callables ``Sn(f, t)``: elementwise, broadcasting, argument order
 ``(f, t)`` (WDM II writes :math:`S(t, f)`), samples through
 :func:`domainia.wilson.grid.sanitize_psd`.  Cell times are :math:`t_n = n\Delta T`.
@@ -61,6 +66,7 @@ from .transform import (
     forward_time_many,
     inverse_time_many,
 )
+from .windows import MEYER, Window
 
 type Array = NDArray[np.floating]
 type BoolArray = NDArray[np.bool_]
@@ -98,16 +104,26 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 
-def energy_fraction(w2: Array, Nf: int, Nt: int, dt: float) -> Array:
+def energy_fraction(w2: Array, Nf: int, Nt: int, dt: float, *, window: Window = MEYER) -> Array:
     """``rho_p = sum_t w2(t) g_p(t)^2 / dt`` for every active cell ``p`` (band order).
 
     One FFT correlation per base atom (wdm_dev ``PackedGrid.energy_fraction``).
+
+    Parameters
+    ----------
+    w2 : ndarray, shape (N,)
+        Time-domain weight.
+    Nf, Nt : int
+    dt : float
+    window : Window, optional
+        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
+        See :mod:`domainia.wilson.windows`.
     """
     validate_grid(Nf, Nt)
     validate_dt(dt)
     N = Nf * Nt
     m_arr, n_arr = np.nonzero(active_mask(Nf, Nt))
-    base = base_atom_spectra(Nf, Nt, dt)
+    base = base_atom_spectra(Nf, Nt, dt, window=window)
     rho = np.empty(m_arr.size)
     W2 = np.fft.rfft(w2)
     for (m, a), G in base.items():
@@ -119,16 +135,30 @@ def energy_fraction(w2: Array, Nf: int, Nt: int, dt: float) -> Array:
     return rho
 
 
-def apply_time_mask(Y: Array, chi: Array, Nf: int, Nt: int, dt: float) -> Array:
+def apply_time_mask(Y: Array, chi: Array, Nf: int, Nt: int, dt: float, *,
+                    window: Window = MEYER) -> Array:
     """``M y`` for each packed row ``y`` of ``Y``, ``M = W chi W^T / dt``: back to time,
-    mask, forward again (wdm_dev ``PackedGrid.apply_mask``)."""
+    mask, forward again (wdm_dev ``PackedGrid.apply_mask``).
+
+    Parameters
+    ----------
+    Y : ndarray, shape (N,) or (B, N)
+        Packed rows (active cells, band order).
+    chi : ndarray, shape (N,)
+        Time-domain mask.
+    Nf, Nt : int
+    dt : float
+    window : Window, optional
+        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
+        See :mod:`domainia.wilson.windows`.
+    """
     validate_grid(Nf, Nt)
     mask = active_mask(Nf, Nt)
     Y = np.atleast_2d(Y)
     full = np.zeros((Y.shape[0], Nf + 1, Nt))
     full[:, mask] = Y
-    X = np.atleast_2d(inverse_time_many(full, Nf, Nt, dt) * chi)
-    return forward_time_many(X, Nf, Nt, dt)[:, mask]
+    X = np.atleast_2d(inverse_time_many(full, Nf, Nt, dt, window=window) * chi)
+    return forward_time_many(X, Nf, Nt, dt, window=window)[:, mask]
 
 
 # ---------------------------------------------------------------------------
@@ -136,13 +166,24 @@ def apply_time_mask(Y: Array, chi: Array, Nf: int, Nt: int, dt: float) -> Array:
 # ---------------------------------------------------------------------------
 
 
-def wrap_fractions(Nf: int, Nt: int, dt: float, *, bands: Array | None = None) -> Array:
+def wrap_fractions(Nf: int, Nt: int, dt: float, *, bands: Array | None = None,
+                   window: Window = MEYER) -> Array:
     r"""Fraction of each atom's energy that wraps across the record boundary.
 
     For the cell :math:`(m, n)`, centred on sample :math:`n N_f`, the fraction of
     :math:`\sum_j g_{mn}(t_j)^2` at samples whose unwrapped position (measured from
     the centre along the shorter way round) lies outside :math:`[0, N)`.
     Returns ``(Nf + 1, Nt)`` (or ``(len(bands), Nt)``), ``nan`` at inactive cells.
+
+    Parameters
+    ----------
+    Nf, Nt : int
+    dt : float
+    bands : array of int, optional
+        The bands to return (all by default).
+    window : Window, optional
+        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
+        See :mod:`domainia.wilson.windows`.
     """
     validate_grid(Nf, Nt)
     N = Nf * Nt
@@ -157,7 +198,7 @@ def wrap_fractions(Nf: int, Nt: int, dt: float, *, bands: Array | None = None) -
                 continue
             e = np.zeros((1, Nf + 1, Nt))
             e[0, m, a] = 1.0
-            g2 = inverse_time_many(e, Nf, Nt, dt)[0] ** 2               # base atom, centre a Nf
+            g2 = inverse_time_many(e, Nf, Nt, dt, window=window)[0] ** 2  # base atom, centre a Nf
             delta = (np.arange(N) - a * Nf + N // 2) % N - N // 2       # signed offset from centre
             order = np.argsort(delta, kind="stable")
             ds, cum = delta[order], np.concatenate([[0.0], np.cumsum(g2[order])])
@@ -170,12 +211,25 @@ def wrap_fractions(Nf: int, Nt: int, dt: float, *, bands: Array | None = None) -
 
 
 def wrap_cut_columns(Nf: int, Nt: int, dt: float, tol: float = 1e-3, *,
-                     bands: Array | None = None) -> tuple[int, int]:
+                     bands: Array | None = None,
+                     window: Window = MEYER) -> tuple[int, int]:
     """``(leading, trailing)`` time columns to cut so that no kept atom of ``bands``
     (all by default) wraps more than ``tol`` of its energy (WDM II: ``tol = 1e-3``).
 
     The rule is geometric (it ignores the noise).  ``(6, 5)`` on the sinusoid grid
     ``(64, 256, 2**-10)``; ``(5, 4)`` on the 3- and 6-month GB analysis bands.
+
+    Parameters
+    ----------
+    Nf, Nt : int
+    dt : float
+    tol : float, optional
+        The largest energy share a kept atom may wrap.
+    bands : array of int, optional
+        The bands whose atoms count (all by default).
+    window : Window, optional
+        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
+        See :mod:`domainia.wilson.windows`.
 
     Examples
     --------
@@ -183,7 +237,8 @@ def wrap_cut_columns(Nf: int, Nt: int, dt: float, tol: float = 1e-3, *,
     >>> wdm.evolutionary.wrap_cut_columns(64, 256, 2**-10)
     (6, 5)
     """
-    frac = np.nanmax(wrap_fractions(Nf, Nt, dt, bands=bands), axis=0)    # worst band per column
+    # worst band per column
+    frac = np.nanmax(wrap_fractions(Nf, Nt, dt, bands=bands, window=window), axis=0)
     bad = np.flatnonzero(frac > tol)
     half = Nt // 2
     lead = int(bad[bad < half].max()) + 1 if np.any(bad < half) else 0
@@ -232,13 +287,26 @@ def draw_noise(N: int, dt: float, Sn: PsdFtFunc, rng: np.random.Generator) -> Ar
     return G @ z
 
 
-def exact_covariance(Nf: int, Nt: int, dt: float, Sn: PsdFtFunc) -> Array:
+def exact_covariance(Nf: int, Nt: int, dt: float, Sn: PsdFtFunc, *,
+                     window: Window = MEYER) -> Array:
     r"""Exact :math:`\Lambda = W_a \Sigma W_a^{\mathsf T}` on the active cells (band order),
-    built in Gram form :math:`(W_a G)(W_a G)^{\mathsf T}`, so PSD by construction."""
+    built in Gram form :math:`(W_a G)(W_a G)^{\mathsf T}`, so PSD by construction.
+
+    Parameters
+    ----------
+    Nf, Nt : int
+    dt : float
+    Sn : callable
+        ``(f, t) -> S(f, t)``, elementwise and broadcasting.
+    window : Window, optional
+        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
+        See :mod:`domainia.wilson.windows`.
+    """
     validate_grid(Nf, Nt)
     N = Nf * Nt
     G = time_domain_factor(N, dt, Sn)
-    A = forward_time_many(np.ascontiguousarray(G.T), Nf, Nt, dt)[:, active_mask(Nf, Nt)].T
+    A = forward_time_many(np.ascontiguousarray(G.T), Nf, Nt, dt,
+                          window=window)[:, active_mask(Nf, Nt)].T
     Lam = A @ A.T
     return 0.5 * (Lam + Lam.T)
 
@@ -349,7 +417,8 @@ def _block_spec(Nf: int, Nt: int, T: float, n: IntArray, eta: Array,
 
 
 def eq45_plan(Nf: int, Nt: int, dt: float, keep: BoolArray | None = None, *,
-              P: int = 24, t_max: float | None = None) -> Eq45Plan:
+              P: int = 24, t_max: float | None = None,
+              window: Window = MEYER) -> Eq45Plan:
     """Static plan of Eq. (45) on the cells ``keep`` (a mask over the ``N`` packed
     cells, band order; all by default), Chebyshev order ``P`` in time on
     ``t_bar in [0, t_max]`` (default: this grid's ``T = N dt``).
@@ -358,6 +427,23 @@ def eq45_plan(Nf: int, Nt: int, dt: float, keep: BoolArray | None = None, *,
     passes its extended ``t_max``; the spectrum's time dependence is then
     continued over the padding by the caller (``r = t_max / T_obs`` in
     :func:`eq45_coeffs_bessel`).
+
+    ``window`` sets the atoms (``plan.base``); every Eq. (45) function downstream of the plan
+    inherits it.
+
+    Parameters
+    ----------
+    Nf, Nt : int
+    dt : float
+    keep : ndarray of bool, optional
+        Mask over the packed cells (all by default).
+    P : int, optional
+        Chebyshev order in time.
+    t_max : float, optional
+        End of the Chebyshev interval (default ``T = N dt``).
+    window : Window, optional
+        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
+        See :mod:`domainia.wilson.windows`.
     """
     validate_grid(Nf, Nt)
     validate_dt(dt)
@@ -371,7 +457,7 @@ def eq45_plan(Nf: int, Nt: int, dt: float, keep: BoolArray | None = None, *,
     f = np.fft.rfftfreq(N, d=dt)
     eta = np.ones(K)
     eta[[0, -1]] = 0.5
-    base = base_atom_spectra(Nf, Nt, dt)
+    base = base_atom_spectra(Nf, Nt, dt, window=window)
     keep = np.ones(m.size, bool) if keep is None else np.asarray(keep)
     if keep.dtype != np.bool_:   # an index array (e.g. np.arange(N)) would silently drop cell 0
         raise TypeError("keep must be a boolean mask over the packed cells")
