@@ -30,7 +30,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, NoReturn, Protocol, runtime_checkable
 
 import numpy as np
 from numpy.typing import NDArray
@@ -38,16 +38,19 @@ from numpy.typing import NDArray
 from .filter import phi_centered
 from .grid import delta_F, validate_dt, validate_grid
 
-__all__ = ["MEYER", "Meyer", "RampWindow", "SampledWindow", "Window", "WindowError", "sample_window"]
+__all__ = ["MEYER", "Meyer", "RampWindow", "SampledWindow", "Window", "WindowError", "require_window",
+           "sample_window"]
 
 type Array = NDArray[np.float64]
 
 #: Relative tolerance of the partition-of-unity check (relative to 1/dF).
 PARTITION_RTOL = 1e-12
-#: Absolute tolerance of the ramp symmetry check nu(x) + nu(1 - x) = 1.
+#: Absolute tolerance of the ramp symmetry check nu(x) + nu(1 - x) = 1.  That check runs
+#: at construction and is only a quick screen; the partition-of-unity check on the sampled
+#: slab (``PARTITION_RTOL``) runs on every new grid and is the one that decides.
 RAMP_ATOL = 1e-12
 _RAMP_POINTS = 257
-_SUPPORT_POINTS = 32            # per side: 64 points of |u| in [1, 2]
+_SUPPORT_POINTS = 32            # per side: u = +-linspace(1, 2, 32), 64 points in all
 _CACHE_SIZE = 256
 
 
@@ -67,9 +70,15 @@ class Window(Protocol):
         ...
 
 
-def _fail(name: str, condition: str, Nf: int, Nt: int, dt: float, detail: str) -> None:
+def _fail(name: str, condition: str, Nf: int, Nt: int, dt: float, detail: str) -> NoReturn:
     raise WindowError(f"window {name!r} fails the {condition} condition on the "
                       f"(Nf={Nf}, Nt={Nt}, dt={dt!r}) slab: {detail}")
+
+
+def _read_only(phi: np.ndarray) -> Array:
+    """A read-only view of ``phi``, itself made read-only: the view's flag cannot be set back."""
+    phi.setflags(write=False)
+    return phi.view()
 
 
 def _as_samples(name: str, raw: Any, Nf: int, Nt: int, dt: float) -> np.ndarray:
@@ -85,21 +94,22 @@ def _check_samples(name: str, phi: np.ndarray, Nf: int, Nt: int, dt: float) -> N
         _fail(name, "shape", Nf, Nt, dt, f"expected ({Nt},) samples, got {phi.shape}")
     if not np.all(np.isfinite(phi)):
         k = int(np.flatnonzero(~np.isfinite(phi))[0])
-        _fail(name, "finiteness", Nf, Nt, dt, f"bin {k} is {phi[k]!r}")
+        _fail(name, "finiteness", Nf, Nt, dt, f"bin {k} is {float(phi[k])!r}")
+    # The comparisons below are written to fail closed on NaN as well (defence in depth).
     h = Nt // 2
     if phi[0] != 0.0:
-        _fail(name, "support", Nf, Nt, dt, f"bin 0 (f = -dF) is {phi[0]!r}, not 0")
+        _fail(name, "support", Nf, Nt, dt, f"bin 0 (f = -dF) is {float(phi[0])!r}, not 0")
     diff = np.abs(phi[h + 1:] - phi[h - 1:0:-1])
-    if diff.size and np.max(diff) > 0.0:
+    if not np.all(diff == 0.0):
         j = int(np.argmax(diff)) + 1
-        _fail(name, "evenness", Nf, Nt, dt,
-              f"worst at bin {h + j}: {phi[h + j]!r} but its mirror bin {h - j} is {phi[h - j]!r}")
-    inv_dF = 1.0 / delta_F(Nf, dt)
+        _fail(name, "evenness", Nf, Nt, dt, f"worst at bin {h + j}: {float(phi[h + j])!r} "
+              f"but its mirror bin {h - j} is {float(phi[h - j])!r}")
+    inv_dF = float(1.0 / delta_F(Nf, dt))
     err = np.abs(phi[h:] ** 2 + phi[:h] ** 2 - inv_dF)
     j = int(np.argmax(err))
-    if err[j] > PARTITION_RTOL * inv_dF:
+    if not err[j] <= PARTITION_RTOL * inv_dF:
         _fail(name, "partition of unity", Nf, Nt, dt,
-              f"worst at bin {h + j}: phi(f)^2 + phi(f - dF)^2 = {phi[h + j] ** 2 + phi[j] ** 2!r}, "
+              f"worst at bin {h + j}: phi(f)^2 + phi(f - dF)^2 = {float(phi[h + j] ** 2 + phi[j] ** 2)!r}, "
               f"1/dF = {inv_dF!r} (relative error {err[j] / inv_dF:.3e})")
 
 
@@ -107,14 +117,12 @@ def _check_samples(name: str, phi: np.ndarray, Nf: int, Nt: int, dt: float) -> N
 def _checked(window: _Admissible, Nf: int, Nt: int, dt: float) -> Array:
     phi = _as_samples(window.name, window._samples(Nf, Nt, dt), Nf, Nt, dt)
     _check_samples(window.name, phi, Nf, Nt, dt)
-    phi.setflags(write=False)
-    return phi
+    return _read_only(phi)
 
 
 class _Admissible:
     """The built-in windows' ``sample``: validate the grid, then the cached checked samples."""
 
-    __slots__ = ()
     name: str
 
     def _samples(self, Nf: int, Nt: int, dt: float) -> Any:
@@ -135,6 +143,12 @@ def _check_name(name: Any) -> None:
 def _check_callable(what: str, fn: Any) -> None:
     if not callable(fn):
         raise TypeError(f"{what} must be callable; got {type(fn).__name__}")
+    try:
+        hash(fn)
+    except TypeError:
+        raise TypeError(f"{what} must be hashable (a window is a cache key and static under jax.jit): "
+                        f"use a module-level function or a frozen dataclass instance; got an "
+                        f"unhashable {type(fn).__name__}") from None
 
 
 def _meyer_geometry(Nf: int, Nt: int, dt: float) -> tuple[np.ndarray, float, float, float]:
@@ -150,7 +164,10 @@ class Meyer(_Admissible):
     """The Meyer window: flat to dF/4, ``cos(pi/2 nu_d)`` rolloff to 3 dF/4, ``nu_d = I_x(d, d)``.
 
     ``Meyer(d).sample`` is :func:`domainia.wilson.filter.phi_centered` ``(Nf, Nt, dt, d)``
-    bit for bit; ``Meyer()`` (d = 4) is the WDM transform's window.
+    bit for bit for a Python float (or float64) ``dt``; ``Meyer()`` (d = 4) is the WDM
+    transform's window.  ``sample`` converts ``dt`` to float64 first, so a float32 ``dt``
+    gives ``phi_centered(Nf, Nt, float(dt), d)``, about 3e-8 away from ``phi_centered`` on
+    the raw float32 ``dt`` (which then computes partly in float32).
     """
 
     d: int = 4
@@ -173,8 +190,14 @@ class Meyer(_Admissible):
 @dataclass(frozen=True)
 class RampWindow(_Admissible):
     """Meyer's geometry with a user ramp ``nu`` on [0, 1]: ``nu(0) = 0``, ``nu(1) = 1`` and
-    ``nu(x) + nu(1 - x) = 1`` (checked on 257 points at construction).  Two RampWindows are
-    equal when they hold the same function object and name."""
+    ``nu(x) + nu(1 - x) = 1`` (screened on 257 points at construction; the sampled partition
+    of unity decides).
+
+    Two RampWindows are equal (with equal hashes) when ``ramp == other.ramp`` and the names
+    match.  ``ramp`` must be hashable.  A module-level function or a frozen-dataclass callable
+    is copy- and pickle-stable (a round trip gives an equal window); a lambda does not pickle,
+    and a copied ``functools.partial`` is a new object that compares unequal.
+    """
 
     ramp: Callable[[Array], Array]
     name: str
@@ -189,13 +212,13 @@ class RampWindow(_Admissible):
                               f"{x.size} points to {x.size} finite real values")
         nu = nu.astype(np.float64)
         if nu[0] != 0.0 or nu[-1] != 1.0:
-            raise WindowError(f"window {self.name!r} fails the ramp condition: nu(0) = {nu[0]!r} "
-                              f"and nu(1) = {nu[-1]!r}; need exactly 0 and 1")
+            raise WindowError(f"window {self.name!r} fails the ramp condition: nu(0) = {float(nu[0])!r} "
+                              f"and nu(1) = {float(nu[-1])!r}; need exactly 0 and 1")
         err = np.abs(nu + nu[::-1] - 1.0)
         k = int(np.argmax(err))
-        if err[k] > RAMP_ATOL:
+        if not err[k] <= RAMP_ATOL:
             raise WindowError(f"window {self.name!r} fails the ramp condition: nu(x) + nu(1 - x) - 1 "
-                              f"= {err[k]:.3e} at x = {x[k]!r}")
+                              f"= {err[k]:.3e} at x = {float(x[k])!r}")
 
     def _samples(self, Nf: int, Nt: int, dt: float) -> Any:
         f_abs, A, B, amp = _meyer_geometry(Nf, Nt, dt)
@@ -207,13 +230,19 @@ class RampWindow(_Admissible):
 
 @dataclass(frozen=True)
 class SampledWindow(_Admissible):
-    """Any dimensionless profile ``psi(u)``, ``u = f / dF``: flat value 1,
+    """Any real, even, dimensionless profile ``psi(u)``, ``u = f / dF``, with ``psi(0) = 1``,
     ``psi(u)^2 + psi(u - 1)^2 = 1`` on [0, 1] and ``psi = 0`` for ``|u| >= 1``.
 
-    ``sample`` returns ``psi(f / dF) / sqrt(dF)`` (the Hz normalisation).  ``psi`` is also
-    evaluated on 64 points of ``|u|`` in [1, 2] at construction and must be exactly 0
-    there: mass outside the slab would be truncated silently.  Two SampledWindows are equal
-    when they hold the same function object and name.
+    ``sample`` returns ``psi(u) / sqrt(dF)`` (the Hz normalisation) on the exact grid
+    ``u = (k - Nt/2) / (Nt/2)``, ``k = 0 .. Nt-1``, so bin 0 is ``u = -1`` exactly.  At
+    construction ``psi`` is also evaluated at ``u = +-linspace(1, 2, 32)`` (64 points,
+    ``|u| = 1`` and ``|u| = 2`` included) and must be exactly 0 there: mass outside the slab
+    would be truncated silently.
+
+    Two SampledWindows are equal (with equal hashes) when ``fn == other.fn`` and the names
+    match.  ``fn`` must be hashable.  A module-level function or a frozen-dataclass callable
+    is copy- and pickle-stable (a round trip gives an equal window); a lambda does not pickle,
+    and a copied ``functools.partial`` is a new object that compares unequal.
     """
 
     fn: Callable[[Array], Array]
@@ -226,39 +255,54 @@ class SampledWindow(_Admissible):
         u = np.concatenate([-u[::-1], u])
         psi = np.asarray(self.fn(u))
         if psi.shape != u.shape:
-            raise WindowError(f"window {self.name!r} fails the support condition: fn maps {u.size} "
+            raise WindowError(f"window {self.name!r} fails the shape condition: fn maps {u.size} "
                               f"points to shape {psi.shape}")
         bad = np.flatnonzero(psi != 0.0)
         if bad.size:
             k = int(bad[0])
-            raise WindowError(f"window {self.name!r} fails the support condition: psi({u[k]!r}) = "
-                              f"{psi[k]!r}, but a window must vanish for |f| >= dF")
+            raise WindowError(f"window {self.name!r} fails the support condition: psi({float(u[k])!r}) = "
+                              f"{psi.tolist()[k]!r}, but a window must vanish for |f| >= dF")
 
     def _samples(self, Nf: int, Nt: int, dt: float) -> Any:
-        dF = delta_F(Nf, dt)
-        T = Nf * Nt * dt
-        u = (np.arange(Nt) - Nt // 2) / T / dF
-        return np.asarray(self.fn(u), dtype=np.float64) / np.sqrt(dF)
+        # u = f / dF = 2 (k - h) / Nt with h = Nt / 2 (Nt is even): exactly -1 at bin 0 and
+        # exactly antisymmetric about bin h.  f / dF computed in Hz rounds off -1 on some grids.
+        h = Nt // 2
+        u = (np.arange(Nt) - h) / h
+        # No dtype cast here: _as_samples rejects a complex or non-numeric profile.
+        return np.asarray(self.fn(u)) / np.sqrt(delta_F(Nf, dt))
+
+
+def require_window(obj: Any) -> Window:
+    """``obj`` itself if it is a :class:`Window` instance; ``TypeError`` otherwise.
+
+    A window class (``Meyer`` rather than ``Meyer()``) is rejected too: it has ``name`` and
+    ``sample`` attributes, so it passes the protocol check, but it cannot be sampled.
+    """
+    if isinstance(obj, type):
+        raise TypeError(f"window must be a Window instance, not the class {obj.__qualname__}: "
+                        f"pass an instance, e.g. Meyer() or domainia.wilson.MEYER")
+    if not isinstance(obj, Window):
+        raise TypeError(f"window must be a domainia.wilson Window (Meyer, RampWindow, "
+                        f"SampledWindow); got {type(obj).__name__}")
+    return obj
 
 
 def sample_window(window: Any, Nf: int, Nt: int, dt: float) -> Array:
     """The kernels' single entry point: the validated, read-only samples of ``window``.
 
-    Built-in windows return their cached samples.  Any other object implementing
-    :class:`Window` is validated on every call; anything else raises ``TypeError``.
+    Built-in windows return their cached samples.  Any other :class:`Window` instance is
+    validated on every call (the grid first, then a float64 copy of its samples); anything
+    else raises ``TypeError`` (:func:`require_window`).
     """
     if isinstance(window, _Admissible):
         return window.sample(Nf, Nt, dt)
-    if not isinstance(window, Window):
-        raise TypeError(f"window must be a domainia.wilson Window (Meyer, RampWindow, "
-                        f"SampledWindow); got {type(window).__name__}")
+    window = require_window(window)
     validate_grid(Nf, Nt)
     validate_dt(dt)
     name = str(window.name)
     phi = _as_samples(name, window.sample(Nf, Nt, dt), int(Nf), int(Nt), float(dt))
     _check_samples(name, phi, int(Nf), int(Nt), float(dt))
-    phi.setflags(write=False)
-    return phi
+    return _read_only(phi)
 
 
 #: The WDM transform's window: Meyer with d = 4.
