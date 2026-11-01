@@ -82,6 +82,12 @@ Fast stationary noise covariance (in :mod:`domainia.wilson.stationary`):
 Filter (in :mod:`domainia.wilson.filter`):
 
 * :func:`filter.phi_centered`, :func:`filter.phi_fft_order`
+
+Windows (in :mod:`domainia.wilson.windows`):
+
+* :class:`Window` (the protocol), :class:`Meyer`, :class:`RampWindow`,
+  :class:`SampledWindow`, :data:`MEYER` (the WDM transform's window, ``Meyer(4)``),
+  :class:`WindowError`
 """
 
 from __future__ import annotations
@@ -95,6 +101,7 @@ from . import (
     noise,
     special,
     stationary,
+    windows,
 )
 from .filter import phi_centered, phi_fft_order
 from .grid import (
@@ -128,9 +135,16 @@ from .transform import (
     inverse_time,
     inverse_time_many,
 )
+from .windows import MEYER, Meyer, RampWindow, SampledWindow, Window, WindowError
 
 __all__ = [
+    "MEYER",
     "Grid",
+    "Meyer",
+    "RampWindow",
+    "SampledWindow",
+    "Window",
+    "WindowError",
     "active_mask",
     "backend",
     "band_averaged_variance",
@@ -170,4 +184,5 @@ __all__ = [
     # Noise
     "whittle_variance",
     "whittle_variance_from_array",
+    "windows",
 ]

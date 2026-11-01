@@ -1,5 +1,5 @@
 """Dense oracles for tests and small grids (spec section 4; NumPy only, never on a
-likelihood path).  Everything here is ``O(N^2)`` memory or worse: keep ``N`` <~ 2048.
+likelihood path).  Every oracle here is ``O(N^2)`` memory or worse: keep ``N`` <~ 2048.
 
 * :func:`dense_W`, :func:`wdm_congruence`: the WDM rows of a cell set
   (``wilson.matrix.active_W``) and ``W_K Sigma W_K^T``.
@@ -10,6 +10,12 @@ likelihood path).  Everything here is ``O(N^2)`` memory or worse: keep ``N`` <~ 
   Eq. (54) covariance of a modulated stationary process on Fourier bins and its WDM
   form (GB ``wdm_full.hhat_at`` / ``dense_lambda_generic``, in the dense form that
   GB ``tests/test_wdm_full.py::generic_M`` pins it to).
+
+Test windows (``domainia.wilson.windows``):
+
+* :func:`smoothstep`: a non-Meyer ramp for :class:`~domainia.wilson.RampWindow`.
+* :func:`wide_profile`, :data:`ALT_WINDOW`: a non-Meyer admissible profile and the
+  :class:`~domainia.wilson.SampledWindow` built from it.
 """
 
 from __future__ import annotations
@@ -22,17 +28,21 @@ from numpy.typing import NDArray
 
 from domainia import wilson
 from domainia.wilson.evolutionary import eq45_direct, eq45_plan
+from domainia.wilson.windows import SampledWindow
 
 from .domains import CellSet
 
 __all__ = [
+    "ALT_WINDOW",
     "blocktri_dense",
     "dense_W",
     "dense_lambda_generic",
     "eq45_dense",
     "eq54_covariance",
     "hhat",
+    "smoothstep",
     "wdm_congruence",
+    "wide_profile",
 ]
 
 Array = NDArray[np.float64]
@@ -114,3 +124,22 @@ def dense_lambda_generic(U: CArray, s_I: Array, s_G_src: Array, h: CArray, *,
     U = np.asarray(U)
     M = eq54_covariance(s_I, s_G_src, h, margin=margin)
     return 0.5 * np.real(U @ M @ U.conj().T)
+
+
+def smoothstep(x: Any) -> Array:
+    """``3 x^2 - 2 x^3`` on [0, 1] (clipped): a ramp with ``nu(x) + nu(1 - x) = 1``."""
+    x = np.clip(np.asarray(x, dtype=float), 0.0, 1.0)
+    return x * x * (3.0 - 2.0 * x)
+
+
+def wide_profile(u: Any) -> Array:
+    """A non-Meyer admissible profile ``psi(u)``, ``u = f / dF``: 1 for ``|u| < 1/8``, a
+    smoothstep cosine rolloff to 0 at ``|u| = 7/8``, 0 beyond.  On [0, 1],
+    ``psi(u)^2 + psi(u - 1)^2 = 1`` because ``smoothstep(1 - x) = 1 - smoothstep(x)``."""
+    a = np.abs(np.asarray(u, dtype=float))
+    x = np.clip((a - 0.125) / 0.75, 0.0, 1.0)
+    return np.where(a < 0.125, 1.0, np.where(a < 0.875, np.cos(np.pi / 2.0 * smoothstep(x)), 0.0))
+
+
+#: A non-default admissible window for tests (other flat width, other ramp than Meyer).
+ALT_WINDOW = SampledWindow(wide_profile, "wide-smoothstep")
