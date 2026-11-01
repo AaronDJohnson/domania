@@ -5,15 +5,14 @@ Every public function that consumes the window, on fixed grids and seeded inputs
 case is ``(name, fn)``: ``fn(kw)`` calls the function with the extra keywords ``kw``
 (``{}`` on the old code, ``{"window": ...}`` after the refactor).
 
-Recorded once against the untouched code (commit d991ac4, the old ``wdm`` layout)::
-
-    python wilson/tests/meyer_cases.py --write     # then --check: deterministic?
+Recorded once against the untouched code (commit d991ac4, the old ``wdm`` layout) by
+running this file with ``--write``, then with ``--check`` (recompute and compare: is
+the output deterministic?).
 
 After the refactor, ``tests/wilson/test_meyer_baseline.py`` recomputes every case
 through ``domainia.wilson`` and requires ``np.array_equal`` (same dtype) on every array.
-
-When an input shape below is wrong for a function on the old code, fix the INPUT per
-that function's docstring.  Never edit a library function in this task.
+The arrays are bit-exact only in the recording environment (the ``wdmrel`` env's NumPy
+pocketfft and BLAS on the machine that recorded them).
 """
 
 from __future__ import annotations
@@ -75,6 +74,8 @@ def wilson_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
     mask = wl.active_mask(Nf, Nt)
     Tr, M, St, No, E, I = (wl.transform, wl.matrix, wl.stationary, wl.noise,
                            wl.evolutionary, wl.inner_product)
+    K0 = St.build_K_full_active(Nf, Nt, dt, psd)[0]
+    B0 = St.build_lambda_blocks_full_active(Nf, Nt, dt, psd)
     cases: list[Case] = [
         ("transform.forward", lambda kw: Tr.forward(xr, Nf, Nt, dt, **kw)),
         ("transform.forward_many", lambda kw: Tr.forward_many(Xr, Nf, Nt, dt, **kw)),
@@ -94,12 +95,9 @@ def wilson_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
         ("stationary.build_lambda_blocks_full_active",
          lambda kw: St.build_lambda_blocks_full_active(Nf, Nt, dt, psd, **kw)),
         ("stationary.build_K_full_active", lambda kw: St.build_K_full_active(Nf, Nt, dt, psd, **kw)),
-        ("stationary.psd_from_K",
-         lambda kw: St.psd_from_K(St.build_K_full_active(Nf, Nt, dt, psd, **kw)[0], Nf, Nt, dt, **kw)),
+        ("stationary.psd_from_K", lambda kw: St.psd_from_K(K0, Nf, Nt, dt, **kw)),
         ("stationary.apply_lambda_from_psd", lambda kw: St.apply_lambda_from_psd(w, Nf, Nt, dt, S, **kw)),
-        ("stationary.psd_from_lambda_blocks",
-         lambda kw: St.psd_from_lambda_blocks(*St.build_lambda_blocks_full_active(Nf, Nt, dt, psd, **kw),
-                                              Nf, Nt, dt, **kw)),
+        ("stationary.psd_from_lambda_blocks", lambda kw: St.psd_from_lambda_blocks(*B0, Nf, Nt, dt, **kw)),
         ("noise.band_averaged_variance", lambda kw: No.band_averaged_variance(Nf, Nt, dt, psd, **kw)),
         ("noise.evolutionary_band_variance",
          lambda kw: No.evolutionary_band_variance(Nf, Nt, dt, Sn, **kw)),
@@ -146,6 +144,8 @@ def domainia_cases(dm: Any, wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
     time = D.TimeDomain(N, dt)
     four = D.FourierDomain(N, dt, 0, N // 2 + 1, "rfft")
     y = rng.standard_normal(cells.size)
+    xt = rng.standard_normal(N)                    # time-domain input of WDMToTime.adjoint
+    wf = rng.standard_normal(band_cells.size)      # cell input of FourierToWDM.adjoint
     gen = dm.spectra.GenericPSD(
         lambda f, t, nu: psd(f) * (1.0 + nu[0] * np.sin(2.0 * np.pi * np.asarray(t, dtype=float) / T)))
     nu = np.array([0.4])
@@ -160,16 +160,22 @@ def domainia_cases(dm: Any, wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
         ("TimeToWDM.adjoint", lambda kw: dm.maps.TimeToWDM(time, W(cells, kw)).adjoint(y)),
         ("TimeToWDM.rows", lambda kw: dm.maps.TimeToWDM(time, W(cells, kw)).rows([0, 5, cells.size - 1])),
         ("WDMToTime.apply", lambda kw: dm.maps.WDMToTime(W(cells, kw), time).apply(y)),
+        ("WDMToTime.adjoint", lambda kw: dm.maps.WDMToTime(W(cells, kw), time).adjoint(xt)),
         ("FourierToWDM.dense", lambda kw: dm.maps.FourierToWDM(four, W(band_cells, kw)).apply(np.fft.rfft(x))),
         ("FourierToWDM.fft", lambda kw: dm.maps.FourierToWDM(four, W(band_cells, kw), "fft").apply(np.fft.rfft(x))),
+        ("FourierToWDM.adjoint", lambda kw: dm.maps.FourierToWDM(four, W(band_cells, kw)).adjoint(wf)),
         ("BandAveragedVariance", lambda kw: dm.variance.BandAveragedVariance(gen, cells, **kw)(nu)),
         ("EvolutionaryCovariance.interp", lambda kw: Cov(gen, cells, builder="interp", **kw).blocks(nu)),
     ]
     if (Nf, Nt) == DENSE_GRID:
+        # A seeded non-identity SPD Sigma: with Sigma = I the congruence is dt I for any window.
+        B = rng.standard_normal((N, N))
+        Sigma = B @ B.T / N + np.eye(N)
         cases += [
             ("EvolutionaryCovariance.direct",
              lambda kw: Cov(gen, cells, builder="direct", assembly="dense", **kw).dense(nu)),
             ("testing.dense_W", lambda kw: dm.testing.dense_W(cells, **kw)),
+            ("testing.wdm_congruence", lambda kw: dm.testing.wdm_congruence(Sigma, cells, **kw)),
             ("testing.eq45_dense", lambda kw: dm.testing.eq45_dense(cells, gen.bind(nu), **kw)),
         ]
     return cases
@@ -212,13 +218,13 @@ def _old_layout() -> tuple[Any, Any]:
     """``(wdm, domainia namespace)`` from the pre-refactor tree (``wilson/src`` + ``src``)."""
     root = Path(__file__).resolve().parents[2]
     sys.path[:0] = [str(root / "src"), str(root / "wilson" / "src")]
-    import wdm  # noqa: PLC0415
-    import domainia.covariance  # noqa: PLC0415
-    import domainia.domains  # noqa: PLC0415
-    import domainia.maps  # noqa: PLC0415
-    import domainia.spectra  # noqa: PLC0415
-    import domainia.testing  # noqa: PLC0415
-    import domainia.variance  # noqa: PLC0415
+    import wdm
+    import domainia.covariance
+    import domainia.domains
+    import domainia.maps
+    import domainia.spectra
+    import domainia.testing
+    import domainia.variance
 
     dm = SimpleNamespace(domains=domainia.domains, maps=domainia.maps, spectra=domainia.spectra,
                          variance=domainia.variance, covariance=domainia.covariance,
@@ -228,8 +234,9 @@ def _old_layout() -> tuple[Any, Any]:
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("--write", action="store_true", help="record the baseline npz")
-    p.add_argument("--check", action="store_true", help="recompute and compare bit for bit")
+    mode = p.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--write", action="store_true", help="record the baseline npz")
+    mode.add_argument("--check", action="store_true", help="recompute and compare bit for bit")
     args = p.parse_args()
     wl, dm = _old_layout()
     out = compute(wl, dm, {}, {})
@@ -240,9 +247,11 @@ def main() -> None:
     if args.check:
         with np.load(BASELINE) as z:
             stored = {k: z[k] for k in z.files}
-        assert sorted(stored) == sorted(out), sorted(set(stored) ^ set(out))[:10]
+        if sorted(stored) != sorted(out):
+            raise SystemExit(f"baseline keys differ: {sorted(set(stored) ^ set(out))[:10]}")
         bad = [k for k in out if stored[k].dtype != out[k].dtype or not np.array_equal(stored[k], out[k])]
-        assert not bad, bad[:10]
+        if bad:
+            raise SystemExit(f"{len(bad)} arrays differ from the baseline: {bad[:10]}")
         print(f"baseline reproduces: {len(out)} arrays")
 
 
