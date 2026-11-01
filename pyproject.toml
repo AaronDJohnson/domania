@@ -26,7 +26,8 @@ packages = ["src/domainia"]
 [tool.pytest.ini_options]
 # One config for the whole repo.  tests/ has no __init__.py (its modules import the
 # sibling helpers dom_db_inputs.py by name); tests/wilson is a package whose conftest
-# puts tests/wilson/oracle on sys.path.  Doctests run over domainia.wilson only.
+# puts tests/wilson/oracle on sys.path.  --doctest-modules applies to every collected
+# path (tests/ too); the doctests themselves live only in domainia.wilson.
 testpaths = ["tests", "src/domainia/wilson"]
 pythonpath = ["src"]
 addopts = "-ra --doctest-modules -p no:cacheprovider"

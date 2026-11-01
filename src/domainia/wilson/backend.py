@@ -1,6 +1,6 @@
 """The dual-backend shim: one implementation per kernel, NumPy or JAX underneath.
 
-Every kernel in ``wdm`` (and later ``domainia``) is written once against a
+Every kernel in ``domainia.wilson`` (and later ``domainia``) is written once against a
 :class:`Backend` and never branches on the backend's name for arithmetic.  The
 backend supplies the array namespace (``xp``), the FFT namespace used by the
 transforms (``fft``: ``numpy.fft`` / ``jax.numpy.fft``), the pinned FFT used by
@@ -13,13 +13,13 @@ modified Bessel functions ``I_p`` (``bessel_i``).
 
 Rules
 -----
-* ``import wdm`` never imports JAX.  :func:`jax_backend` imports it on first
+* ``import domainia.wilson`` never imports JAX.  :func:`jax_backend` imports it on first
   use; :func:`pytree_dataclass` registers classes lazily (see there).
 * Nothing flips ``jax_enable_x64`` on import.  Call :func:`enable_x64`
   explicitly (scripts do it first); :func:`require_x64` raises if it is off,
   and every route to the JAX backend (:func:`jax_backend`, so also
   :func:`get_backend` on a ``jax.Array`` or with ``backend="jax"``) calls it:
-  with x64 off a wdm JAX path raises instead of silently computing in float32.
+  with x64 off a domainia.wilson JAX path raises instead of silently computing in float32.
 * ``set`` / ``add_at`` are functional (they return the updated array).  On
   NumPy they copy first **unless** the caller passes ``copy=False``, which a
   kernel may do only for a buffer it allocated itself; then the update is the
@@ -463,10 +463,10 @@ def _make_jax_backend() -> Backend:
 
 
 def jax_backend() -> Backend:
-    """The JAX backend.  Imports JAX (never at ``import wdm`` time), checks
+    """The JAX backend.  Imports JAX (never at ``import domainia.wilson`` time), checks
     :func:`require_x64` and registers any pending :func:`pytree_dataclass` classes.
 
-    Raises ``RuntimeError`` when ``jax_enable_x64`` is off: wdm needs float64,
+    Raises ``RuntimeError`` when ``jax_enable_x64`` is off: domainia.wilson needs float64,
     and with x64 off JAX would silently compute every kernel in float32
     (``forward_time``: relative error ~2e-7, no warning).
     """
@@ -511,14 +511,15 @@ def get_backend(*arrays: Any, backend: str | Backend | None = None) -> Backend:
 def require_x64() -> None:
     """Raise ``RuntimeError`` unless ``jax_enable_x64`` is on.
 
-    Called by :func:`jax_backend` (hence by every wdm JAX path); callers that
-    build JAX constants without going through wdm should call it themselves.
+    Called by :func:`jax_backend` (hence by every domainia.wilson JAX path); callers that
+    build JAX constants without going through domainia.wilson should call it themselves.
     """
     import jax
 
     if not jax.config.read("jax_enable_x64"):
         raise RuntimeError(
-            "wdm needs float64 under JAX: call domainia.wilson.backend.enable_x64() (or set "
+            "domainia.wilson needs float64 under JAX: call "
+            "domainia.wilson.backend.enable_x64() (or set "
             "JAX_ENABLE_X64=true) before building any JAX constants"
         )
 
@@ -536,7 +537,7 @@ def pytree_dataclass(cls: type | None = None, *, data: Sequence[str] = (),
     """Make ``cls`` a frozen dataclass and a JAX pytree with leaves ``data`` and
     static fields ``meta`` (together exactly the dataclass fields).
 
-    Registration is lazy so that ``import wdm`` never imports JAX: if JAX is
+    Registration is lazy so that ``import domainia.wilson`` never imports JAX: if JAX is
     already imported the class is registered immediately, otherwise it is queued
     and registered by the first :func:`jax_backend` / :func:`enable_x64` /
     :func:`get_backend` call that returns the JAX backend.

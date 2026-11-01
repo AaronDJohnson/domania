@@ -5,13 +5,17 @@ Every public function that consumes the window, on fixed grids and seeded inputs
 case is ``(name, fn)``: ``fn(kw)`` calls the function with the extra keywords ``kw``
 (``{}`` on the old code, ``{"window": ...}`` after the refactor).
 
-Recorded once against the untouched code (commit d991ac4, the old ``wdm`` layout) by
-running this file with ``--write``, then with ``--check`` (recompute and compare: is
-the output deterministic?).
+``data/meyer_baseline.npz`` was recorded once against the untouched code of commit
+d991ac4 (the old ``wdm`` layout) by this module's own history: commit 24c4e55 holds
+the recorder (``meyer_cases.py --write``), and its ``src/`` and ``wilson/src/`` are
+d991ac4's byte for byte.  This version only replays the baseline, so refactored code
+can never re-record it.  Re-recording means checking out 24c4e55 and running its
+``wilson/tests/meyer_cases.py --write`` there.
 
-After the refactor, ``tests/wilson/test_meyer_baseline.py`` recomputes every case
-through ``domainia.wilson`` and requires ``np.array_equal`` (same dtype) on every array.
-The arrays are bit-exact only in the recording environment (the ``wdmrel`` env's NumPy
+The gate is ``tests/wilson/test_meyer_baseline.py``: it recomputes every case through
+``domainia.wilson`` and requires ``np.array_equal`` (same dtype) on every array.
+``python tests/wilson/meyer_cases.py --check`` is the same replay as a script.  The
+arrays are bit-exact only in the recording environment (the ``wdmrel`` env's NumPy
 pocketfft and BLAS on the machine that recorded them).
 """
 
@@ -214,45 +218,40 @@ def compute(wl: Any, dm: Any, wilson_kw: dict, domainia_kw: dict, *,
     return out
 
 
-def _old_layout() -> tuple[Any, Any]:
-    """``(wdm, domainia namespace)`` from the pre-refactor tree (``wilson/src`` + ``src``)."""
-    root = Path(__file__).resolve().parents[2]
-    sys.path[:0] = [str(root / "src"), str(root / "wilson" / "src")]
-    from domainia import wilson as wdm
+def main() -> None:
+    """``--check``: replay the baseline through the current ``domainia.wilson`` layout.
+
+    The baseline was recorded at d991ac4 by this module's own history (24c4e55 holds
+    the recorder); re-recording means checking out 24c4e55.  The gate is
+    ``tests/wilson/test_meyer_baseline.py``; this is the same replay as a script.
+    """
+    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    p.add_argument("--check", action="store_true", required=True,
+                   help="recompute and compare bit for bit")
+    p.parse_args()
+    src = str(Path(__file__).resolve().parents[2] / "src")
+    if src not in sys.path:
+        sys.path.insert(0, src)
     import domainia.covariance
     import domainia.domains
     import domainia.maps
     import domainia.spectra
     import domainia.testing
     import domainia.variance
+    from domainia import wilson
 
     dm = SimpleNamespace(domains=domainia.domains, maps=domainia.maps, spectra=domainia.spectra,
                          variance=domainia.variance, covariance=domainia.covariance,
                          testing=domainia.testing)
-    return wdm, dm
-
-
-def main() -> None:
-    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    mode = p.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--write", action="store_true", help="record the baseline npz")
-    mode.add_argument("--check", action="store_true", help="recompute and compare bit for bit")
-    args = p.parse_args()
-    wl, dm = _old_layout()
-    out = compute(wl, dm, {}, {})
-    if args.write:
-        BASELINE.parent.mkdir(parents=True, exist_ok=True)
-        np.savez_compressed(BASELINE, **out)  # plain savez is ~6.1 MB, over the 5 MB cap
-        print(f"wrote {len(out)} arrays to {BASELINE}")
-    if args.check:
-        with np.load(BASELINE) as z:
-            stored = {k: z[k] for k in z.files}
-        if sorted(stored) != sorted(out):
-            raise SystemExit(f"baseline keys differ: {sorted(set(stored) ^ set(out))[:10]}")
-        bad = [k for k in out if stored[k].dtype != out[k].dtype or not np.array_equal(stored[k], out[k])]
-        if bad:
-            raise SystemExit(f"{len(bad)} arrays differ from the baseline: {bad[:10]}")
-        print(f"baseline reproduces: {len(out)} arrays")
+    out = compute(wilson, dm, {}, {})
+    with np.load(BASELINE) as z:
+        stored = {k: z[k] for k in z.files}
+    if sorted(stored) != sorted(out):
+        raise SystemExit(f"baseline keys differ: {sorted(set(stored) ^ set(out))[:10]}")
+    bad = [k for k in out if stored[k].dtype != out[k].dtype or not np.array_equal(stored[k], out[k])]
+    if bad:
+        raise SystemExit(f"{len(bad)} arrays differ from the baseline: {bad[:10]}")
+    print(f"baseline reproduces: {len(out)} arrays")
 
 
 if __name__ == "__main__":

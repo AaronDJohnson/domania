@@ -42,8 +42,7 @@ Backward maps (Paper I Alg. 4)
 ------------------------------
 :func:`psd_from_K` (was ``lambda_to_psd_slab``) recovers $S_n$ from the
 diagonal $K$ vectors; :func:`psd_from_lambda_blocks` (was the vendored
-operator-form ``lambda_to_psd``) recovers it from stored blocks.  The literal
-Alg. 4 is :func:`domainia.wilson.paper.alg4_psd_from_lambda`.
+operator-form ``lambda_to_psd``) recovers it from stored blocks.
 
 Inputs
 ------
@@ -980,7 +979,7 @@ def assemble_lambda_full_active(
     -------
     ndarray, shape ($(N_f+1)N_t$, $(N_f+1)N_t$)
         Symmetric. The result is identical to dense $W\\,C_{\\rm time}\\,W^T$
-        at machine precision (verified in :mod:`domainia.wilson.tests.test_stationary`).
+        at machine precision (verified in ``tests/wilson/vendored/test_stationary.py``).
 
     Examples
     --------

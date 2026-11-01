@@ -171,7 +171,7 @@ class CellSet:
 
     def __post_init__(self) -> None:
         if not isinstance(self.grid, wilson.Grid):
-            raise TypeError(f"grid must be a wilson.Grid; got {type(self.grid).__name__}")
+            raise TypeError(f"grid must be a domainia.wilson.Grid; got {type(self.grid).__name__}")
         m = _cell_index("m", self.m)                            # copies: the flags below
         n = _cell_index("n", self.n)                            # must not touch the caller's
         if m.shape != n.shape:

@@ -101,7 +101,7 @@ def _forward_reference(x_rfft, Nf, Nt, dt):
 
     N = Nf * Nt
     phi_c = phi_centered(Nf, Nt, dt)       # Hz window, flat value 1/sqrt(Delta F)
-    kappa = np.sqrt(2.0) / Nf              # Paper I Alg 1 (wdm.paper.alg1_forward)
+    kappa = np.sqrt(2.0) / Nf              # Paper I Alg 1
     out = np.zeros((Nf + 1, Nt))
 
     for m in range(Nf + 1):
