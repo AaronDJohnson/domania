@@ -11,6 +11,7 @@ from domainia.covariance import DiagonalCovariance
 from domainia.domains import CellSet
 from domainia.spectra import GenericPSD
 from domainia.variance import BandAveragedVariance, MidpointVariance
+from domainia.wilson.matrix import build_C_wdm_active
 
 NF, NT, DT = 8, 16, 1 / 16
 N = NF * NT
@@ -33,7 +34,27 @@ def test_midpoint_is_half_the_psd_at_the_band_centre_and_cell_time():
     m, n = np.asarray(CELLS.m), np.asarray(CELLS.n)
     f = wilson.band_frequencies(NF, DT)[m]
     t = n * wilson.delta_T(NF, DT)
-    np.testing.assert_array_equal(MidpointVariance(PSD, CELLS)(NU), 0.5 * PSD(f, t, NU))
+    got = MidpointVariance(PSD, CELLS)(NU)
+    np.testing.assert_array_equal(got, 0.5 * PSD(f, t, NU))
+    # independently of band_frequencies: f_m = m dF, t_n = n dT
+    np.testing.assert_allclose(got, 0.5 * PSD(m * wilson.delta_F(NF, DT), n * wilson.delta_T(NF, DT), NU),
+                               rtol=1e-14, atol=0)
+
+
+@pytest.mark.parametrize("cells", [CELLS, CUT], ids=["all", "cut"])
+def test_band_average_of_a_stationary_psd_is_the_exact_covariance_diagonal(cells):
+    """For ``S(f)`` the Eq. 36 band average is the exact stationary WDM variance (any window)."""
+    nu = np.array([NU[0], 0.0])
+    exact = build_C_wdm_active(NF, NT, DT, lambda f: PSD(f, 0.0, nu))
+    want = np.diag(exact)[cells.packed_positions()]
+    got = BandAveragedVariance(PSD, cells)(nu)
+    assert np.max(np.abs(got - want)) <= 1e-12 * np.max(np.abs(want))
+
+
+def test_band_average_of_a_white_psd_is_half_its_level():
+    white = GenericPSD(lambda f, t, nu: np.full(np.broadcast(f, t).shape, nu[0]))
+    np.testing.assert_allclose(BandAveragedVariance(white, CELLS)(np.array([3.0])), 1.5,
+                               rtol=1e-15, atol=0)
 
 
 @pytest.mark.parametrize("cls", [BandAveragedVariance, MidpointVariance])

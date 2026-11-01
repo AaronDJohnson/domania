@@ -45,7 +45,7 @@ def test_interp_matches_the_direct_sum(which):
     cells = _cells(Nt)
     if which == "cut":
         cells = cells.drop_columns(3, 1)
-    t_max = Nt * NF * DT if which == "padded" else None
+    t_max = 1.25 * Nt * NF * DT if which == "padded" else None     # 1.25 x the grid's T: not the default
     ref = EvolutionaryCovariance(PSD, cells, builder="direct", assembly="dense", t_max=t_max).dense(NU)
     got = _dense_blocks(EvolutionaryCovariance(PSD, cells, builder="interp", t_max=t_max), NU)
     assert np.max(np.abs(got - ref)) <= 1e-12 * np.max(np.abs(ref))
@@ -76,7 +76,7 @@ def test_stationary_limit_is_the_exact_covariance(ac):
     nu = np.array([ac, 0.0])
     exact = build_C_wdm_active(NF, NT, DT, lambda f: PSD(f, 0.0, nu))
     got = _dense_blocks(EvolutionaryCovariance(PSD, _cells()), nu)
-    assert np.max(np.abs(got - exact)) < 1e-10 * np.max(np.abs(exact))
+    assert np.max(np.abs(got - exact)) < 1e-12 * np.max(np.abs(exact))
 
 
 def test_arguments_are_checked():
@@ -87,8 +87,10 @@ def test_arguments_are_checked():
         EvolutionaryCovariance(object(), cells)
     with pytest.raises(ValueError, match="assembly"):
         EvolutionaryCovariance(PSD, cells, assembly="banded")
-    with pytest.raises(ValueError, match="direct"):
+    with pytest.raises(ValueError, match="builder 'direct' needs assembly='dense'"):
         EvolutionaryCovariance(PSD, cells, builder="direct")
+    with pytest.raises(ValueError, match="pair mid-times"):                # raised lazily, by the plan
+        EvolutionaryCovariance(PSD, cells, t_max=0.5 * T_REC).blocks(NU)
     assert not EvolutionaryCovariance(PSD, cells).jittable
 
 
