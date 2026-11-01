@@ -35,3 +35,14 @@ def _mismatches(got: dict, want: dict) -> list[str]:
 
 def test_default_window_reproduces_the_meyer_baseline_bit_for_bit(baseline):
     assert not _mismatches(compute(wilson, DM, {}, {}), baseline)
+
+
+#: Case-name prefixes whose kernels take ``window=`` (extended task by task).
+THREADED = ("transform.", "matrix.")
+
+
+def test_explicit_meyer_reproduces_the_baseline_bit_for_bit(baseline):
+    got = compute(wilson, DM, {"window": wilson.MEYER}, {}, only=THREADED)
+    want = {k: v for k, v in baseline.items()
+            if k.startswith("wilson::") and k.split("::")[1].startswith(THREADED)}
+    assert want and not _mismatches(got, want)

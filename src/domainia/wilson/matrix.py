@@ -49,6 +49,7 @@ from .grid import (
     validate_grid,
 )
 from .transform import inverse_time
+from .windows import MEYER, Window
 
 type Array = NDArray[np.floating]
 type CArray = NDArray[np.complexfloating]
@@ -69,6 +70,8 @@ def build_W(
     Nf: int,
     Nt: int,
     dt: float,
+    *,
+    window: Window = MEYER,
 ) -> Array:
     """Build the full $(N_f+1)N_t \\times N$ WDM transform matrix.
 
@@ -82,6 +85,9 @@ def build_W(
     ----------
     Nf, Nt : int
     dt : float
+    window : Window, optional
+        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
+        See :mod:`domainia.wilson.windows`.
 
     Returns
     -------
@@ -129,7 +135,7 @@ def build_W(
                 continue
             seed[:] = 0.0
             seed[m, n0] = 1.0
-            row = dt * inverse_time(seed, Nf, Nt, dt)
+            row = dt * inverse_time(seed, Nf, Nt, dt, window=window)
             for n in range(n0, Nt, 2):
                 W[m, n] = np.roll(row, (n - n0) * Nf)
 
@@ -140,6 +146,8 @@ def active_W(
     Nf: int,
     Nt: int,
     dt: float,
+    *,
+    window: Window = MEYER,
 ) -> Array:
     """Restrict :func:`build_W` to its $N$ active rows.
 
@@ -155,6 +163,9 @@ def active_W(
     ----------
     Nf, Nt : int
     dt : float
+    window : Window, optional
+        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
+        See :mod:`domainia.wilson.windows`.
 
     Returns
     -------
@@ -168,7 +179,7 @@ def active_W(
     >>> Wa.shape, bool(np.allclose(Wa @ Wa.T, 1.0 * np.eye(32)))
     ((32, 32), True)
     """
-    W = build_W(Nf, Nt, dt)
+    W = build_W(Nf, Nt, dt, window=window)
     mask = active_mask(Nf, Nt).ravel()
     return W[mask, :]
 
@@ -240,6 +251,8 @@ def build_C_wdm(
     Nt: int,
     dt: float,
     Sn_func: PsdFunc,
+    *,
+    window: Window = MEYER,
 ) -> Array:
     """WDM-domain covariance via the similarity transform $W\\,C^{(\\text{time})}\\,W^T$.
 
@@ -253,6 +266,9 @@ def build_C_wdm(
     Nf, Nt : int
     dt : float
     Sn_func : callable
+    window : Window, optional
+        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
+        See :mod:`domainia.wilson.windows`.
 
     Returns
     -------
@@ -267,7 +283,7 @@ def build_C_wdm(
     (40, 40)
     """
     N = n_samples(Nf, Nt)
-    W = build_W(Nf, Nt, dt)
+    W = build_W(Nf, Nt, dt, window=window)
     C_time = build_C_time(N, dt, Sn_func)
     return W @ C_time @ W.T
 
@@ -277,6 +293,8 @@ def build_C_wdm_active(
     Nt: int,
     dt: float,
     Sn_func: PsdFunc,
+    *,
+    window: Window = MEYER,
 ) -> Array:
     """Active-pixel restriction of :func:`build_C_wdm`.
 
@@ -289,6 +307,9 @@ def build_C_wdm_active(
     Nf, Nt : int
     dt : float
     Sn_func : callable
+    window : Window, optional
+        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
+        See :mod:`domainia.wilson.windows`.
 
     Returns
     -------
@@ -303,7 +324,7 @@ def build_C_wdm_active(
     ((32, 32), 0.0005)
     """
     N = n_samples(Nf, Nt)
-    Wa = active_W(Nf, Nt, dt)
+    Wa = active_W(Nf, Nt, dt, window=window)
     C_time = build_C_time(N, dt, Sn_func)
     return Wa @ C_time @ Wa.T
 
