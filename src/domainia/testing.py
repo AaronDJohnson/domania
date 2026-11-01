@@ -5,14 +5,14 @@ likelihood path).  Every oracle here is ``O(N^2)`` memory or worse: keep ``N`` <
   (``wilson.matrix.active_W``) and ``W_K Sigma W_K^T``.
 * :func:`eq45_dense`: Eq. (45) on a cell set by the direct sum over rfft bins
   (``wilson.evolutionary.eq45_direct``).
-
-These three take ``window=`` (default Meyer: the WDM transform) and compute in the Wilson
-basis of that window.
 * :func:`blocktri_dense`: a ragged block-tridiagonal matrix assembled densely.
 * :func:`hhat`, :func:`eq54_covariance`, :func:`dense_lambda_generic`: the generic
   Eq. (54) covariance of a modulated stationary process on Fourier bins and its WDM
   form (GB ``wdm_full.hhat_at`` / ``dense_lambda_generic``, in the dense form that
   GB ``tests/test_wdm_full.py::generic_M`` pins it to).
+
+:func:`dense_W`, :func:`wdm_congruence` and :func:`eq45_dense` take ``window=`` (default
+Meyer: the WDM transform) and compute in the Wilson basis of that window.
 
 Test windows (``domainia.wilson.windows``):
 

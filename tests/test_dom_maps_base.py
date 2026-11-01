@@ -58,6 +58,22 @@ def test_restrict_selects_in_dst_order_and_is_its_own_adjoint():
         Restrict(cut, full)
 
 
+def test_restrict_checks_its_domains_even_when_pos_is_given():
+    """The scale and grid checks read the domains only, so they run on every construction
+    route (``pos`` given: ``on``, ``tree_unflatten``, ``dataclasses.replace``)."""
+    full, cut = _cells()
+    R = Restrict(full, cut)
+    with pytest.raises(ValueError, match=r"scale = 2.0 is not honoured.*Restrict"):
+        Restrict(full, WDMDomain(cut.cells, 2.0), pos=R.pos)
+    with pytest.raises(ValueError, match=r"scale = 2.0 is not honoured.*Restrict"):
+        dataclasses.replace(R, src=WDMDomain(full.cells, 2.0))
+    other = WDMDomain(CellSet.all_active(wdm.Grid(8, 16, 0.25)).drop_columns(2, 1))
+    for kw in ({}, {"pos": R.pos}):
+        with pytest.raises(ValueError, match="not a subset of src: its cells live on another grid"):
+            Restrict(full, other, **kw)
+    assert np.array_equal(dataclasses.replace(R).pos, R.pos)
+
+
 def test_push_is_the_congruence_and_composes():
     full, cut = _cells()
     rng = np.random.default_rng(2)

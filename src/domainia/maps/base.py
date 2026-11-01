@@ -333,22 +333,27 @@ class Restrict(LinearMap):
     """The cells ``dst.cells`` (a subset, in its own order) of a vector on ``src.cells``.
 
     ``src`` and ``dst`` must share the grid and the Wilson window (``ValueError`` naming both
-    windows otherwise): a restriction never changes the basis."""
+    windows otherwise): a restriction never changes the basis.  These checks read the domains
+    only, so they run on every construction, ``pos`` given or not (``on``, ``tree_unflatten``,
+    ``dataclasses.replace``); only the subset positions ``pos`` are built once."""
 
     src: WDMDomain
     dst: WDMDomain
     pos: Any = field(default=_BUILD, kw_only=True)
 
     def __post_init__(self) -> None:
+        self.src.require_unit_scale("Restrict")
+        self.dst.require_unit_scale("Restrict")
+        if self.src.window != self.dst.window:
+            raise ValueError(f"src and dst use different windows ({self.src.window.name} vs "
+                             f"{self.dst.window.name}): restrict within one basis")
+        if self.src.cells.grid != self.dst.cells.grid:
+            raise ValueError(f"dst is not a subset of src: its cells live on another grid "
+                             f"({self.dst.cells.grid} vs {self.src.cells.grid})")
         if self.pos is _BUILD:
-            self.src.require_unit_scale("Restrict")
-            self.dst.require_unit_scale("Restrict")
-            if self.src.window != self.dst.window:
-                raise ValueError(f"src and dst use different windows ({self.src.window.name} vs "
-                                 f"{self.dst.window.name}): restrict within one basis")
             where = {c: i for i, c in enumerate(zip(self.src.cells.m, self.src.cells.n))}
             missing = [c for c in zip(self.dst.cells.m, self.dst.cells.n) if c not in where]
-            if missing or self.src.cells.grid != self.dst.cells.grid:
+            if missing:
                 raise ValueError(f"dst is not a subset of src ({len(missing)} cells missing)")
             object.__setattr__(self, "pos", np.asarray(
                 [where[c] for c in zip(self.dst.cells.m, self.dst.cells.n)], dtype=np.int64))

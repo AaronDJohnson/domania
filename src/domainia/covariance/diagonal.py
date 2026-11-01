@@ -23,9 +23,9 @@ class DiagonalCovariance(Covariance):
     GB channel), a callable ``fn(nu, be) -> (n,)`` or a fixed ``(n,)`` array.  ``n`` is the
     number of cells.  ``cells`` is the variance's ``CellSet`` when it has one (the
     ``domainia.variance`` classes), else ``None``; a caller can check it against its map.
-    ``window`` is likewise the variance's Wilson window when it has one
-    (``BandAveragedVariance``), else ``None``; ``LinearMap.push`` refuses a map whose source
-    domain has another window.
+    ``window`` (read-only) is likewise the variance's Wilson window when it has one
+    (``BandAveragedVariance``), else ``None``; a ``PushedCovariance`` refuses a map whose
+    WDM source domain has another window.
     ``jittable`` is the variance's own (``False`` for the host-only ``domainia.variance``
     classes; ``True`` for arrays, callables and evaluators that do not say otherwise).
     """
@@ -33,11 +33,16 @@ class DiagonalCovariance(Covariance):
     def __init__(self, variance: Any, n: int, *, channel: int | None = None) -> None:
         cells = getattr(variance, "cells", None)
         self.cells = cells if isinstance(cells, CellSet) else None
-        window = getattr(variance, "window", None)
-        self.window = window if isinstance(window, Window) else None
         self.variance = as_evaluator(variance, **({} if channel is None else {"channel": int(channel)}))
         self.n = int(n)
         self.jittable = bool(getattr(variance, "jittable", True))
+
+    @property
+    def window(self) -> Window | None:  # type: ignore[override]
+        """The variance's Wilson window (read through its evaluator), or ``None``."""
+        source = getattr(self.variance, "obj", self.variance)      # a pytree variance is wrapped
+        window = getattr(source, "window", None)
+        return window if isinstance(window, Window) else None
 
     def host_constants(self) -> Any:
         return self.variance.host_constants()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import dataclasses
 import pickle
 
 import numpy as np
@@ -10,7 +11,8 @@ import pytest
 from dom_db_inputs import DenseCov, jax_or_skip
 
 from domainia import testing, wilson
-from domainia.covariance import DiagonalCovariance, EvolutionaryCovariance
+from domainia.covariance import (ChannelStack, Covariance, DenseCovariance, DiagonalCovariance,
+                                 EvolutionaryCovariance)
 from domainia.domains import CellSet, FourierDomain, TimeDomain, WDMDomain
 from domainia.maps import (Compose, FourierCrop, FourierToWDM, Identity, PushedCovariance, Restrict,
                            TimeToWDM, WDMToTime)
@@ -38,6 +40,11 @@ def _close(got, want, rtol: float = 1e-12) -> None:
 def _stationary_psd() -> tuple[GenericPSD, np.ndarray]:
     psd = GenericPSD(lambda f, t, nu: (1.0 + np.asarray(f, float) ** 2) ** nu[0] + 0.0 * np.asarray(t, float))
     return psd, np.array([-1.2])
+
+
+def _roundtrip(obj):
+    """A pickle round trip: an equal object that is not the original."""
+    return pickle.loads(pickle.dumps(obj))
 
 
 def _exact(psd: GenericPSD, nu: np.ndarray, window=ALT_WINDOW) -> np.ndarray:
@@ -149,6 +156,36 @@ def test_after_a_crop_uses_the_domain_window():
     assert not np.allclose(got, meyer.after(crop).apply(Z))
 
 
+def test_fourier_adjoint_rows_and_push_use_the_domain_window():
+    """On an ALT_WINDOW domain: ``adjoint`` is the real-inner-product adjoint of ``apply``
+    (``<z, z'> = Re sum conj(z) z'``, the maps module convention); ``rows`` are
+    ``sqrt(2 / (N dt)) conj(rfft(g_p))`` for the time atoms ``g_p`` of ``active_W`` (so that
+    ``Re(rows @ rfft(x)) = sqrt(N / (2 dt)) W x``); and the push of a circulant time
+    covariance's bin covariance ``M' = F Sigma F^H`` is ``(N / (2 dt)) W Sigma W^T``."""
+    cells = CellSet.bands(GRID, (2, 3))
+    dom = WDMDomain(cells, window=ALT_WINDOW)
+    rec = FourierDomain(N, DT, 0, N // 2 + 1, "rfft")
+    F = FourierToWDM(rec, dom)
+    rng = np.random.default_rng(9)
+    z = rng.standard_normal(rec.n) + 1j * rng.standard_normal(rec.n)
+    w = rng.standard_normal(cells.size)
+    assert float(np.dot(F.apply(z), w)) == pytest.approx(float(np.real(np.vdot(z, F.adjoint(w)))),
+                                                         rel=1e-12)
+    W = testing.dense_W(cells, window=ALT_WINDOW)
+    R = np.sqrt(2.0 / (N * DT)) * np.conj(np.fft.rfft(W, axis=-1))
+    idx = [0, 3, cells.size // 2, cells.size - 1]
+    _close(F.rows(idx), R[idx])
+    _close(F.adjoint(w), w @ np.conj(R))
+    S = 1.0 / (1.0 + (4.0 * np.fft.rfftfreq(N, DT)) ** 2) + 0.1
+    c = np.fft.irfft(S, n=N)
+    Sigma = c[(np.arange(N)[:, None] - np.arange(N)[None, :]) % N]          # circulant, SPD
+    Fm = np.fft.rfft(np.eye(N), axis=0)                                     # rfft(x) = Fm x
+    Mp = Fm @ Sigma @ Fm.conj().T
+    got = F.push(DenseCov(Mp)).dense()
+    _close(got, (N / (2 * DT)) * W @ Sigma @ W.T)
+    assert not np.allclose(got, FourierToWDM(rec, WDMDomain(cells)).push(DenseCov(Mp)).dense())
+
+
 def test_maps_refuse_a_window_mismatch():
     meyer, alt = WDMDomain(CELLS), WDMDomain(CELLS.drop_columns(2, 2), window=ALT_WINDOW)
     with pytest.raises(ValueError, match="window"):
@@ -165,6 +202,48 @@ def test_window_mismatch_errors_name_both_windows():
         Compose(Restrict(WDMDomain(CELLS, window=ALT_WINDOW), alt), TimeToWDM(TIME, meyer))
     same = WDMDomain(CELLS.drop_columns(2, 2), window=ALT_WINDOW)
     assert Restrict(WDMDomain(CELLS, window=ALT_WINDOW), same).dst == same          # one basis
+
+
+def test_equal_but_distinct_windows_are_one_basis():
+    """The window checks compare windows by value: a pickled ALT_WINDOW and ``Meyer()`` are
+    other objects than the module singletons but the same basis, so Restrict, Compose and push
+    accept them (and compute the same numbers)."""
+    alt, cut = WDMDomain(CELLS, window=ALT_WINDOW), CELLS.drop_columns(2, 2)
+    pos = CELLS.index_of(cut)
+    alt_rt = _roundtrip(alt)
+    meyer4 = wilson.Meyer()
+    assert alt_rt.window == ALT_WINDOW and alt_rt.window is not ALT_WINDOW
+    assert meyer4 == MEYER and meyer4 is not MEYER
+    y = np.random.default_rng(5).standard_normal((2, CELLS.size))
+    for src, dst in ((alt_rt, WDMDomain(cut, window=ALT_WINDOW)),
+                     (WDMDomain(CELLS, window=meyer4), WDMDomain(cut))):
+        np.testing.assert_array_equal(Restrict(src, dst).apply(y), y[:, pos])
+    C = Compose(Restrict(alt, WDMDomain(cut, window=ALT_WINDOW)), TimeToWDM(TIME, alt_rt))
+    np.testing.assert_array_equal(C.apply(X), TimeToWDM(TIME, alt).apply(X)[pos])
+    psd, _ = _stationary_psd()
+    ev = EvolutionaryCovariance(psd, CELLS, window=meyer4)
+    assert Identity(WDMDomain(CELLS)).push(ev).cov is ev
+    # an evaluable chained push across equal windows: the restricted Meyer congruence
+    S = DenseCov(np.diag(1.0 + np.arange(N) / N))
+    inner = TimeToWDM(TIME, WDMDomain(CELLS, window=meyer4)).push(S)
+    got = Restrict(WDMDomain(CELLS), WDMDomain(cut)).push(inner).dense()
+    W = testing.dense_W(cut)
+    _close(got, W @ S.S @ W.T)
+
+
+def test_restrict_checks_the_windows_on_every_construction_route():
+    """The window check reads the domains only, so ``pos`` given (``tree_unflatten``,
+    ``on``, ``dataclasses.replace``) cannot build a cross-basis Restrict."""
+    meyer, cut = WDMDomain(CELLS), CELLS.drop_columns(2, 2)
+    alt_cut = WDMDomain(cut, window=ALT_WINDOW)
+    R = Restrict(meyer, WDMDomain(cut))
+    with pytest.raises(ValueError, match=BOTH):
+        Restrict(meyer, alt_cut, pos=np.arange(cut.size))
+    with pytest.raises(ValueError, match=BOTH):
+        dataclasses.replace(R, dst=alt_cut)
+    with pytest.raises(ValueError, match=BOTH):
+        dataclasses.replace(R, src=WDMDomain(CELLS, window=ALT_WINDOW))
+    np.testing.assert_array_equal(dataclasses.replace(R).pos, R.pos)            # same basis: fine
 
 
 def test_a_map_refuses_a_covariance_built_for_another_window():
@@ -210,6 +289,35 @@ def test_a_pushed_covariance_lives_in_its_destination_window():
     _close(got, inner.dense()[np.ix_(pos, pos)])
     W = testing.dense_W(cut, window=ALT_WINDOW)
     _close(got, W @ S.S @ W.T)
+
+
+def test_covariance_windows_are_read_only_and_declared_on_the_base():
+    """``Covariance.window`` is ``None`` unless a subclass knows its cells' basis; the
+    evolutionary and diagonal covariances report their evaluator's window, read-only."""
+    psd, _ = _stationary_psd()
+    ev = EvolutionaryCovariance(psd, CELLS, window=ALT_WINDOW)
+    dg = DiagonalCovariance(BandAveragedVariance(psd, CELLS, window=ALT_WINDOW), CELLS.size)
+    for cov in (ev, dg, EvolutionaryCovariance(psd, CELLS, builder="direct", assembly="dense",
+                                               window=ALT_WINDOW)):
+        assert cov.window is ALT_WINDOW
+        with pytest.raises(AttributeError):
+            cov.window = MEYER
+    assert ev.window is ev.block_evaluator.window
+    assert Covariance.window is None and DenseCovariance(np.eye(3), 3, chol_impl="numpy").window is None
+    assert DiagonalCovariance(lambda nu, be: np.ones(3), 3).window is None
+
+
+def test_a_channel_stack_reports_its_channels_common_window():
+    psd, _ = _stationary_psd()
+    ev_alt = EvolutionaryCovariance(psd, CELLS, window=ALT_WINDOW)
+    dg_alt = DiagonalCovariance(BandAveragedVariance(psd, CELLS, window=_roundtrip(ALT_WINDOW)),
+                                CELLS.size)
+    free = DiagonalCovariance(np.ones(CELLS.size), CELLS.size)
+    assert ChannelStack([ev_alt, dg_alt], 1).window is ALT_WINDOW                 # equal windows
+    assert ChannelStack([ev_alt, EvolutionaryCovariance(psd, CELLS)], 1).window is None  # differ
+    assert ChannelStack([ev_alt, free], 1).window is None
+    assert ChannelStack([free, ev_alt], 1).window is None
+    assert ChannelStack([EvolutionaryCovariance(psd, CELLS)], 1).window is MEYER
 
 
 # ---------------------------------------------------------------------------

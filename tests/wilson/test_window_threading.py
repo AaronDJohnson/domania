@@ -56,9 +56,11 @@ CONSUMERS = frozenset({
     "eq45_plan",
     "gaussian", "gaussian_from_func", "loglike_gaussian", "loglike_gaussian_many",
     "dense_W", "wdm_congruence", "eq45_dense", "_dense_atoms",
-    # The window-taking constructors: building one without window= drops the window.  A
-    # ``cls(...)`` inside a classmethod is invisible to this name-based scan (value tests in
-    # tests/test_dom_windows.py cover those).
+    # The window-taking constructors must receive ``window=`` by keyword: building one without
+    # it drops the window.  Known limits of this name-based rule: a positional window
+    # (``WDMDomain(cells, 1.0, window)``) is flagged, a conservative false positive; a
+    # ``cls(...)`` inside a classmethod and a call to such a classmethod (``WDMDomain.full(...)``)
+    # are not seen, a false negative that the value tests in tests/test_dom_windows.py cover.
     "WDMDomain", "EvolutionaryCovariance", "BandAveragedVariance",
 })
 #: Names that hard-code a window inside a kernel: the default instance and the constructors.

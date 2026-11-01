@@ -157,7 +157,6 @@ class EvolutionaryCovariance(Covariance):
             raise ValueError(f"chol_impl must be 'numpy' or 'scipy'; got {chol_impl!r}")
         require_window(window)
         self.psd, self.cells, self.builder, self.assembly = psd, cells, builder, assembly
-        self.window = window
         self.n = len(cells.m)
         keep = keep_mask(cells)
         m_all, _ = packed_cells(cells.grid.Nf, cells.grid.Nt)
@@ -172,6 +171,12 @@ class EvolutionaryCovariance(Covariance):
             matrix = blocks if builder == "direct" else _DenseFromBlocks(blocks, sizes)
             self.impl = DenseCovariance(matrix, self.n, chol_impl=chol_impl, symmetrize=symmetrize)
         self.jittable = False
+
+    @property
+    def window(self) -> Window:  # type: ignore[override]
+        """The Wilson window of the cells' basis: the one the Eq. (45) plan is built with
+        (read-only; it is the block evaluator's own)."""
+        return self.block_evaluator.window
 
     @property
     def layout(self) -> str | None:

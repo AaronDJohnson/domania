@@ -46,6 +46,7 @@ from typing import Any, Literal, Protocol, runtime_checkable
 
 import numpy as np
 from domainia.wilson.backend import NUMPY, Backend, get_backend, pytree_dataclass, require_x64
+from domainia.wilson.windows import Window
 
 __all__ = [
     "CholFactor",
@@ -286,6 +287,10 @@ class Covariance:
     #: and ``pre`` (its :meth:`prepare` output) and threads them to its children: set by the
     #: combinators (``ChannelStack``).  Other covariances never receive them.
     threads_key: bool = False
+    #: The Wilson basis of the WDM cells this covariance lives on, or ``None`` if it is not on
+    #: WDM cells or the basis is unknown.  Subclasses that know it override this with a
+    #: read-only property; ``PushedCovariance`` refuses a WDM source domain with another window.
+    window: Window | None = None
 
     @property
     def batchable(self) -> bool:

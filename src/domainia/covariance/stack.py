@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from domainia.wilson.backend import Backend, get_backend, pytree_dataclass
+from domainia.wilson.windows import Window
 
 from .base import Covariance
 
@@ -67,6 +68,16 @@ class ChannelStack(Covariance):
         self.n = sum(c.n for c in self.covs)
         self.n_u = sum(c.n_u for c in self.covs)
         self.jittable = all(c.jittable for c in self.covs)
+
+    @property
+    def window(self) -> Window | None:  # type: ignore[override]
+        """The channels' common Wilson window, or ``None`` when they differ or a channel has
+        none (read-only)."""
+        windows = [getattr(c, "window", None) for c in self.covs]
+        first = windows[0]
+        if not isinstance(first, Window) or any(w is None or w != first for w in windows[1:]):
+            return None
+        return first
 
     def split(self, nu: Any) -> list[Any]:
         if nu.shape[-1] != self.k * len(self.covs):
