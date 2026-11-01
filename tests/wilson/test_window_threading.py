@@ -36,7 +36,7 @@ SCANNED = ("wilson/transform.py", "wilson/matrix.py", "wilson/stationary.py", "w
            "covariance/evolutionary.py", "covariance/base.py", "covariance/diagonal.py",
            "covariance/dense.py", "covariance/blocktri.py", "covariance/stack.py", "testing.py",
            "linalg.py", "data.py", "spectra.py", "__init__.py", "maps/__init__.py",
-           "covariance/__init__.py")
+           "covariance/__init__.py", "translate.py")
 #: The two modules that legitimately sample the Meyer window directly.
 UNSCANNED = frozenset({"wilson/filter.py", "wilson/windows.py"})
 #: Meyer sampling helpers: only ``wilson/filter.py`` (and ``wilson/windows.py``) may call them.
@@ -60,7 +60,8 @@ CONSUMERS = frozenset({
     # it drops the window.  Known limits of this name-based rule: a positional window
     # (``WDMDomain(cells, 1.0, window)``) is flagged, a conservative false positive; a
     # ``cls(...)`` inside a classmethod and a call to such a classmethod (``WDMDomain.full(...)``)
-    # are not seen, a false negative that the value tests in tests/test_dom_windows.py cover.
+    # are not seen, a false negative that the value tests in tests/test_dom_windows.py and
+    # tests/test_translate.py cover.
     "WDMDomain", "EvolutionaryCovariance", "BandAveragedVariance",
 })
 #: Names that hard-code a window inside a kernel: the default instance and the constructors.

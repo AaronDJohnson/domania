@@ -7,13 +7,14 @@ Every domain is a frozen, hashable dataclass, so it can be the static part of a
 * :class:`FourierDomain`: the absolute rfft bins ``[k0, k0 + n)`` of an ``N``-sample
   record, in one of three unit conventions (``"rfft"``: ``numpy.fft.rfft(x)``;
   ``"dt_rfft"``: ``dt * rfft(x)``; ``"sigma0"``: ``rfft(x) / sigma0``, the GB
-  normalisation).
+  normalisation).  ``.full(...)``: the full-record domain of :mod:`domainia.translate`.
 * :class:`CellSet`: a set of active WDM cells of one ``wilson.Grid``, always in **band
   order** (``m`` ascending, then ``n``), i.e. a subsequence of
   ``wilson.grid.packed_cells(Nf, Nt)``.
 * :class:`WDMDomain`: a cell set with a constant ``scale`` (the GB cells are
   ``Re(C z)`` with unit-norm atoms on ``z = rfft / sigma0``; the sinusoid uses 1) and the
   Wilson ``window`` of its basis (default ``domainia.wilson.MEYER``, the WDM transform).
+  ``.full(...)``: the full-record domain of :mod:`domainia.translate`.
 * :class:`ChannelAxis`: named channels (``("A", "E")`` for the GB); empty for one
   channel without a channel axis.
 """
@@ -109,6 +110,13 @@ class FourierDomain:
         object.__setattr__(self, "k0", k0)
         object.__setattr__(self, "n", n)
         object.__setattr__(self, "dt", _positive_float("dt", self.dt))
+
+    @classmethod
+    def full(cls, N: int, dt: float) -> FourierDomain:
+        """Every rfft bin of an ``N``-sample record in ``"dt_rfft"`` units (``dt * numpy.fft.rfft(x)``):
+        the Fourier domain of :func:`domainia.translate.transform`."""
+        N = _int("N", N, minimum=1)
+        return cls(N, dt, 0, N // 2 + 1, "dt_rfft")
 
     @property
     def size(self) -> int:
@@ -344,6 +352,12 @@ class WDMDomain:
             raise TypeError(f"window must be hashable (it is part of the domain's identity and "
                             f"static under jax.jit); got an unhashable "
                             f"{type(self.window).__name__}") from None
+
+    @classmethod
+    def full(cls, grid: wilson.Grid, window: Window = MEYER) -> WDMDomain:
+        """Every active cell of ``grid``, scale 1, Wilson ``window``: the WDM domain of
+        :func:`domainia.translate.transform` (dense ``(Nf + 1, Nt)`` layout there)."""
+        return cls(CellSet.all_active(grid), window=window)
 
     @property
     def size(self) -> int:
