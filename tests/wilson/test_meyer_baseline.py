@@ -15,7 +15,7 @@ import domainia.testing
 import domainia.variance
 from domainia import wilson
 
-from .meyer_cases import BASELINE, compute
+from .meyer_cases import BASELINE, THREADED, compute
 
 DM = SimpleNamespace(domains=domainia.domains, maps=domainia.maps, spectra=domainia.spectra,
                      variance=domainia.variance, covariance=domainia.covariance,
@@ -35,10 +35,6 @@ def _mismatches(got: dict, want: dict) -> list[str]:
 
 def test_default_window_reproduces_the_meyer_baseline_bit_for_bit(baseline):
     assert not _mismatches(compute(wilson, DM, {}, {}), baseline)
-
-
-#: Case-name prefixes whose kernels take ``window=`` (extended task by task).
-THREADED = ("transform.", "matrix.")
 
 
 def test_explicit_meyer_reproduces_the_baseline_bit_for_bit(baseline):

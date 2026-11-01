@@ -35,6 +35,9 @@ DTS = (1.0, 0.25)
 #: Dense O(N^2) outputs are recorded on this grid only (keeps the npz small).
 DENSE_GRID = (8, 16)
 BASELINE = Path(__file__).resolve().parent / "data" / "meyer_baseline.npz"
+#: Case-name prefixes whose kernels take ``window=`` (extended task by task).  The single
+#: source for ``test_meyer_baseline.py`` and ``test_window_threading.py``.
+THREADED = ("transform.", "matrix.")
 
 Case = tuple[str, Callable[[dict], Any]]
 

@@ -8,6 +8,13 @@ indices are served by Hermitian symmetry on read (forward) or
 discarded (inverse, where they are redundant by Hermitian symmetry of
 the real WDM wavelets).
 
+Every kernel here takes ``window=`` (a :class:`domainia.wilson.windows.Window`;
+default :data:`domainia.wilson.MEYER`, the Meyer window of the WDM transform) and
+computes in the Wilson basis of that window: $\\hat\\phi_c$ below is the window's
+centred samples, from :func:`domainia.wilson.windows.sample_window`.  The formulas,
+the edge normalisation and the precision rules are the same for every admissible
+window.
+
 The slab is linear-centred:
 
 $$\\ell_{m,k} \\equiv k + (m - 1)\\,N_t/2,\\qquad k = 0, \\ldots, N_t - 1.$$
@@ -104,7 +111,7 @@ from .grid import (
     validate_finite,
     validate_grid,
 )
-from .windows import MEYER, Window, sample_window
+from .windows import MEYER, Window, require_window, sample_window
 
 _F64 = np.dtype(np.float64)
 _C128 = np.dtype(np.complex128)
@@ -902,6 +909,9 @@ def inverse_time(
     >>> w = wdm.forward_time(x, Nf, Nt, dt)
     >>> bool(np.allclose(wdm.inverse_time(w, Nf, Nt, dt), x, atol=1e-12))
     True
+    >>> w8 = wdm.forward_time(x, Nf, Nt, dt, window=wdm.Meyer(8))       # another window
+    >>> bool(np.allclose(wdm.inverse_time(w8, Nf, Nt, dt, window=wdm.Meyer(8)), x, atol=1e-12))
+    True
     """
     N = n_samples(Nf, Nt)
     be = be or get_backend(wmn)
@@ -922,11 +932,14 @@ def base_atom_spectra(Nf: int, Nt: int, dt: float, *,
     even number of columns (:func:`atom_spectrum`).  ``dt * inverse_many(e)``:
     :func:`inverse` returns ``rfft(W_a^{-1} e) = rfft(atom) / dt``.  The same
     arithmetic as ``wdm_toys.matrix.Grid._base_spectra`` and wdm_dev
-    ``PackedGrid._base_spectra``, so the Eq. 45 constants built from it are
-    bit-identical to the ones that produced the paper's references.
+    ``PackedGrid._base_spectra``, so with the default window (:data:`domainia.wilson.MEYER`)
+    the Eq. 45 constants built from it are bit-identical to the ones that produced the
+    paper's references.
 
     Parameters
     ----------
+    Nf, Nt : int
+    dt : float
     window : Window, optional
         The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
         See :mod:`domainia.wilson.windows`.
@@ -953,21 +966,22 @@ def _check_base_spectrum(base: dict[tuple[int, int], CArray], G: CArray, Nf: int
     entries pins ``Nf``; the length ``N//2+1`` of ``G`` then pins ``Nt``; the
     energy of the atom pins ``dt``, because every active atom has energy
     exactly ``dt`` (``W_a W_a^T = dt I``; measured to <= 5e-16 relative).
-    ``N = Nf Nt`` is even, so the last bin is the Nyquist bin.
+    ``N = Nf Nt`` is even, so the last bin is the Nyquist bin.  The window is
+    not pinned: the atoms of every admissible window have energy ``dt``.
     """
     N = n_samples(Nf, Nt)
     if len(base) != 2 * Nf or np.shape(G) != (N // 2 + 1,):
         raise ValueError(
             f"base does not hold the base atoms of the ({Nf}, {Nt}) grid: "
             f"{len(base)} entries of shape {np.shape(G)}, expected {2 * Nf} of "
-            f"shape ({N // 2 + 1},); build it with base_atom_spectra({Nf}, {Nt}, dt)"
+            f"shape ({N // 2 + 1},); build it with base_atom_spectra({Nf}, {Nt}, dt, window=...)"
         )
     G = np.asarray(G)
     energy = (2.0 * np.vdot(G, G).real - abs(G[0]) ** 2 - abs(G[-1]) ** 2) / N
     if not abs(energy - dt) <= 1e-9 * dt:
         raise ValueError(
             f"base was not built for dt={dt}: its atoms have energy {energy:.17g}, "
-            f"and every atom of base_atom_spectra({Nf}, {Nt}, dt) has energy dt"
+            f"and every atom of base_atom_spectra({Nf}, {Nt}, dt, window=...) has energy dt"
         )
 
 
@@ -982,10 +996,21 @@ def atom_spectrum(m: int, n: int, Nf: int, Nt: int, dt: float, *,
 
     Parameters
     ----------
+    m, n : int
+        The active cell: band ``m``, time bin ``n``.
+    Nf, Nt : int
+    dt : float
+    base : dict, optional
+        :func:`base_atom_spectra` of the grid; built here (with ``window``) when omitted.
+        When ``base`` is given, ``window`` is not used: ``base`` carries the window it was
+        built with (from ``base_atom_spectra(..., window=)``), and a base built with
+        another window is not detected.
     window : Window, optional
         The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
+        See :mod:`domainia.wilson.windows`.  It must be a window even when ``base`` is
+        given (``TypeError`` otherwise).
     """
+    require_window(window)
     validate_grid(Nf, Nt)
     validate_dt(dt)
     if not 0 <= n < Nt:
@@ -1017,6 +1042,10 @@ def band_atoms(bands: NDArray[np.integer], Nf: int, Nt: int, dt: float, *,
 
     Parameters
     ----------
+    bands : array_like of int
+        Interior bands, each in ``1..Nf-1``.
+    Nf, Nt : int
+    dt : float
     window : Window, optional
         The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
         See :mod:`domainia.wilson.windows`.
@@ -1075,6 +1104,16 @@ def forward_bands(z: CArray, k0: int, bands: NDArray[np.integer], Nf: int, Nt: i
 
     Parameters
     ----------
+    z : ndarray, complex, shape (..., n)
+        Unit-free rfft bins ``k0 .. k0+n-1`` of a record; they must cover every band window.
+    k0 : int
+        Absolute rfft bin of ``z[..., 0]``.
+    bands : array_like of int
+        Interior bands, each in ``1..Nf-1``.
+    Nf, Nt : int
+    dt : float
+    be : Backend, optional
+        Array backend (default: the backend of ``z``).
     window : Window, optional
         The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
         See :mod:`domainia.wilson.windows`.
@@ -1109,6 +1148,18 @@ def inverse_bands(w: Array, k0: int, n_bins: int, bands: NDArray[np.integer], Nf
 
     Parameters
     ----------
+    w : ndarray, float, shape (..., nb, Nt)
+        Cells of ``bands``.
+    k0 : int
+        Absolute rfft bin of the first output bin.
+    n_bins : int
+        Number of output bins; ``[k0, k0+n_bins)`` must cover every band window.
+    bands : array_like of int
+        Interior bands, each in ``1..Nf-1``.
+    Nf, Nt : int
+    dt : float
+    be : Backend, optional
+        Array backend (default: the backend of ``w``).
     window : Window, optional
         The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
         See :mod:`domainia.wilson.windows`.
