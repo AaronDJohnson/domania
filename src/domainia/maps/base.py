@@ -155,8 +155,7 @@ class LinearMap:
         if self.kind == "widely":
             raise TypeError(
                 f"{type(self).__name__} is widely linear (A z + B conj z): a circular bin "
-                "covariance does not stay circular, so it cannot be pushed; the GB pad model "
-                "uses ZeroPadded('cell_congruence') instead")
+                "covariance does not stay circular, so it cannot be pushed")
         return PushedCovariance(self, cov)
 
     def on(self, be: Backend) -> "LinearMap":
@@ -187,13 +186,13 @@ class PushedCovariance:
 
     def _matvec(self) -> Any:
         """``cov.matvec``, or a TypeError naming gap G9: a covariance on WDM cells
-        (``DiagonalCovariance``, ``Eq45Covariance``, ...) has no fixed-noise-state ``matvec``,
+        (``DiagonalCovariance``, ``EvolutionaryCovariance``, ...) has no fixed-noise-state ``matvec``,
         so spec section 4.2's WDM -> time translation ``W^T Lambda W / dt^2`` is not available."""
         fn = getattr(self.cov, "matvec", None)
         if fn is None:
             raise TypeError(f"{type(self.cov).__name__} has no matvec: a push through a "
                             f"{self.map.kind!r} map needs a fixed-noise-state SupportsMatvec "
-                            "(X -> X Sigma, e.g. ExactTimeCovariance.at(nu)) "
+                            "(X -> X Sigma) "
                             "(gap G9: WDM->time translation not implemented)")
         return fn
 

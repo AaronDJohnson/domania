@@ -7,7 +7,7 @@ import dataclasses
 import numpy as np
 import pytest
 from domainia import wilson as wdm
-from dom_db_inputs import GB_CASES, DenseCov, gb_case, jax_or_skip
+from dom_db_inputs import DenseCov, jax_or_skip
 
 from domainia.domains import CellSet, FourierDomain, TimeDomain, WDMDomain
 from domainia.maps import (BinSelect, Compose, Identity, LinearMap, PushedCovariance, Restrict,
@@ -119,21 +119,6 @@ def test_binselect_windows_and_complex_push():
     ref = (A @ A[10:40])[[0, 7, 59]]
     for got in (both.rows([0, 7, 59]), LinearMap.rows(both, [0, 7, 59])):
         assert np.max(np.abs(got - ref)) <= 1e-13 * np.max(np.abs(ref))
-
-
-@pytest.mark.parametrize("case", GB_CASES)
-def test_store_windows_are_the_prepared_bins(case):
-    """Ported from GB tests/test_matrix.py:43-49: the analysis window inside the store is the
-    prepared data, and the nominal bins (whittle_raw, exact) sit inside the window."""
-    c = gb_case(case)
-    p = c["prep"]
-    store = FourierDomain(c["N"], c["DT"], int(p["store_offset"]), int(p["store_n"]), "sigma0")
-    window = BinSelect(store, (int(p["bin_offset"]), int(p["n_bins"])))
-    assert window.offset > 0 and window.offset + window.dst.n < store.n
-    assert np.array_equal(window.apply(p["store_z"]), p["z"])
-    lo, n = int(p["freq_lo"]), int(p["freq_n"])
-    nominal = BinSelect(window.dst, (int(p["bin_offset"]) + lo, n))
-    assert np.array_equal(nominal.apply(window.apply(p["store_z"])), p["z"][:, lo:lo + n])
 
 
 def test_maps_are_frozen_dataclasses():

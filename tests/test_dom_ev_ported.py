@@ -8,15 +8,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from domainia import wilson as wdm
-from domainia.wilson.grid import active_mask
 from domainia.wilson.backend import NUMPY
-from domainia.wilson.matrix import active_W
 from domainia import linalg as la
-from domainia.covariance import BlockTriCovFactor, CholFactor, DiagFactor, padded_factor, schur_factor
-
-NF, NT, DT = 8, 16, 0.5
-N = NF * NT
+from domainia.covariance import BlockTriCovFactor, CholFactor, DiagFactor
 
 
 @pytest.fixture
@@ -62,37 +56,3 @@ def test_solver_flavours_agree_with_numpy(rng):
                    (DiagFactor.build(d, NUMPY), np.diag(d))):
         np.testing.assert_allclose(f.solve(b), np.linalg.solve(ref, b), atol=1e-10)
         assert float(f.logdet) == pytest.approx(np.linalg.slogdet(ref)[1], abs=1e-10)
-
-
-def test_schur_edge_exact_matches_the_dense_matrix(rng):
-    n = 14
-    C = _spd(n, rng)
-    e = np.array([0, 1, 12, 13])
-    i = np.setdiff1d(np.arange(n), e)
-    T = CholFactor.build(C[np.ix_(i, i)], impl="scipy", be=NUMPY)
-    sch = schur_factor(T, C[np.ix_(e, e)], C[np.ix_(e, i)], form="solve", chol_impl="scipy", be=NUMPY)
-    b = rng.standard_normal((n, 2))
-    np.testing.assert_allclose(sch.solve(b, C={"e": e, "i": i, "interior": None}), np.linalg.solve(C, b),
-                               atol=1e-10)
-    assert float(sch.logdet) == pytest.approx(np.linalg.slogdet(C)[1], abs=1e-10)
-
-
-def test_padded_marginal_is_the_data_block_of_the_extended_covariance(rng):
-    pad = 4
-    Ntp = NT + pad
-    Np = NF * Ntp
-    mask = active_mask(NF, Ntp)
-    Wa = active_W(NF, Ntp, DT)
-    Lam = _spd(Np, rng)
-    unit = np.zeros((Np - N, Np))
-    unit[np.arange(Np - N), np.arange(N, Np)] = 1.0
-    Wp = wdm.forward_time_many(unit, NF, Ntp, DT)[:, mask].T
-    pm = padded_factor(CholFactor.build(Lam, impl="scipy", be=NUMPY), Wp, grid=wdm.Grid(NF, Ntp, DT), n=N,
-                       chol_impl="scipy", be=NUMPY)
-    C_ext = Wa.T @ Lam @ Wa / DT**2
-    C_dd = C_ext[:N, :N]
-    x = rng.standard_normal(N)
-    m, nn = wdm.grid.packed_cells(NF, Ntp)
-    got = pm.solve(x, C={"Wp": Wp, "m": m, "n_idx": nn, "base": None})
-    np.testing.assert_allclose(got, np.linalg.solve(C_dd, x), rtol=1e-8, atol=1e-10)
-    assert float(pm.logdet) == pytest.approx(np.linalg.slogdet(C_dd)[1], abs=1e-8)

@@ -68,10 +68,8 @@ QuadForm = Literal["solve", "whiten", "elementwise"]
 class Factor(Protocol):
     """What a likelihood reads from a factorised covariance.
 
-    ``quad`` is universal; ``solve`` and ``whiten`` are not: ``MarginalFactor`` and
-    ``ProjectedFactor`` (``domainia.nuisance``) expose ``quad`` and ``logdet`` only, and
-    ``OperatorFactor`` / ``PaddedFactor`` have no whitening (``form="solve"``).  Those
-    methods raise ``NotImplementedError``; ``tests/test_dom_cov_api.py`` pins the table.
+    ``quad`` is universal; a factor without ``solve`` or ``whiten`` raises
+    ``NotImplementedError`` there; ``tests/test_dom_cov_api.py`` pins the table.
     """
 
     logdet: Any
@@ -296,16 +294,13 @@ class Covariance:
     n_u: int = 0
     #: ``_factor`` takes the keywords ``key`` (this covariance's :meth:`state_key` at ``nu``)
     #: and ``pre`` (its :meth:`prepare` output) and threads them to its children: set by the
-    #: combinators and ``SchurEdge``.  Other covariances never receive them.
+    #: combinators (``ChannelStack``).  Other covariances never receive them.
     threads_key: bool = False
 
     @property
     def batchable(self) -> bool:
-        """Whether a sampler may stack this covariance's noise states into one ``vmap``
-        (``domainia.sampling.NoiseStateCache(batch_rows=...)``): every child's, by default.
-        ``SchurEdge`` over time rows says no -- WG never batched the sinusoid edge-exact
-        states (``MatrixGPU._cached_rows``: ``self.edge == "exact" or not self.batch_rungs``),
-        ~120 MiB each at the manuscript grid."""
+        """Whether a sampler may stack this covariance's noise states into one ``vmap``:
+        every child's, by default."""
         return all(c.batchable for c in self.children().values())
 
     def host_constants(self) -> Any:
@@ -317,8 +312,7 @@ class Covariance:
     def state_key(self, nu: Any) -> Any:
         """A hashable static key of the factorisation at the concrete ``nu`` (``None``: no
         host-side dispatch).  The default forwards the children's keys at the same ``nu``;
-        ``SchurEdge`` with adaptive rows adds the Chebyshev order, ``ChannelStack`` splits
-        ``nu`` per channel.  A likelihood groups cache misses by it (spec §3.5) and never
+        ``ChannelStack`` splits ``nu`` per channel.  A likelihood groups cache misses by it (spec §3.5) and never
         traces a factorisation whose key is not ``None`` inside its own ``jit``."""
         keys = tuple(c.state_key(nu) for c in self.children().values())
         return None if all(k is None for k in keys) else keys
@@ -328,10 +322,8 @@ class Covariance:
 
     def prepare(self, C: Any, nu: Any, be: Backend, key: Any) -> Any:
         """Work done OUTSIDE the compiled factorisation at a concrete ``nu`` (default: none).
-        ``SchurEdge`` with staged rows evaluates them here -- XLA-CPU's irfft is ~6x slower
-        on an input computed inside the same program (WG ``_exact_rows_staged``) -- and the
-        combinators collect their children's; the result reaches ``_factor(..., pre=)`` as a
-        jit argument."""
+        The combinators collect their children's; the result reaches ``_factor(..., pre=)``
+        as a jit argument."""
         return None
 
     @staticmethod
@@ -365,16 +357,14 @@ class Covariance:
 
     def complete_constants(self, C: Any, be: Backend) -> Any:
         """Constants derived ON ``be`` from the device-put host constants ``C`` (default:
-        none).  ``SchurEdge`` builds the staged rows' ``Phi`` here, chunk by chunk on the
-        device, so the host never holds it (spec section 3.5; S4 deferral (c))."""
+        none)."""
         return C
 
     def factor(self, nu: Any, be: Backend | None = None, *, jit: bool | None = None) -> Any:
         """Factorise at the noise state ``nu`` (``A_n`` is never inside ``nu``).
 
         JAX and ``jittable`` (or ``jit=True``): the static ``key = state_key(nu)`` (a concrete
-        ``nu``: e.g. the adaptive Chebyshev order of ``SchurEdge`` rows, also below a
-        combinator) selects ONE compiled program per key,
+        ``nu``, also below a combinator) selects ONE compiled program per key,
         ``jax.jit(lambda C, nu, pre: self._factor(C, nu, be, key=key, pre=pre))``, the
         constants and the :meth:`prepare` output (staged rows) passed as its arguments.
         NumPy, ``jit=False`` or a non-jittable covariance: eager, in the same order (the

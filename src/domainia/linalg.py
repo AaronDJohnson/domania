@@ -14,12 +14,9 @@ routine                     ``impl``    oracle
 ==========================  ==========  ===============================================
 
 **One factor family (S4 deferral (a)).**  The factor objects with methods -- diagonal and
-dense Cholesky (``domainia.covariance.base.DiagFactor`` / ``CholFactor``), the
-block-tridiagonal factor in cell order (``covariance.blocktri.BlockTriCovFactor``), the
-Schur complement (``covariance.edges.SchurFactor`` / ``schur_factor``, WT ``Schur`` and the
-WG / GB ``"scaled"`` order) and the padded marginal (``covariance.edges.PaddedFactor`` /
-``padded_factor``, WT ``PaddedMarginal`` and the WG cell-space ``reduce``) -- live in
-``domainia.covariance``; this module keeps the array kernels they call.  The duplicate
+dense Cholesky (``domainia.covariance.base.DiagFactor`` / ``CholFactor``) and the
+block-tridiagonal factor in cell order (``covariance.blocktri.BlockTriCovFactor``) -- live
+in ``domainia.covariance``; this module keeps the array kernels they call.  The duplicate
 free-function copies S2 had here (``diag_factor`` ... ``factor_solve``) are gone.
 
 Layouts of a block-tridiagonal matrix (spec section 3.2):
@@ -227,7 +224,7 @@ def _ragged_factor(diag: Sequence[Any], up: Sequence[Any | None], be: Backend) -
     return BlockTriFactor(tuple(Ls), tuple(Xs), logdet, True, None, "ragged")
 
 
-def _padded_factor(diag: Any, up: Any, band_layout: BandLayout, be: Backend) -> BlockTriFactor:
+def _padded_layout_factor(diag: Any, up: Any, band_layout: BandLayout, be: Backend) -> BlockTriFactor:
     # WG _btri_factor (gpu_sinusoid/wdmtoysgpu/matrix.py:96-109), line for line.
     xp = be.xp
     L0, _ = be.cholesky(diag[0], impl="numpy")
@@ -280,7 +277,7 @@ def blocktri_factor(diag: Any, up: Any, *, layout: Layout,
         if diag.shape != (band_layout.nb, band_layout.B, band_layout.B):
             raise ValueError(f"diag must be ({band_layout.nb}, {band_layout.B}, {band_layout.B}); "
                              f"got {diag.shape}")
-        return _padded_factor(diag, up, band_layout, be)
+        return _padded_layout_factor(diag, up, band_layout, be)
     raise ValueError(f"layout must be 'ragged' or 'padded'; got {layout!r}")
 
 

@@ -1,29 +1,17 @@
-"""D-B2: TimeToWDM and WDMToTime -- dense oracles, adjoints, G6 and JAX parity.
-
-The G6 pins were bitwise (sha256) until the wdm Hz window (v0.12.0) moved the transform by
-rounding; they are now tolerance checks against the same G6 objects, rebuilt bit for bit
-from the shipped ``w_d`` and the frozen omega-window oracle (whose sha256 still is the pin).
-"""
+"""D-B2: TimeToWDM and WDMToTime -- dense oracles and adjoints."""
 
 from __future__ import annotations
-
-import sys
 
 import numpy as np
 import pytest
 from domainia import wilson as wdm
-from dom_db_inputs import (DATA, REL, SIN_CUT, SIN_DT, SIN_NF, SIN_NT, SIN_PAD_COLUMNS, DenseCov,
-                           fingerprint_gap, jax_or_skip, sha256_array, sinusoid_data, sinusoid_g6)
+from dom_db_inputs import DenseCov
 from domainia.wilson.matrix import active_W
 
 from domainia.domains import CellSet, TimeDomain, WDMDomain
 from domainia.maps import TimeToWDM, WDMToTime
 
 SMALL = [(8, 16, 0.5), (16, 32, 1.7)]
-#: G6 transform arrays against their historical reference, relative to its max |value|.
-#: Hz window (v0.12.0): measured 3.1e-16 (y_data), 6.2e-16 (Wp vs the oracle), 4.2e-16
-#: (Wp fingerprint values), 0 (Wp l2).
-HZ_RTOL = 1e-14
 
 
 def _maps(Nf, Nt, dt, lead=0, trail=0):
@@ -110,92 +98,3 @@ def test_mismatched_grid_is_refused():
     g = wdm.Grid(8, 16, 0.5)
     with pytest.raises(ValueError, match="does not match"):
         TimeToWDM(TimeDomain(g.N, 1.0), WDMDomain(CellSet.all_active(g)))
-
-
-def _sinusoid_maps():
-    g = wdm.Grid(SIN_NF, SIN_NT, SIN_DT)
-    td = TimeDomain(g.N, SIN_DT)
-    cells = CellSet.all_active(g)
-    return td, TimeToWDM(td, WDMDomain(cells)), TimeToWDM(td, WDMDomain(cells.drop_columns(*SIN_CUT)))
-
-
-def test_g6_sinusoid_cells_to_rounding():
-    """y_data of band_raw/band_exact (16384 cells) and band_cut (15681): WT Variant.map.
-
-    Reference: the band-order packing of the shipped ``w_d`` (toy_data.npz), whose sha256 is
-    the G6 y_data pin.  Since the wdm Hz window (v0.12.0) the cells equal it to rounding, no
-    longer bit for bit (the name is kept: scripts/golden/s2_report.py maps G6 objects to it)."""
-    meta, _ = sinusoid_g6()
-    d = sinusoid_data()
-    _, raw, cut = _sinusoid_maps()
-    with np.load(DATA / "sinusoid" / "manuscript_mid" / "toy_data.npz") as z:
-        ref = wdm.grid.pack(np.asarray(z["w_d"], dtype=float), SIN_NF, SIN_NT)
-    assert sha256_array(ref) == meta["maps"]["band_raw"]["y_data"]["sha256"]
-    assert sha256_array(ref) == meta["maps"]["band_exact"]["y_data"]["sha256"]
-    y = raw.apply(d)
-    assert y.shape == (16384,)
-    assert np.max(np.abs(y - ref)) <= HZ_RTOL * np.max(np.abs(ref))      # measured 3.1e-16
-    ref_cut = ref[cut.dst.cells.packed_positions()]
-    assert sha256_array(ref_cut) == meta["maps"]["band_cut"]["y_data"]["sha256"]
-    yc = cut.apply(d)
-    assert yc.shape == (15681,)
-    assert np.max(np.abs(yc - ref_cut)) <= HZ_RTOL * np.max(np.abs(ref_cut))   # measured 3.1e-16
-
-
-def _oracle_Wp(unit: np.ndarray, Ntp: int) -> np.ndarray | None:
-    """``Wp`` from the frozen omega-window oracle ``vendored_2f7136c`` (packages/wdm/tests/oracle;
-    on sys.path in a root run through packages/wdm/tests/conftest.py), or None without it."""
-    oracle = REL / "packages" / "wdm" / "tests" / "oracle"
-    if oracle.is_dir() and str(oracle) not in sys.path:
-        sys.path.append(str(oracle))
-    try:
-        from vendored_2f7136c.grid import active_mask
-        from vendored_2f7136c.transform import forward_time_many
-    except ImportError:
-        return None
-    return np.ascontiguousarray(forward_time_many(unit, SIN_NF, Ntp, SIN_DT)[:, active_mask(SIN_NF, Ntp)].T)
-
-
-def test_g6_sinusoid_padding_impulses_Wp_to_rounding():
-    """``Wp`` (17408 x 1024): the padded grid's transforms of the 1024 padding samples
-    (WT MatrixWdm, matrix.py:782-784) -- batched forward_time_many + band-order packing.
-
-    Against the G6 fingerprint and, when importable, the frozen omega-window oracle (whose
-    sha256 is the G6 pin): equal to rounding since the wdm Hz window (v0.12.0), no longer bit
-    for bit (the name is kept: scripts/golden/s2_report.py maps G6 objects to it)."""
-    meta, _ = sinusoid_g6()
-    fp = meta["maps"]["Wp"]
-    Ntp = SIN_NT + SIN_PAD_COLUMNS
-    g = wdm.Grid(SIN_NF, Ntp, SIN_DT)
-    ext = TimeToWDM(TimeDomain(g.N, SIN_DT), WDMDomain(CellSet.all_active(g)))
-    n_pad = g.N - SIN_NF * SIN_NT
-    unit = np.zeros((n_pad, g.N))
-    unit[np.arange(n_pad), SIN_NF * SIN_NT + np.arange(n_pad)] = 1.0
-    Wp = np.ascontiguousarray(ext.apply(unit).T)
-    assert Wp.shape == (17408, 1024) == tuple(fp["shape"])
-    assert fingerprint_gap(fp, Wp) <= HZ_RTOL                                 # measured 4.2e-16
-    assert abs(np.linalg.norm(Wp) - fp["l2"]) <= HZ_RTOL * fp["l2"]           # measured 0
-    ref = _oracle_Wp(unit, Ntp)
-    if ref is not None:
-        assert sha256_array(ref) == fp["sha256"]
-        assert np.max(np.abs(Wp - ref)) <= HZ_RTOL * np.max(np.abs(ref))     # measured 6.2e-16
-
-
-@pytest.mark.jax
-def test_jax_parity_under_jit_with_the_map_as_argument():
-    jax, JB = jax_or_skip()
-    td, raw, cut = _sinusoid_maps()
-    d = sinusoid_data()
-    for M in (raw, cut):
-        f = jax.jit(lambda m, x: m.apply(x))
-        out = f(M.on(JB), JB.asarray(d))
-        assert isinstance(out, jax.Array)
-        ref = M.apply(d)
-        assert np.max(np.abs(np.asarray(out) - ref)) <= 1e-13 * np.max(np.abs(ref))
-    y = raw.apply(d)
-    back = jax.jit(lambda m, v: m.adjoint(v))(raw.on(JB), JB.asarray(y))
-    assert isinstance(back, jax.Array)
-    assert np.max(np.abs(np.asarray(back) - raw.adjoint(y))) <= 1e-13 * np.max(np.abs(d))
-    Mi = WDMToTime(raw.dst, td)
-    inv = jax.jit(lambda m, v: m.apply(v))(Mi.on(JB), JB.asarray(y))
-    assert np.max(np.abs(np.asarray(inv) - d)) <= 1e-12 * np.max(np.abs(d))

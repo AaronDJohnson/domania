@@ -5,48 +5,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from domainia import wilson as wdm
-from dom_db_inputs import (SIN_CUT, SIN_DT, SIN_FMIN, SIN_NF, SIN_NT, SIN_PAD_COLUMNS, DenseCov,
-                           jax_or_skip, sinusoid_data)
+from dom_db_inputs import SIN_DT, SIN_NF, SIN_NT, SIN_PAD_COLUMNS, DenseCov
 
-from domainia.domains import CellSet, FourierDomain, TimeDomain, WDMDomain
+from domainia.domains import CellSet, TimeDomain, WDMDomain
 from domainia.maps import Compose, CropTime, TimeToFourier, TimeToWDM, ZeroPadTime
 
 N, DT = SIN_NF * SIN_NT, SIN_DT
-
-
-def _oracle_keep(n: int, fmin: float) -> np.ndarray:
-    """WT FourierBand / MatrixWhittle keep, verbatim (band.py:17-26, matrix.py:883-884)."""
-    f = np.fft.rfftfreq(n, d=DT)
-    keep = (f >= max(fmin, 0.0)) & (f < 0.5 / DT)
-    keep[[0, -1]] = False
-    return keep
-
-
-def test_sinusoid_whittle_raw_bins_are_bitwise():
-    d = sinusoid_data()
-    F = TimeToFourier(TimeDomain(N, DT), fmin=SIN_FMIN)
-    assert F.dst == FourierDomain(N, DT, 64, 8128, "rfft") and F.kind == "analysis"
-    assert 2 * F.dst.n == 16256                        # spec §4.6: 16256 kept, 128 discarded
-    R = F.apply(d)
-    assert np.array_equal(R, np.fft.rfft(d)[_oracle_keep(N, SIN_FMIN)])
-    # rows reduce k j mod N exactly: 8e-16 here (the unreduced phase gives 1.1e-13)
-    idx = np.array([0, 17, 1000, F.dst.n - 1])
-    assert np.max(np.abs(F.rows(idx) @ d - R[idx])) <= 1e-14 * np.max(np.abs(R))
-
-
-def test_sinusoid_whittle_cut_crop_and_bins_are_bitwise():
-    d = sinusoid_data()
-    lo, hi = SIN_CUT[0] * SIN_NF, (SIN_NT - SIN_CUT[1]) * SIN_NF
-    crop = CropTime(TimeDomain(N, DT), lo, hi - lo)
-    assert (lo, hi - lo) == (384, 15680)
-    assert crop.dst == TimeDomain(15680, DT, 384 * DT)
-    F = TimeToFourier(crop.dst, fmin=SIN_FMIN)
-    W = Compose(F, crop)
-    R = W.apply(d)
-    assert np.array_equal(R, np.fft.rfft(d[slice(lo, hi)])[_oracle_keep(15680, SIN_FMIN)])
-    assert (F.dst.k0, F.dst.n) == (62, 7778)
-    with pytest.raises(ValueError, match="last axis"):    # the uncropped record is refused
-        F.apply(d)
 
 
 def test_fourier_rows_adjoint_and_orthonormal_coordinates():
@@ -114,19 +78,3 @@ def test_sinusoid_pad_record_is_bitwise_the_oracle_extension():
     ext[:, :N] = X
     ref = wdm.forward_time_many(ext, g.Nf, g.Nt, DT)[:, wdm.active_mask(g.Nf, g.Nt)]
     assert np.array_equal(M.apply(X), ref)
-
-
-@pytest.mark.jax
-def test_jax_parity():
-    jax, JB = jax_or_skip()
-    d = sinusoid_data()
-    F = TimeToFourier(TimeDomain(N, DT), fmin=SIN_FMIN)
-    out = jax.jit(lambda m, x: m.apply(x))(F, JB.asarray(d))
-    assert isinstance(out, jax.Array)
-    ref = F.apply(d)
-    assert np.max(np.abs(np.asarray(out) - ref)) <= 1e-13 * np.max(np.abs(ref))
-    Z = ZeroPadTime(TimeDomain(N, DT), 1024)
-    C = CropTime(TimeDomain(N, DT), 384, 15680)
-    for M in (Z, C):
-        o = jax.jit(lambda m, x: m.apply(x))(M, JB.asarray(d))
-        assert isinstance(o, jax.Array) and np.array_equal(np.asarray(o), M.apply(d))

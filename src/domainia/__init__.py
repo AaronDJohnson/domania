@@ -12,23 +12,18 @@ Modules
 * :mod:`domainia.linalg`: array kernels -- block-tridiagonal (ragged / padded), Hermitian
   block, preconditioned CG (the factor objects -- diagonal, dense, Schur, padded marginal --
   are :mod:`domainia.covariance`'s, one family since S4)
-* :mod:`domainia.assets`: ``Artifact`` (identity + sha256, fail-closed, never writes
-  unless asked)
 * :mod:`domainia.testing`: dense oracles for tests (not imported here)
 """
 
 from __future__ import annotations
 
-from . import assets, data, domains, linalg
-from .assets import Artifact, ArtifactError
+from . import data, domains, linalg
 from .data import FourierBins, TimeSeries, WDMCells
 from .domains import CellSet, ChannelAxis, FourierDomain, TimeDomain, WDMDomain
 
 __version__ = "2.0.0"
 
 __all__ = [
-    "Artifact",
-    "ArtifactError",
     "CellSet",
     "ChannelAxis",
     "FourierBins",
@@ -38,7 +33,6 @@ __all__ = [
     "WDMCells",
     "WDMDomain",
     "__version__",
-    "assets",
     "data",
     "domains",
     "linalg",

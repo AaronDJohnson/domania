@@ -153,7 +153,7 @@ def domainia_cases(dm: Any, wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
     gen = dm.spectra.GenericPSD(
         lambda f, t, nu: psd(f) * (1.0 + nu[0] * np.sin(2.0 * np.pi * np.asarray(t, dtype=float) / T)))
     nu = np.array([0.4])
-    Cov = getattr(dm.covariance, "EvolutionaryCovariance", None) or dm.covariance.Eq45Covariance
+    Cov = dm.covariance.EvolutionaryCovariance
 
     def W(c: Any, kw: dict) -> Any:
         return D.WDMDomain(c, **kw)

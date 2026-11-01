@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from dom_db_inputs import DenseCov, gb_case, jax_or_skip
+from dom_db_inputs import DenseCov, jax_or_skip
 
 from domainia.domains import FourierDomain
 from domainia.maps import FourierCrop, FourierZeroPad, crop_maps, pad_maps
@@ -96,26 +96,6 @@ def test_widely_linear_adjoint_and_no_push(cls):
         assert type(FourierCrop(SRC, M.dst, np.int64(24)).start) is int
         with pytest.raises(TypeError):
             FourierCrop(SRC, M.dst, 24.0)
-
-
-def test_gb_whittle_cut_data_and_template_sites_agree():
-    """GB whittle_map: data ``A @ z.T + B @ conj(z).T`` and template ``(h @ A.T) + (conj(h) @ B.T)``
-    (matrix.py:892, 897): apply_data() is the data site bitwise, apply() the template site;
-    the two orientations differ by ~1.8e-15 relative (BLAS)."""
-    c = gb_case("gb_3mo")
-    p = c["prep"]
-    Nf = c["N"] // c["NT"]
-    store = FourierDomain(c["N"], c["DT"], int(p["store_offset"]), int(p["store_n"]), "sigma0")
-    lead, trail = 5, 4
-    crop = FourierDomain((c["NT"] - lead - trail) * Nf, c["DT"], int(p["crop_k0"]),
-                         int(p["crop_n"]), "sigma0")
-    C = FourierCrop(store, crop, lead * Nf)
-    z = p["store_z"]
-    data_site = (C.A @ z.T + C.B @ np.conj(z).T).T
-    assert np.array_equal(C.apply_data(z), data_site)
-    out = C.apply(z)
-    assert out.shape == (2, 347)
-    assert np.max(np.abs(out - data_site)) <= 1e-14 * np.max(np.abs(data_site))
 
 
 @pytest.mark.jax

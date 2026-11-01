@@ -13,16 +13,13 @@ import pytest
 
 from domainia import wilson as wdm
 from domainia.wilson.backend import NUMPY
-from domainia.wilson.evolutionary import eq45_blocks_cheb, eq45_coeffs_bessel, eq45_plan, exact_covariance
+from domainia.wilson.evolutionary import eq45_blocks_cheb, eq45_coeffs_bessel, eq45_plan
 from domainia import linalg as la
-from domainia import testing as T
-from domainia.covariance import CholFactor, DiagFactor, padded_factor, schur_factor
 from domainia.domains import CellSet
 
 pytestmark = pytest.mark.jax
 
 NF, NT, DT = 8, 16, 1.0 / 16
-N = NF * NT
 F_MIN, F_REF = 0.5, 1.0
 GRID = wdm.Grid(NF, NT, DT)
 TESTS = Path(__file__).resolve().parent
@@ -49,14 +46,13 @@ def test_device_constants_need_x64():
             "la.device_constants(la.BandLayout.from_sizes([2, 3]))\n")
     env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH",)}
     env.update(PYTHONDONTWRITEBYTECODE="1", JAX_ENABLE_X64="0",
-               PYTHONPATH=os.pathsep.join(str(p) for p in (TESTS.parent / "src",
-                                                           TESTS.parent.parent / "wdm" / "src")))
+               PYTHONPATH=str(TESTS.parent / "src"))
     out = subprocess.run([sys.executable, "-P", "-c", code], env=env, cwd=str(TESTS),
                          capture_output=True, text=True)
     assert out.returncode != 0 and "float64 under JAX" in out.stderr
 
 
-def test_padded_factor_jits_and_vmaps_with_the_layout_as_an_argument(jax_be, rng):
+def test_padded_layout_factor_jits_and_vmaps_with_the_layout_as_an_argument(jax_be, rng):
     import jax
     import jax.numpy as jnp
 
@@ -127,63 +123,6 @@ def test_ragged_runs_eagerly_on_jax_and_refuses_to_trace(jax_be, rng):
     with pytest.raises(ValueError, match="eagerly only"):
         jax.jit(lambda d0: la.blocktri_factor([d0] + diag[1:], up, layout="ragged"))(
             jnp.asarray(diag[0]))
-
-
-def test_dense_cblock_schur_and_padded_factors_on_jax(jax_be, rng):
-    import jax
-    import jax.numpy as jnp
-
-    # dense real and complex
-    A = rng.standard_normal((20, 20))
-    C = A @ A.T + 20 * np.eye(20)
-    r = rng.standard_normal(20)
-    q = jax.jit(lambda C, r: (lambda f: (f.logdet, f.whiten(r)))(
-        CholFactor.build(0.5 * (C + C.T), impl="numpy", be=jax_be)))(jnp.asarray(C), jnp.asarray(r))
-    fn = CholFactor.build(0.5 * (C + C.T), impl="numpy", be=NUMPY)
-    assert abs(float(q[0]) - float(fn.logdet)) < 1e-12 * abs(float(fn.logdet))
-    assert rel(q[1], fn.whiten(r)) < 1e-12
-    b, nb = 6, 4
-    Z = rng.standard_normal((b * nb, b * nb)) + 1j * rng.standard_normal((b * nb, b * nb))
-    M = Z @ Z.conj().T / (b * nb) + 2 * np.eye(b * nb)
-    z = rng.standard_normal(b * nb) + 1j * rng.standard_normal(b * nb)
-    out = jax.jit(lambda M, z: (lambda f: (f.logdet, la.cblock_backward(f, la.cblock_forward(f, z))))(
-        la.cblock_factor(M, b)))(jnp.asarray(M), jnp.asarray(z))
-    fc = la.cblock_factor(M, b)
-    assert abs(float(out[0]) - float(fc.logdet)) < 1e-12 * abs(float(fc.logdet))
-    assert rel(out[1], la.cblock_backward(fc, la.cblock_forward(fc, z))) < 1e-12
-    # Schur over a diagonal interior (the GB band/mid_exact JAX default)
-    cells = CellSet.all_active(GRID)
-    edge = cells.columns(3, 1)
-    e, i = cells.index_of(edge), cells.index_of(cells.complement(edge))
-    ex = exact_covariance(NF, NT, DT, lambda f, t: np.exp((-1.7 + 0.9 * (t / 8.0 - 0.5)) * L_of(f)))
-    R = ex[e]
-    v = np.diag(ex)[i]
-    y = rng.standard_normal(N)
-
-    def schur(v, Ree, Rei, e, i, y, be):
-        f = schur_factor(DiagFactor.build(v, be), Ree, Rei, form="scaled", chol_impl="numpy", be=be)
-        return f.logdet, f.solve(y, C={"e": e, "i": i, "interior": None}, be=be)
-
-    got = jax.jit(lambda *a: schur(*a, jax_be))(*(jnp.asarray(a) for a in (v, R[:, e], R[:, i], e, i, y)))
-    want = schur(v, R[:, e], R[:, i], e, i, y, NUMPY)
-    assert abs(float(got[0]) - float(want[0])) < 1e-12 * abs(float(want[0]))
-    assert rel(got[1], want[1]) < 1e-12
-    # padded marginal
-    Np = NF * (NT + 2)
-    ext = CellSet.all_active(wdm.Grid(NF, NT + 2, DT))
-    W = T.dense_W(ext)
-    vext = rng.uniform(0.5, 2.0, Np)
-    w = rng.standard_normal(Np)
-
-    def pad(vext, Wp, w, be):
-        f = padded_factor(DiagFactor.build(vext, be), Wp, grid=wdm.Grid(NF, NT + 2, DT), n=N, chol_impl="numpy",
-                          be=be)
-        return f.logdet, f.solve_cells(w, C={"Wp": Wp, "base": None}, be=be)
-
-    gp = jax.jit(lambda *a: pad(*a, jax_be))(jnp.asarray(vext), jnp.asarray(W[:, N:]), jnp.asarray(w))
-    wp = pad(vext, W[:, N:], w, NUMPY)
-    assert abs(float(gp[0]) - float(wp[0])) < 1e-12 * abs(float(wp[0]))
-    assert rel(gp[1], wp[1]) < 1e-12
 
 
 def test_pcg_on_jax(jax_be):

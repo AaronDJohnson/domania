@@ -3,9 +3,8 @@
 Every kernel in ``domainia.wilson`` (and later ``domainia``) is written once against a
 :class:`Backend` and never branches on the backend's name for arithmetic.  The
 backend supplies the array namespace (``xp``), the FFT namespace used by the
-transforms (``fft``: ``numpy.fft`` / ``jax.numpy.fft``), the pinned FFT used by
-the exact covariance operator (``fft_pinned``: ``scipy.fft(workers=4)`` on
-NumPy, as the WT ``CovOperator`` did), functional updates (``set``,
+transforms (``fft``: ``numpy.fft`` / ``jax.numpy.fft``), a pinned FFT
+(``fft_pinned``: ``scipy.fft(workers=4)`` on NumPy), functional updates (``set``,
 ``add_at``), the linear algebra the oracles used at each call site
 (``cholesky(impl=...)``, ``solve_triangular``, ``cho_solve``), control flow
 (``scan``, ``while_loop``, ``fori_loop``, ``map``, ``vmap``, ``jit``) and the
