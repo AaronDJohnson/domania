@@ -67,14 +67,16 @@ def _record(domain: Any, role: str) -> tuple[int, float]:
                     f"WDMDomain.full); got {type(domain).__name__}")
 
 
-def _check_pair(source: Any, target: Any) -> None:
-    N_src, dt_src = _record(source, "source")
-    N_dst, dt_dst = _record(target, "target")
+def _check_pair(source: Any, target: Any, roles: tuple[str, str] = ("source", "target")) -> None:
+    """Both full-record domains of one record; ``roles`` name the two in the messages."""
+    a, b = roles
+    N_src, dt_src = _record(source, a)
+    N_dst, dt_dst = _record(target, b)
     if N_src != N_dst or dt_src != dt_dst:
-        raise ValueError(f"source and target describe different records: N={N_src}, "
+        raise ValueError(f"{a} and {b} describe different records: N={N_src}, "
                          f"dt={float(dt_src)!r} vs N={N_dst}, dt={float(dt_dst)!r}")
     if isinstance(source, TimeDomain) and isinstance(target, TimeDomain) and source.t0 != target.t0:
-        raise ValueError(f"source and target time domains start at different t0 "
+        raise ValueError(f"{a} and {b} time domains start at different t0 "
                          f"({float(source.t0)!r} vs {float(target.t0)!r}): transform does not "
                          f"shift records")
 
@@ -250,17 +252,34 @@ def log_coordinate_scale(domain: Domain) -> float:
 @runtime_checkable
 class Operator(Protocol):
     """A covariance on a full-record domain, acting on ``{channel: array}`` dicts in that
-    domain's layout.  ``degrees_of_freedom`` counts the real coordinates it covers, summed
-    over channels (masked-out coordinates excluded).
+    domain's layout.
+
+    The methods mean, channel by channel, in the domain's real coordinates (module
+    docstring): ``C`` is symmetric positive semi-definite, its range is the retained
+    subspace, and ``r`` are the real coordinates of the argument.
+
+    * ``apply``: ``C r``.
+    * ``project``: the orthogonal projector onto the retained subspace, applied to ``r``.
+    * ``solve``: ``C^+ r`` with ``C^+`` the Moore-Penrose inverse: the inverse on the retained
+      subspace, zero on the excluded directions.
+    * ``quadratic_form``: ``r^T C^+ r``, summed over channels.
+    * ``log_determinant``: the log pseudo-determinant (the sum of the logs of the non-zero
+      eigenvalues of ``C``), summed over channels.
+    * ``degrees_of_freedom``: the rank of ``C`` (the retained dimension), summed over channels.
+
+    A full-rank operator has the identity as ``project`` and the inverse as ``solve``.  The
+    retained subspace need not be a set of coordinates: a time gap seen in WDM is spread over
+    many cells.
 
     The dicts that ``apply``, ``solve`` and ``project`` return must meet :func:`transform`'s
     input rules exactly, because :class:`TranslatedOperator` sends them through it unchanged
     (no tolerance, no repair): inactive WDM cells exactly 0, and the Fourier DC bin (and the
     even-``N`` Nyquist bin) exactly real.  An output computed with the ``domainia.wilson``
-    kernels or a full FFT can carry ~1e-16 there, and ``TranslatedOperator`` then raises
-    ``transform``'s ``ValueError``.  Meet the rules before returning: zero the inactive
-    cells (``w[..., ~domainia.wilson.active_mask(Nf, Nt)] = 0``) and take the real part of
-    the end bins (``X[..., 0] = X[..., 0].real``, likewise ``X[..., -1]`` for even ``N``).
+    kernels or a full FFT can carry ~1e-16 there, and ``TranslatedOperator`` then raises a
+    ``ValueError`` that names the native method and quotes ``transform``'s refusal.  Meet the
+    rules before returning: zero the inactive cells
+    (``w[..., ~domainia.wilson.active_mask(Nf, Nt)] = 0``) and take the real part of the end
+    bins (``X[..., 0] = X[..., 0].real``, likewise ``X[..., -1]`` for even ``N``).
     """
 
     @property
@@ -286,7 +305,7 @@ class Operator(Protocol):
 @dataclass(frozen=True, eq=False)
 class TranslatedOperator:
     """``native`` seen from ``target`` (module docstring).  It stores only these two: no
-    dense matrix is ever built.
+    dense matrix is ever built.  It holds a reference to ``native`` (a view, not a copy).
 
     * ``apply(x)`` = to_target(native.apply(to_native(x))) * exp(2 Delta)
     * ``solve(x)`` = to_target(native.solve(to_native(x))) * exp(-2 Delta)
@@ -295,7 +314,8 @@ class TranslatedOperator:
     * ``log_determinant()`` = native.log_determinant() + 2 * degrees_of_freedom * Delta
 
     ``to_target`` is :func:`transform`, so a native output off the canonical form is refused
-    (:class:`Operator`).
+    (:class:`Operator`), with a ``ValueError`` that names the native method; so is a native
+    output with other channels than the operator's.
     """
 
     native: Operator
@@ -305,7 +325,7 @@ class TranslatedOperator:
         if isinstance(self.native, TranslatedOperator) or not isinstance(self.native, Operator):
             raise TypeError(f"native must be a native domainia.translate.Operator (translate_operator "
                             f"re-targets a TranslatedOperator); got {type(self.native).__name__}")
-        _check_pair(self.native.domain, self.target)
+        _check_pair(self.native.domain, self.target, roles=("native", "target"))
 
     @property
     def domain(self) -> Domain:
@@ -330,18 +350,33 @@ class TranslatedOperator:
                              f"{self.channel_names}")
         return transform(values, self.target, self.native.domain)
 
-    def _to_target(self, values: Mapping[str, Any], factor: float = 1.0) -> dict[str, np.ndarray]:
-        out = transform(values, self.native.domain, self.target)
+    def _to_target(self, method: str, values: Any, factor: float = 1.0) -> dict[str, np.ndarray]:
+        """``native.<method>``'s output ``values`` on the target, times ``factor``; a bad
+        output is blamed on the native method, not on the caller."""
+        who = f"{type(self.native).__name__}.{method}"
+        if not isinstance(values, Mapping):
+            raise TypeError(f"{who} returned a {type(values).__name__}, not a {{channel: array}} "
+                            f"mapping")
+        if set(values) != set(self.channel_names):
+            raise ValueError(f"{who} returned channels {tuple(values)}; the operator has channels "
+                             f"{self.channel_names}")
+        try:
+            out = transform(values, self.native.domain, self.target)
+        except ValueError as err:
+            raise ValueError(f"{who} returned a dict off transform's canonical form (see "
+                             f"domainia.translate.Operator): {err}") from err
         return out if factor == 1.0 else {k: v * factor for k, v in out.items()}
 
     def apply(self, values: Mapping[str, Any]) -> dict[str, np.ndarray]:
-        return self._to_target(self.native.apply(self._to_native(values)), np.exp(2.0 * self._delta()))
+        return self._to_target("apply", self.native.apply(self._to_native(values)),
+                               np.exp(2.0 * self._delta()))
 
     def solve(self, values: Mapping[str, Any]) -> dict[str, np.ndarray]:
-        return self._to_target(self.native.solve(self._to_native(values)), np.exp(-2.0 * self._delta()))
+        return self._to_target("solve", self.native.solve(self._to_native(values)),
+                               np.exp(-2.0 * self._delta()))
 
     def project(self, values: Mapping[str, Any]) -> dict[str, np.ndarray]:
-        return self._to_target(self.native.project(self._to_native(values)))
+        return self._to_target("project", self.native.project(self._to_native(values)))
 
     def quadratic_form(self, values: Mapping[str, Any]) -> float:
         return float(self.native.quadratic_form(self._to_native(values)))
@@ -352,12 +387,14 @@ class TranslatedOperator:
 
 def translate_operator(op: Operator, target: Domain) -> Operator:
     """``op`` seen from ``target``.  A :class:`TranslatedOperator` is re-targeted (its native
-    operator is reused, never nested), and a target equal to the native domain returns the
-    native operator itself."""
+    operator is reused, never nested); a target equal to the native domain returns the native
+    operator itself, and a ``TranslatedOperator`` already on ``target`` returns itself."""
     if not isinstance(op, Operator):
         raise TypeError(f"op must implement domainia.translate.Operator; got {type(op).__name__}")
     native = op.native if isinstance(op, TranslatedOperator) else op
-    _check_pair(native.domain, target)
+    _check_pair(native.domain, target, roles=("native", "target"))
     if target == native.domain:
         return native
+    if isinstance(op, TranslatedOperator) and target == op.target:
+        return op
     return TranslatedOperator(native, target)

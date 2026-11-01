@@ -178,15 +178,22 @@ class PointwiseOperator:
         else:
             raise TypeError(f"PointwiseOperator needs a TimeDomain or WDMDomain; got "
                             f"{type(self.domain).__name__}")
-        if not isinstance(self.variances, Mapping) or not self.variances:
+        if not isinstance(self.variances, Mapping):
+            raise TypeError(f"variances must be a {{channel: array}} mapping; got "
+                            f"{type(self.variances).__name__}")
+        if not self.variances:
             raise ValueError("variances must be a non-empty {channel: array} mapping")
         var = {}
         for name, v in self.variances.items():
+            if not isinstance(name, str):
+                raise TypeError(f"channel names must be strings; got {name!r}")
             a = np.array(v, dtype=np.float64)
             if a.shape != mask.shape:
                 raise ValueError(f"channel {name!r}: variances have shape {a.shape}; need {mask.shape}")
             if not np.all(np.isfinite(a[mask])) or np.any(a[mask] <= 0.0):
                 raise ValueError(f"channel {name!r}: variances must be finite and positive")
+            # 1 at the inactive cells: np.where evaluates both branches, so solve and
+            # quadratic_form would otherwise divide by a 0 or NaN there and warn.
             a = np.where(mask, a, 1.0)
             a.setflags(write=False)
             var[name] = a
