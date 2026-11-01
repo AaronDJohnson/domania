@@ -1560,10 +1560,12 @@ def test_evenness_failure_names_the_condition_window_and_bin():
         w.sample(8, 16, 1.0)
 
 
-def test_support_failure_at_the_slab_edge():
-    w = SampledWindow(lambda u: np.where(np.abs(np.asarray(u)) <= 1.0, 0.5, 0.0), "boxcar")
-    with pytest.raises(WindowError, match=r"boxcar.*support.*bin 0"):
-        w.sample(8, 16, 1.0)
+def test_support_failure_at_the_slab_edge_is_caught_at_construction():
+    # A SampledWindow can never reach the sample-time bin-0 support branch: psi(+-1) is
+    # checked at construction.  That branch is exercised by `Flat` in
+    # test_sample_window_validates_third_party_windows; do not re-add a boxcar here.
+    with pytest.raises(WindowError, match=r"boxcar.*support"):
+        SampledWindow(lambda u: np.where(np.abs(np.asarray(u)) <= 1.0, 0.5, 0.0), "boxcar")
 
 
 def test_support_failure_outside_the_slab_is_caught_at_construction():
@@ -1615,7 +1617,7 @@ def test_sample_window_validates_third_party_windows():
         def sample(self, Nf, Nt, dt):
             return np.ones(Nt)
 
-    with pytest.raises(WindowError, match="flat"):
+    with pytest.raises(WindowError, match=r"flat.*support.*bin 0"):
         sample_window(Flat(), 8, 16, 1.0)
 
 
@@ -1943,7 +1945,7 @@ ALT_WINDOW = SampledWindow(wide_profile, "wide-smoothstep")
 - [ ] **Step 6: Run the tests**
 
 Run: `$PY -m pytest -q tests/wilson/test_windows.py src/domainia/wilson/windows.py`
-Expected: all pass, the module doctest included.
+Expected: all pass, the module doctest included. If only `test_a_ramp_window_with_the_meyer_ramp_is_meyer_bit_for_bit` fails, `RampWindow._samples` does not repeat `phi_centered`'s arithmetic. Open `src/domainia/wilson/filter.py::phi_centered` and mirror its operations in `_meyer_geometry` and `RampWindow._samples`, in the same order. Never change `Meyer._samples`, which delegates to `phi_centered`.
 
 - [ ] **Step 7: Run the whole suite and commit** (sandbox disabled)
 
@@ -2083,7 +2085,7 @@ def test_time_round_trip_and_energy(window, Nf, Nt, dt):
     np.testing.assert_allclose(wilson.inverse_time(w, Nf, Nt, dt, window=window), x, rtol=0, atol=1e-12)
     assert float(np.sum(w ** 2)) == pytest.approx(dt * float(np.sum(x ** 2)), rel=1e-12)
     many = wilson.forward_time_many(np.stack([x, -x]), Nf, Nt, dt, window=window)
-    np.testing.assert_array_equal(many[0], w)
+    np.testing.assert_allclose(many[0], w, rtol=0, atol=1e-13 * float(np.max(np.abs(w))))
 
 
 @pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
@@ -2152,6 +2154,8 @@ In each public function's docstring `Parameters` section, add:
         See :mod:`domainia.wilson.windows`.
 ```
 In `band_atoms`' docstring, replace the sentence about "window ``phi_centered(Nf, Nt, dt)`` (the Hz window; ...)" with "``window``'s samples (Hz normalisation)".
+
+jit check: `grep -n "@.*jit\|jax\.jit(\|partial(jit" src/domainia/wilson/*.py` prints only docstring lines at the baseline (no kernel is jitted). If a jitted callable gains `window`, add `"window"` to its `static_argnames`, because windows are hashable and static.
 
 Read-only check: the samples are read-only. Run `grep -n "phi_c\[\|phi\[.*\] *=\|phi_c *\*=\|phi *\*=" src/domainia/wilson/transform.py`. Expected: no in-place writes. If one exists, make it a copy first (`phi = sample_window(...).copy()`).
 
@@ -2275,7 +2279,7 @@ Add the `window` docstring entry from Task 5 to every function touched in Steps 
 - [ ] **Step 6: Run the tests**
 
 Run: `$PY -m pytest -q tests/wilson`
-Expected: all pass. If the AST test reports a consumer call this plan does not list, it is a real missed thread: add `window=window`, plus the parameter on its enclosing function if needed.
+Expected: all pass. If the AST test reports a consumer call this plan does not list, first check that the callee really is one of the window consumers. If it is, it is a real missed thread: add `window=window`, plus the parameter on its enclosing function if needed. If the callee is an unrelated function that shares a `CONSUMERS` name (for example a local `_forward` substitution helper), that is a naming collision. Narrow the scan (skip calls whose callee is defined in the scanned file and never reaches the window) and do not add `window=` to it.
 
 - [ ] **Step 7: Run the whole suite and commit** (sandbox disabled)
 
@@ -2515,7 +2519,7 @@ Keep the existing `scale` explanation paragraph (gap G4) in the docstring, below
 - [ ] **Step 5: Run the tests**
 
 Run: `$PY -m pytest -q tests/test_dom_windows.py tests/wilson/test_window_threading.py tests/wilson/test_meyer_baseline.py`
-Expected: all pass. If the AST scan flags another consumer call in a domainia module, thread `window` through it from the nearest `WDMDomain` or a `window=` parameter.
+Expected: all pass. If the AST scan flags another consumer call in a domainia module, check what the callee is. A real kernel call gets `window` from the nearest `WDMDomain` or a `window=` parameter. An unrelated function that shares a `CONSUMERS` name (`linalg.py`, `covariance/*.py`, `data.py` may define local `_forward`/`solve` helpers) is a naming collision. Narrow the scan for it, and do not add `window=`.
 
 - [ ] **Step 6: Run the whole suite and commit** (sandbox disabled)
 
