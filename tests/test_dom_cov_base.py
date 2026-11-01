@@ -4,14 +4,21 @@
   log-determinant -- on both backends.
 * ``ok`` is False (the likelihood's -inf) on a covariance that is not positive definite.
 * Under JAX the constants reach the compiled factorisation as an argument.
+* The ``domainia.variance`` classes are host-only: a ``DiagonalCovariance`` on one is not
+  jittable and factorises eagerly on JAX.
 """
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
+from dom_db_inputs import jax_or_skip
 
+from domainia import wilson as wdm
 from domainia.covariance import CholFactor, DenseCovariance, DiagFactor, DiagonalCovariance, Factor
+from domainia.domains import CellSet
+from domainia.spectra import GenericPSD
+from domainia.variance import BandAveragedVariance, MidpointVariance
 
 NU0 = np.zeros(2)
 
@@ -97,3 +104,36 @@ def test_jit_takes_the_constants_as_an_argument(jax_be):
     text = fn.lower(cov.constants(jax_be), jnp.asarray([0.1, 0.0]), None).as_text()
     assert len(text) < 200_000
     assert float(F.logdet) == pytest.approx(float(cov.factor(np.array([0.1, 0.0])).logdet), rel=1e-15)
+
+
+def _generic_variances():
+    cells = CellSet.all_active(wdm.Grid(8, 16, 0.5))
+    psd = GenericPSD(lambda f, t, nu: (1.0 + np.abs(f)) ** -1.0 * (1.0 + nu[0] * np.asarray(t) / 64.0))
+    return cells, [Var(psd, cells) for Var in (BandAveragedVariance, MidpointVariance)]
+
+
+def test_generic_psd_variances_are_not_jittable():
+    """The ``domainia.variance`` classes call the PSD on the host; arrays and callables
+    stay jittable."""
+    cells, variances = _generic_variances()
+    for var in variances:
+        assert DiagonalCovariance(var, cells.size).jittable is False
+    assert DiagonalCovariance(np.ones(3), 3).jittable is True
+    assert DiagonalCovariance(lambda nu, be: be.asarray(np.ones(3)), 3).jittable is True
+
+
+@pytest.mark.jax
+def test_generic_psd_variances_factor_eagerly_on_jax():
+    jax, _ = jax_or_skip()
+    import jax.numpy as jnp
+
+    cells, variances = _generic_variances()
+    nu = np.array([0.3])
+    for var in variances:
+        cov = DiagonalCovariance(var, cells.size)
+        want = cov.factor(nu)
+        for jit in (None, False):
+            got = cov.factor(jnp.asarray(nu), jit=jit)
+            assert isinstance(got.logdet, jax.Array) and bool(got.ok)
+            assert np.array_equal(np.asarray(got.v), np.asarray(want.v))
+            assert float(got.logdet) == pytest.approx(float(want.logdet), rel=1e-14)

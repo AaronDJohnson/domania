@@ -316,13 +316,10 @@ class CellSet:
 class WDMDomain:
     """A cell set and the constant ``scale`` that relates its cells to the WDM coefficients.
 
-    No map or covariance applies ``scale`` yet (gap G4: one float, while the GB ``sigma0``
-    is per channel), so ``scale != 1`` is refused (:meth:`require_unit_scale`) rather than
-    treated as 1 silently: by every map that transforms to or from a ``WDMDomain``
-    (``TimeToWDM``, ``WDMToTime``, ``FourierToWDM``, ``Restrict``) and by
-    ``GaussianLikelihood`` / ``FourierWhittle("complex")`` for ``data.domain``, ``map.src`` and
-    ``map.dst``.  ``Identity`` alone accepts a scaled domain (it has nothing to apply);
-    the likelihood refuses it there.
+    No map applies ``scale`` (gap G4), so ``TimeToWDM``, ``WDMToTime``, ``FourierToWDM``
+    and ``Restrict`` refuse ``scale != 1`` (:meth:`require_unit_scale`) rather than treat it
+    as 1 silently.  ``Identity`` accepts a scaled domain (it has nothing to apply): a caller
+    that passes one through ``Identity`` must handle ``scale`` itself.
     """
 
     cells: CellSet
@@ -338,8 +335,7 @@ class WDMDomain:
         return self.cells.size
 
     def require_unit_scale(self, user: str) -> None:
-        """Raise ``ValueError`` unless ``scale == 1.0``: ``user`` (a map or likelihood) does not
-        apply it."""
+        """Raise ``ValueError`` unless ``scale == 1.0``: ``user`` (a map) does not apply it."""
         if self.scale != 1.0:
             raise ValueError(f"WDMDomain.scale = {self.scale!r} is not honoured by {user}: no map "
                              "applies a cell scale yet (gap G4), only scale = 1.0 is implemented")

@@ -34,7 +34,7 @@ reads the lower triangle only (``symmetrize_input=False``, see ``wilson.backend`
 called ``jnp.linalg.cholesky`` with JAX's default, which differs by <= 7.4e-14 relative
 on inputs that are not bitwise symmetric (JAX is never claimed bitwise).
 
-Constants (:class:`BandLayout`, edge/interior index arrays, ``Wp``) are host NumPy
+Constants (:class:`BandLayout` and its index arrays) are host NumPy
 float64/int64 built once; under ``jax.jit`` pass them as arguments, never close over
 them, and move them with :func:`device_constants` (which checks ``jax_enable_x64``).
 """
@@ -519,7 +519,7 @@ def pcg(apply_A: Callable[[Any], Any], apply_M: Callable[[Any], Any], B: Any, *,
 
     ``apply_A``/``apply_M`` map ``(R, N) -> (R, N)``.  ``on_fail="raise"`` (eager only)
     raises ``RuntimeError`` as WT does; ``on_fail="nan"`` (jit-able) returns NaN rows
-    where ``converged`` is False, which the likelihood maps to ``-inf``.  A row with a
+    where ``converged`` is False, which a caller maps to ``-inf``.  A row with a
     non-positive or non-finite curvature ``p.Ap`` fails (WG); WT had no such check.
     """
     if on_fail not in ("raise", "nan"):

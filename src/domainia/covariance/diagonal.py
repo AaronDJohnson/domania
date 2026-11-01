@@ -21,7 +21,9 @@ class DiagonalCovariance(Covariance):
     be=be)``, the object itself passed to ``jit`` as the constants; ``channel`` selects the
     GB channel), a callable ``fn(nu, be) -> (n,)`` or a fixed ``(n,)`` array.  ``n`` is the
     number of cells.  ``cells`` is the variance's ``CellSet`` when it has one (the
-    ``domainia.variance`` classes), else ``None``; a likelihood checks it against its map.
+    ``domainia.variance`` classes), else ``None``; a caller can check it against its map.
+    ``jittable`` is the variance's own (``False`` for the host-only ``domainia.variance``
+    classes; ``True`` for arrays, callables and evaluators that do not say otherwise).
     """
 
     def __init__(self, variance: Any, n: int, *, channel: int | None = None) -> None:
@@ -29,6 +31,7 @@ class DiagonalCovariance(Covariance):
         self.cells = cells if isinstance(cells, CellSet) else None
         self.variance = as_evaluator(variance, **({} if channel is None else {"channel": int(channel)}))
         self.n = int(n)
+        self.jittable = bool(getattr(variance, "jittable", True))
 
     def host_constants(self) -> Any:
         return self.variance.host_constants()

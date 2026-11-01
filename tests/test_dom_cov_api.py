@@ -5,6 +5,7 @@
 * Every factor class satisfies the ``Factor`` protocol.
 * Under JAX every factor is a pytree: it flattens, round-trips, and two factors stack
   along a rung axis into one ``vmap`` (spec §3.3).
+* ``EvolutionaryCovariance`` refuses the arguments it would ignore (fail closed).
 """
 
 from __future__ import annotations
@@ -18,6 +19,9 @@ import numpy as np
 import pytest
 
 import domainia.covariance as cov
+from domainia import wilson as wdm
+from domainia.domains import CellSet
+from domainia.spectra import GenericPSD
 
 EXPORTS = {"BlockTriCovFactor", "BlockTridiagonalCovariance", "ChannelStack", "CholFactor", "Covariance",
            "DenseCovariance", "DiagFactor", "DiagonalCovariance", "Evaluator", "EvolutionaryCovariance", "Factor",
@@ -102,3 +106,19 @@ def test_factors_are_pytrees_that_stack(jax_be):
     G = jax.tree_util.tree_map(lambda *xs: jnp.stack(xs), D.factor(jnp.zeros(1)),
                                cov.DenseCovariance(np.diag(v2), 3, chol_impl="numpy").factor(jnp.zeros(1)))
     assert np.allclose(np.asarray(jax.vmap(lambda F: F.quad(b, form="whiten"))(G)), [1.75, 1.5], rtol=1e-15)
+
+
+FLAT = GenericPSD(lambda f, t, nu: 1.0 + 0.0 * f * t)
+CELLS = CellSet.all_active(wdm.Grid(8, 16, 0.5))
+
+
+def test_evolutionary_covariance_refuses_a_layout_with_dense_assembly():
+    for builder in ("interp", "direct"):
+        with pytest.raises(ValueError, match="layout applies to assembly='blocktri' only"):
+            cov.EvolutionaryCovariance(FLAT, CELLS, builder=builder, assembly="dense", layout="padded")
+
+
+def test_evolutionary_covariance_refuses_an_unknown_chol_impl():
+    for kw in ({}, {"assembly": "dense"}, {"builder": "direct", "assembly": "dense"}):
+        with pytest.raises(ValueError, match="chol_impl must be 'numpy' or 'scipy'"):
+            cov.EvolutionaryCovariance(FLAT, CELLS, chol_impl="lapack", **kw)

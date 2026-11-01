@@ -9,20 +9,19 @@ A covariance is built once from host constants and factorised once per noise sta
     F = cov.factor(jnp.asarray(nu))       # JAX: one jax.jit(cov._factor) per state_key(nu)
 
 ``F`` is a :class:`Factor`: ``logdet`` (:math:`\ln|C|`), ``ok`` (False when ``C`` is not
-positive definite: the likelihood is then :math:`-\infty`), ``solve(b)`` (:math:`C^{-1}b`),
+positive definite), ``solve(b)`` (:math:`C^{-1}b`),
 ``whiten(b)`` (:math:`L^{-1}b` with :math:`|L^{-1}b|^2 = b^{\mathsf T}C^{-1}b`),
-``quad(b, form=...)`` and ``n_u`` (directions a marginal removed; 0 for a covariance).
+``quad(b, form=...)`` and ``n_u`` (0 for every covariance here).
 
 **A factor holds per-state arrays only** (spec section 3.3, S4 deferral (b)).  Every array
-that depends on the grid alone -- edge/interior positions, ``W_p``, the nuisance ``U``,
-band layouts, the Chebyshev basis -- stays in the covariance's constants ``C`` and is passed
-to the factor's methods: ``F.solve(b, C=C)``, ``F.whiten(b, C=C)``, ``F.quad(b, C=C)``, with
-``C = cov.constants(be)`` (a combinator passes its child's sub-dict, e.g. ``C["interior"]``).
-So a cached or stacked noise state carries no constants (the LRU of spec section 3.5 holds
-16 states on a GPU).  :meth:`Covariance.factor` attaches ``C`` to the factor it returns
-(outside every pytree: not a leaf, dropped by ``tree_map``/``jit``), so ``cov.factor(nu).quad(b)``
-works without it; factors produced inside a jitted function or unstacked from a cache get
-``C`` explicitly (``GaussianLikelihood`` passes ``parts.covs[c]``).
+that depends on the grid alone -- band layouts, the Eq. 45 plan -- stays in the
+covariance's constants ``C`` and is passed to the factor's methods: ``F.solve(b, C=C)``,
+``F.whiten(b, C=C)``, ``F.quad(b, C=C)``, with ``C = cov.constants(be)`` (a combinator
+passes its child's sub-dict, e.g. ``ChannelStack``'s ``C[str(c)]``).  So a cached or stacked
+noise state carries no constants.  :meth:`Covariance.factor` attaches ``C`` to the factor it
+returns (outside every pytree: not a leaf, dropped by ``tree_map``/``jit``), so
+``cov.factor(nu).quad(b)`` works without it; a caller that caches or stacks factors (or
+builds them inside a jitted function) passes ``C`` explicitly.
 
 Structure / Constants / Factor (spec §3.3).  The configuration a subclass keeps on itself
 is static (ints, tuples, strings).  Every array a factorisation reads comes from
@@ -46,7 +45,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, Protocol, runtime_checkable
 
 import numpy as np
-from domainia.wilson.backend import NUMPY, Backend, get_backend, is_tracer, pytree_dataclass, require_x64
+from domainia.wilson.backend import NUMPY, Backend, get_backend, pytree_dataclass, require_x64
 
 __all__ = [
     "CholFactor",
@@ -191,15 +190,6 @@ def factor_constants(F: Any, C: Any, what: str) -> Any:
     return C
 
 
-def concrete_failure(ok: Any) -> bool:
-    """True when ``ok`` is a concrete False: an eager factorisation failed (a ragged block, a
-    NumPy Cholesky) and the factor must not be applied -- ``domainia.linalg`` raises on a
-    failed ragged factor's solve, where WT raised ``LinAlgError`` before anything else ran.
-    Combinators then return a failed factor (``ok = False``, ``logdet = nan``) without
-    their own algebra.  Never True under ``jit``: a traced ``ok`` lets NaN propagate."""
-    return not is_tracer(ok) and not bool(ok)
-
-
 @pytree_dataclass(data=("v", "logdet", "ok"), meta=())
 @dataclass(frozen=True, eq=False)
 class DiagFactor:
@@ -255,8 +245,8 @@ class CholFactor:
     def build(cls, S: Any, *, impl: Literal["numpy", "scipy"], be: Backend) -> CholFactor:
         """``ok``: the Cholesky succeeded and every diagonal entry of ``L`` is finite and
         positive -- the one ok rule of the merged family (a ``DiagFactor``'s ``v`` and the
-        padded block factor's diagonal likewise; the ragged block, ``cblock`` and dense
-        Hermitian factors rely on the likelihood's finite-log-determinant mask)."""
+        padded block factor's diagonal likewise; for the ragged block and ``cblock`` factors
+        the caller must check that ``logdet`` is finite)."""
         L, ok = be.cholesky(S, impl=impl)
         xp = be.xp
         d = xp.diagonal(L)
@@ -312,8 +302,9 @@ class Covariance:
     def state_key(self, nu: Any) -> Any:
         """A hashable static key of the factorisation at the concrete ``nu`` (``None``: no
         host-side dispatch).  The default forwards the children's keys at the same ``nu``;
-        ``ChannelStack`` splits ``nu`` per channel.  A likelihood groups cache misses by it (spec §3.5) and never
-        traces a factorisation whose key is not ``None`` inside its own ``jit``."""
+        ``ChannelStack`` splits ``nu`` per channel.  A caller that caches factors groups
+        misses by it and never traces a factorisation whose key is not ``None`` inside its
+        own ``jit``."""
         keys = tuple(c.state_key(nu) for c in self.children().values())
         return None if all(k is None for k in keys) else keys
 

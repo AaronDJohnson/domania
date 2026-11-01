@@ -141,6 +141,11 @@ class EvolutionaryCovariance(Covariance):
             raise ValueError(f"assembly must be 'blocktri' or 'dense'; got {assembly!r}")
         if builder == "direct" and assembly != "dense":
             raise ValueError("builder 'direct' needs assembly='dense'")
+        if layout is not None and assembly == "dense":
+            raise ValueError(f"layout applies to assembly='blocktri' only; got layout={layout!r} "
+                             "with assembly='dense'")
+        if chol_impl not in ("numpy", "scipy"):
+            raise ValueError(f"chol_impl must be 'numpy' or 'scipy'; got {chol_impl!r}")
         self.psd, self.cells, self.builder, self.assembly = psd, cells, builder, assembly
         self.n = len(cells.m)
         keep = keep_mask(cells)

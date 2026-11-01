@@ -5,15 +5,15 @@
 * :class:`MidpointVariance` (Eq. 39) -- ``0.5 S(f_m, t_n)`` at the band centre
   ``f_m = m dF`` and the cell time ``t_n = n dT``.
 
-Both are pytrees (``domainia.wilson.backend.pytree_dataclass``) so a
-``DiagonalCovariance`` can carry them through ``jax.jit`` as arguments, but evaluating
-them calls the PSD on the host: NumPy only.
+Both are pytrees (``domainia.wilson.backend.pytree_dataclass``), but evaluating them calls
+the PSD on the host, so neither is jittable (``jittable = False``): a ``DiagonalCovariance``
+built on one factorises eagerly on every backend.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 
@@ -45,6 +45,8 @@ def _require_generic(psd: Any, what: str) -> None:
 class BandAveragedVariance:
     """Eq. 36: ``0.5 <S(f, t_n)>`` over the window squared around each cell's band."""
 
+    jittable: ClassVar[bool] = False
+
     psd: Any
     cells: CellSet
     t: Any = field(default=_BUILD, kw_only=True)
@@ -70,6 +72,8 @@ class BandAveragedVariance:
 @dataclass(frozen=True, eq=False)
 class MidpointVariance:
     """Eq. 39: ``0.5 S(f_m, t_n)``."""
+
+    jittable: ClassVar[bool] = False
 
     psd: Any
     cells: CellSet
