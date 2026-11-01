@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, ClassVar, Protocol, runtime_checkable
 
 import numpy as np
-from wdm.backend import Backend, get_backend
+from domainia.wilson.backend import Backend, get_backend
 
 from .domains import FourierDomain
 
@@ -45,12 +45,12 @@ class LogLinearPSD:
         return alpha_c + alpha_d * (be.asarray(t, dtype=float) / self.T - 0.5)
 
     def __call__(self, f: Any, t: Any, nu: Any, be: Backend | None = None) -> Any:
-        """``S / A`` at broadcast ``(f, t)``, elementwise (the ``wdm.evolutionary`` convention)."""
+        """``S / A`` at broadcast ``(f, t)``, elementwise (the ``wilson.evolutionary`` convention)."""
         be = be or get_backend(t, *(nu if isinstance(nu, (tuple, list)) else (nu,)))
         return be.xp.exp(self.alpha(t, nu, be) * self.L(f))
 
     def bind(self, nu: Any) -> Callable[[Any, Any], Any]:
-        """``Sn(f, t)`` at fixed ``nu`` (for ``wdm.noise`` / ``wdm.evolutionary``)."""
+        """``Sn(f, t)`` at fixed ``nu`` (for ``wilson.noise`` / ``wilson.evolutionary``)."""
         return lambda f, t: self(f, t, nu)
 
 

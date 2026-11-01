@@ -16,7 +16,7 @@ from typing import Any, Literal
 import dataclasses
 
 import numpy as np
-from wdm.backend import Backend, get_backend, pytree_dataclass
+from domainia.wilson.backend import Backend, get_backend, pytree_dataclass
 
 from ..linalg import BandLayout, blocktri_factor, blocktri_solve, blocktri_whiten
 from .base import Covariance, QuadForm, as_evaluator, factor_constants, quad_form

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from wdm.backend import NUMPY
+from domainia.wilson.backend import NUMPY
 
 import domtest_inputs as T
 from domainia.covariance import Eq45Covariance

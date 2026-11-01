@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 
 from domainia.covariance import DenseCovariance, DiagonalCovariance, HermitianCovariance
-from wdm.backend import get_backend, pytree_dataclass
+from domainia.wilson.backend import get_backend, pytree_dataclass
 
 
 class AffineMatrix:

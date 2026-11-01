@@ -32,7 +32,7 @@ from typing import Any
 
 import numpy as np
 
-from wdm.backend import Backend, get_backend
+from domainia.wilson.backend import Backend, get_backend
 
 #: ``float(np.log(2 pi))``: the constant of every oracle (WT ``_LOG_2PI``, GB ``_LOG_2PI``).
 LOG_2PI = float(np.log(2.0 * np.pi))

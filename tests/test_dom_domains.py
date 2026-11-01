@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-import wdm
+from domainia import wilson as wdm
 from domainia.domains import CellSet, ChannelAxis, FourierDomain, TimeDomain, WDMDomain
 
 SIN = wdm.Grid(64, 256, 2.0**-10)

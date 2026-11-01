@@ -46,7 +46,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, Protocol, runtime_checkable
 
 import numpy as np
-from wdm.backend import NUMPY, Backend, get_backend, is_tracer, pytree_dataclass, require_x64
+from domainia.wilson.backend import NUMPY, Backend, get_backend, is_tracer, pytree_dataclass, require_x64
 
 __all__ = [
     "CholFactor",

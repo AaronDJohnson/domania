@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-import wdm
+from domainia import wilson as wdm
 from dom_db_inputs import (GB_CASES, SIN_CUT, SIN_DT, SIN_FMIN, SIN_NF, SIN_NT, SIN_PAD_COLUMNS,
                            SIN_T, TableEnvelope, fingerprint_gap, gb_case, jax_or_skip, sha256_array,
                            sinusoid_g6, to_float)
@@ -98,7 +98,7 @@ def test_variances_reproduce_the_wdm_noise_grids():
 
 
 def test_generic_psd_reproduces_the_loglinear_path():
-    """wdm.noise.evolutionary_band_variance on the bound PSD == the WT band_variance port:
+    """domainia.wilson.noise.evolutionary_band_variance on the bound PSD == the WT band_variance port:
     bitwise against the log-linear path, within HZ_RTOL of the G6 array (bitwise before the
     wdm Hz window, v0.12.0)."""
     meta, arrays = sinusoid_g6()

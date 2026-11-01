@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-import wdm
-from wdm.backend import NUMPY
+from domainia import wilson as wdm
+from domainia.wilson.backend import NUMPY
 
 import domtest_inputs as T
 from domainia.covariance import (CholFactor, Covariance, DenseCovariance, DiagFactor, DiagonalCovariance,

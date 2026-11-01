@@ -8,9 +8,9 @@ import numpy as np
 import pytest
 from scipy.linalg import cho_factor, cho_solve, solve_triangular
 
-import wdm
-from wdm.backend import NUMPY
-from wdm.evolutionary import eq45_blocks_cheb, eq45_coeffs_bessel, eq45_plan
+from domainia import wilson as wdm
+from domainia.wilson.backend import NUMPY
+from domainia.wilson.evolutionary import eq45_blocks_cheb, eq45_coeffs_bessel, eq45_plan
 from domainia import linalg as la
 from domainia import testing as T
 from domainia.covariance import CholFactor, DiagFactor, dense_factor

@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-import wdm
+from domainia import wilson as wdm
 from scipy.linalg import solve_triangular
-from wdm.backend import NUMPY
+from domainia.wilson.backend import NUMPY
 
 from domainia.covariance import DiagonalCovariance, Eq45Covariance, ZeroPadded
 from domainia.domains import CellSet

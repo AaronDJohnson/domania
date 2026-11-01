@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from wdm.backend import Backend
+from domainia.wilson.backend import Backend
 
 from .base import CholFactor, Covariance, as_evaluator
 

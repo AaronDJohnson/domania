@@ -27,9 +27,9 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 import numpy as np
-from wdm.backend import Backend, get_backend, pytree_dataclass
-from wdm.grid import endpoint_weights
-from wdm.special import chebyshev_basis
+from domainia.wilson.backend import Backend, get_backend, pytree_dataclass
+from domainia.wilson.grid import endpoint_weights
+from domainia.wilson.special import chebyshev_basis
 
 from ..linalg import pcg
 from .base import CholFactor, Covariance, QuadForm, factor_constants

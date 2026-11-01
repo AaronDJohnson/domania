@@ -14,8 +14,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from scipy.linalg import cho_factor
-from wdm.backend import NUMPY
-from wdm.evolutionary import time_domain_covariance, time_domain_factor
+from domainia.wilson.backend import NUMPY
+from domainia.wilson.evolutionary import time_domain_covariance, time_domain_factor
 
 import domtest_inputs as T
 from domainia.covariance import ExactTimeCovariance, OperatorFactor

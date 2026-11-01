@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-from wdm.backend import NUMPY, Backend, get_backend, require_x64
+from domainia.wilson.backend import NUMPY, Backend, get_backend, require_x64
 
 __all__ = ["ExactFourierAt", "ExactFourierCovariance", "ghat"]
 

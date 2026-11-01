@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 from scipy.linalg import cho_factor, cho_solve
 
-import wdm
+from domainia import wilson as wdm
 from dom_literal_cases import NUS, setup_case
 from domainia.literal import ColumnRotated, MaskedCovariance, time_marginal
 

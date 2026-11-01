@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 import domtest_inputs as T
-import wdm
+from domainia import wilson as wdm
 from domainia.covariance import Eq45Covariance
 from domainia.domains import CellSet
 from domainia.literal import EDGE_ENERGY_TOL, CenteredPad, Eq45Direct, time_shifted

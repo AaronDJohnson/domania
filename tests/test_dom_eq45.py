@@ -16,9 +16,9 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-import wdm
-from wdm.evolutionary import eq45_blocks_cheb, eq45_coeffs_interp, eq45_plan
-from wdm.matrix import build_C_wdm_active
+from domainia import wilson as wdm
+from domainia.wilson.evolutionary import eq45_blocks_cheb, eq45_coeffs_interp, eq45_plan
+from domainia.wilson.matrix import build_C_wdm_active
 
 import domtest_inputs as T
 from domainia.covariance import Eq45Covariance, keep_mask
@@ -38,7 +38,7 @@ def _cells(Nt: int = NT) -> CellSet:
 
 
 def _dense_blocks(cov: Eq45Covariance, nu: np.ndarray) -> np.ndarray:
-    from wdm.backend import NUMPY
+    from domainia.wilson.backend import NUMPY
 
     d, u = to_layout(*cov.blocks(nu), cov.sizes, "ragged", NUMPY)
     return np.asarray(blocks_to_dense(d, u, NUMPY))

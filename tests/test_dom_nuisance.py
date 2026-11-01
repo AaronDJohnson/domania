@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-import wdm
+from domainia import wilson as wdm
 
 import domtest_inputs as T
 from domainia.covariance import BlockTridiagonalCovariance, DenseCovariance, DiagonalCovariance, Eq45Covariance

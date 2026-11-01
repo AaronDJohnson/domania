@@ -6,7 +6,7 @@ import dataclasses
 
 import numpy as np
 import pytest
-import wdm
+from domainia import wilson as wdm
 from dom_db_inputs import GB_CASES, DenseCov, gb_case, jax_or_skip
 
 from domainia.domains import CellSet, FourierDomain, TimeDomain, WDMDomain

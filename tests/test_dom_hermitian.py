@@ -129,7 +129,7 @@ def test_jax_matches_numpy(jax_be, case):
 
 
 def _numpy():
-    from wdm.backend import NUMPY
+    from domainia.wilson.backend import NUMPY
 
     return NUMPY
 

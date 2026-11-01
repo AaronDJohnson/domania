@@ -17,9 +17,9 @@ import math
 from pathlib import Path
 
 import numpy as np
-import wdm
-from wdm.grid import active_mask
-from wdm.transform import band_atoms
+from domainia import wilson as wdm
+from domainia.wilson.grid import active_mask
+from domainia.wilson.transform import band_atoms
 
 REL = Path(__file__).resolve().parents[3]
 GOLDEN = REL / "golden"
@@ -98,8 +98,8 @@ def log_f_clip(f: np.ndarray) -> np.ndarray:
 
 def wt_band_variance(Nf: int, Nt: int, dt: float, ac: float, ad: float) -> np.ndarray:
     """WT ``matrix.band_variance`` on an (Nf, Nt) grid, A_n = 1, alpha over the 16 s record."""
-    from wdm.filter import phi_centered
-    from wdm.grid import packed_cells
+    from domainia.wilson.filter import phi_centered
+    from domainia.wilson.grid import packed_cells
 
     f_nyq = 0.5 / dt
     m, n = packed_cells(Nf, Nt)
@@ -119,7 +119,7 @@ def wt_band_variance(Nf: int, Nt: int, dt: float, ac: float, ad: float) -> np.nd
 
 def wt_mid_variance(Nf: int, Nt: int, dt: float, ac: float, ad: float) -> np.ndarray:
     """WT ``matrix.mid_variance`` on an (Nf, Nt) grid, A_n = 1."""
-    from wdm.grid import packed_cells
+    from domainia.wilson.grid import packed_cells
 
     m, n = packed_cells(Nf, Nt)
     t = n * wdm.delta_T(Nf, dt)
@@ -172,7 +172,7 @@ def orthonormal_coefficients(T: float, n_harm: int, period: float, L: int = 1 <<
 
 def gb_phase(bands: np.ndarray, NT: int, phi: np.ndarray) -> np.ndarray:
     """GB wdm_bands._phase verbatim (the per-band phase of wdm_full.analyse)."""
-    from wdm.grid import carrier_phase
+    from domainia.wilson.grid import carrier_phase
 
     n = np.arange(NT)
     out = np.empty((bands.size, NT), complex)
@@ -311,7 +311,7 @@ class GBCase:
         """``(C, band, n)``: the padded variant's kept cells ``Re(C z_store)`` (GB
         ``variant(prep, "pad")``: ``_cells(grid, *pad_maps(...)) * sqrt(N/N')``, ``n < NT``)."""
         from domainia.maps.fourier import pad_maps
-        from wdm.filter import phi_centered
+        from domainia.wilson.filter import phi_centered
 
         NTp, gp = self.NTp, self.pad_grid
         g0p = (NTp // 2) * int(self.bands[0]) - NTp // 2

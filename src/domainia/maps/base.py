@@ -1,6 +1,6 @@
 """Linear maps between domains and the lazy congruence they push (spec §4.2).
 
-A map is a frozen dataclass registered as a JAX pytree (``wdm.backend.pytree_dataclass``):
+A map is a frozen dataclass registered as a JAX pytree (``wilson.backend.pytree_dataclass``):
 its host-built constants (index tables, atom matrices, Dirichlet kernels) are the pytree
 *data*, its domains and sizes the static *meta*.  Pass a map to ``jax.jit`` as an
 argument, never close over it, and call :meth:`LinearMap.on` once to move its constants
@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 import numpy as np
-from wdm.backend import NUMPY, Backend, get_backend, pytree_dataclass, require_x64
+from domainia.wilson.backend import NUMPY, Backend, get_backend, pytree_dataclass, require_x64
 
 from ..domains import FourierDomain, TimeDomain, WDMDomain
 

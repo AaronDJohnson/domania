@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-import wdm
-from wdm.backend import NUMPY
+from domainia import wilson as wdm
+from domainia.wilson.backend import NUMPY
 
 from dom_toys import ToyMap, ToySignal
 from domainia.covariance import (ChannelStack, DiagonalCovariance, Eq45Covariance, ExactTimeCovariance, PushedRows,

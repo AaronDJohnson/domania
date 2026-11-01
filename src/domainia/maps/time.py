@@ -13,9 +13,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-import wdm
-from wdm.backend import pytree_dataclass
-from wdm.transform import atom_spectrum, base_atom_spectra
+from domainia import wilson
+from domainia.wilson.backend import pytree_dataclass
+from domainia.wilson.transform import atom_spectrum, base_atom_spectra
 
 from ..domains import FourierDomain, TimeDomain, WDMDomain
 from .base import _BUILD, LinearMap, _last_axis
@@ -23,7 +23,7 @@ from .base import _BUILD, LinearMap, _last_axis
 __all__ = ["CropTime", "TimeToFourier", "TimeToWDM", "WDMToTime", "ZeroPadTime"]
 
 
-def _check_grid(time: TimeDomain, dom: WDMDomain) -> wdm.Grid:
+def _check_grid(time: TimeDomain, dom: WDMDomain) -> wilson.Grid:
     g = dom.cells.grid
     if time.N != g.N or time.dt != g.dt:
         raise ValueError(f"time domain (N={time.N}, dt={time.dt}) does not match the cells' grid "
@@ -42,7 +42,7 @@ def _flat(x: Any, N: int) -> tuple[Any, tuple[int, ...]]:
 class TimeToWDM(LinearMap):
     """``x -> (W x)[cells]``: the WDM transform of a record, cells in ``dst``'s order.
 
-    ``apply`` is ``wdm.forward_time`` (1-D) or ``wdm.forward_time_many`` (batched; bitwise
+    ``apply`` is ``wilson.forward_time`` (1-D) or ``wilson.forward_time_many`` (batched; bitwise
     the same per row), then a gather -- WT ``Grid.forward``/``forward_many`` followed by
     ``Variant.map``'s ``[keep]`` (matrix.py:191-197, 711-716).  ``adjoint`` is
     ``W^T`` restricted to the cells, ``dt * W^{-1}`` of the zero-filled grid
@@ -63,7 +63,7 @@ class TimeToWDM(LinearMap):
             object.__setattr__(self, "n_idx", np.asarray(self.dst.cells.n, dtype=np.int64))
 
     @property
-    def grid(self) -> wdm.Grid:
+    def grid(self) -> wilson.Grid:
         return self.dst.cells.grid
 
     def apply(self, x, be=None):
@@ -71,10 +71,10 @@ class TimeToWDM(LinearMap):
         x = be.asarray(x)
         g = self.grid
         if x.ndim == 1:
-            w = wdm.forward_time(x, g.Nf, g.Nt, g.dt, be=be)
+            w = wilson.forward_time(x, g.Nf, g.Nt, g.dt, be=be)
             return w[self.m_idx, self.n_idx]
         X, lead = _flat(x, g.N)
-        w = wdm.forward_time_many(X, g.Nf, g.Nt, g.dt, be=be)
+        w = wilson.forward_time_many(X, g.Nf, g.Nt, g.dt, be=be)
         return w[:, self.m_idx, self.n_idx].reshape(*lead, self.m_idx.size)
 
     def _scatter(self, y, be):
@@ -87,7 +87,7 @@ class TimeToWDM(LinearMap):
         be = self._be(y, be)
         y = be.asarray(y)
         g = self.grid
-        x = g.dt * wdm.inverse_time_many(self._scatter(y, be), g.Nf, g.Nt, g.dt, be=be)
+        x = g.dt * wilson.inverse_time_many(self._scatter(y, be), g.Nf, g.Nt, g.dt, be=be)
         return x.reshape(*y.shape[:-1], g.N)
 
     def rows(self, idx):
@@ -102,7 +102,7 @@ class TimeToWDM(LinearMap):
 @pytree_dataclass(data=("m_idx", "n_idx"), meta=("src", "dst"))
 @dataclass(frozen=True, eq=False)
 class WDMToTime(LinearMap):
-    """``W^{-1} = W^T / dt`` on a complete cell set: ``wdm.inverse_time_many`` of the
+    """``W^{-1} = W^T / dt`` on a complete cell set: ``wilson.inverse_time_many`` of the
     unpacked grid (WT ``Grid.inverse_many``, matrix.py:199-204).  ``adjoint`` is
     ``W^{-T} = W / dt``."""
 
@@ -115,7 +115,7 @@ class WDMToTime(LinearMap):
         if self.m_idx is _BUILD:
             self.src.require_unit_scale("WDMToTime")
             g = _check_grid(self.dst, self.src)
-            m, n = wdm.grid.packed_cells(g.Nf, g.Nt)
+            m, n = wilson.grid.packed_cells(g.Nf, g.Nt)
             got = np.asarray(self.src.cells.m), np.asarray(self.src.cells.n)
             if len(got[0]) != m.size or set(zip(*got)) != set(zip(m.tolist(), n.tolist())):
                 raise ValueError("WDMToTime needs every active cell of the grid (W^-1 = W^T/dt "
@@ -124,7 +124,7 @@ class WDMToTime(LinearMap):
             object.__setattr__(self, "n_idx", got[1].astype(np.int64))
 
     @property
-    def grid(self) -> wdm.Grid:
+    def grid(self) -> wilson.Grid:
         return self.src.cells.grid
 
     def apply(self, y, be=None):
@@ -134,7 +134,7 @@ class WDMToTime(LinearMap):
         Y = y.reshape(-1, y.shape[-1])
         full = be.xp.zeros((Y.shape[0], g.Nf + 1, g.Nt), dtype=Y.dtype)
         full = be.set(full, (slice(None), self.m_idx, self.n_idx), Y, copy=False)
-        return wdm.inverse_time_many(full, g.Nf, g.Nt, g.dt, be=be).reshape(*y.shape[:-1], g.N)
+        return wilson.inverse_time_many(full, g.Nf, g.Nt, g.dt, be=be).reshape(*y.shape[:-1], g.N)
 
     def adjoint(self, x, be=None):
         be = self._be(x, be)

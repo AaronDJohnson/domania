@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-import wdm
-from wdm.evolutionary import (eq45_blocks_cheb, eq45_coeffs_bessel, eq45_plan, exact_covariance,
+from domainia import wilson as wdm
+from domainia.wilson.evolutionary import (eq45_blocks_cheb, eq45_coeffs_bessel, eq45_plan, exact_covariance,
                               time_domain_covariance)
 from domainia import testing as T
 from domainia.domains import CellSet

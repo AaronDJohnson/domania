@@ -2,7 +2,7 @@ r"""``Lambda = W C W^T`` by the fast WDM transform on both sides (WDM II Eq. 9; 
 
 The text builds the exact sinusoid covariance in time (Eqs. 95-97) and then "transform[s] the
 time-domain covariance to the WDM domain": :math:`\Lambda = W C W^{\mathsf T}`.  ``W`` is never
-formed: each row of ``C`` goes through ``wdm.forward_time_many`` (``x -> W x`` on the packed
+formed: each row of ``C`` goes through ``wilson.forward_time_many`` (``x -> W x`` on the packed
 cells, ``W W^T = dt I``), then each row of ``C W^T`` again.  ``rows`` gives the edge rows
 :math:`W_E C W^{\mathsf T}` (the exact-edge targets), with ``W_E`` the atoms of the cells ``E``
 (:func:`wdm_rows`: :math:`W^{\mathsf T} e_p = dt\,W^{-1} e_p`).  Written once over the backend
@@ -14,16 +14,16 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-import wdm
-from wdm.backend import NUMPY, Backend, get_backend
-from wdm.grid import packed_cells
-from wdm.transform import forward_time_many, inverse_time_many
+from domainia import wilson
+from domainia.wilson.backend import NUMPY, Backend, get_backend
+from domainia.wilson.grid import packed_cells
+from domainia.wilson.transform import forward_time_many, inverse_time_many
 
 __all__ = ["wdm_congruence", "wdm_rows"]
 
 
-def wdm_rows(grid: wdm.Grid, rows: Any, *, be: Backend | None = None) -> Any:
-    """``(len(rows), N)``: the rows ``rows`` (positions among ``wdm.grid.packed_cells``) of the
+def wdm_rows(grid: wilson.Grid, rows: Any, *, be: Backend | None = None) -> Any:
+    """``(len(rows), N)``: the rows ``rows`` (positions among ``wilson.grid.packed_cells``) of the
     packed WDM matrix, i.e. the cells' atoms sampled in time (``dt W^{-1} e_p``)."""
     be = be or NUMPY
     rows = np.atleast_1d(np.asarray(rows, dtype=np.int64))
@@ -35,7 +35,7 @@ def wdm_rows(grid: wdm.Grid, rows: Any, *, be: Backend | None = None) -> Any:
     return grid.dt * inverse_time_many(E, grid.Nf, grid.Nt, grid.dt, be=be)
 
 
-def _forward_rows(X: Any, grid: wdm.Grid, m: np.ndarray, n: np.ndarray, be: Backend, chunk: int | None) -> Any:
+def _forward_rows(X: Any, grid: wilson.Grid, m: np.ndarray, n: np.ndarray, be: Backend, chunk: int | None) -> Any:
     """``X W^T``: every row of ``X`` (a record) to its packed cells, ``chunk`` rows at a time."""
     if chunk is None or X.shape[0] <= chunk:
         return forward_time_many(X, grid.Nf, grid.Nt, grid.dt, be=be)[:, m, n]
@@ -44,7 +44,7 @@ def _forward_rows(X: Any, grid: wdm.Grid, m: np.ndarray, n: np.ndarray, be: Back
     return be.xp.concatenate(parts, axis=0)
 
 
-def wdm_congruence(C: Any, grid: wdm.Grid, *, rows: Any = None, chunk: int | None = None,
+def wdm_congruence(C: Any, grid: wilson.Grid, *, rows: Any = None, chunk: int | None = None,
                    be: Backend | None = None) -> Any:
     """``W C W^T`` on every packed cell of ``grid`` (``(N, N)``), or ``W_rows C W^T``
     (``(len(rows), N)``) -- ``C`` any ``(N, N)`` time-domain matrix (not assumed symmetric).

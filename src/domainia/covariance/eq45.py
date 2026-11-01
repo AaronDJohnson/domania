@@ -9,7 +9,7 @@ T/2`: the raw defect), no lag truncation, and only :math:`|m - m'| \le 1`.
 =============  ======================  ==============================================
 builder        PSD needs               evaluator (oracle)
 =============  ======================  ==============================================
-``bessel``     capability "bessel"     ``wdm.evolutionary.eq45_coeffs_bessel`` +
+``bessel``     capability "bessel"     ``wilson.evolutionary.eq45_coeffs_bessel`` +
                                        ``eq45_blocks_cheb`` (WT ``TriCovariance``; NumPy golden)
 ``gram``       capability "gram"       ``eq45_blocks_gram`` (WG ``_gram_setup``/``_tri_blocks``;
                                        JAX golden)
@@ -30,8 +30,8 @@ from __future__ import annotations
 from typing import Any, Literal
 
 import numpy as np
-from wdm.backend import Backend, get_backend
-from wdm.evolutionary import (
+from domainia.wilson.backend import Backend, get_backend
+from domainia.wilson.evolutionary import (
     eq45_blocks_cheb,
     eq45_blocks_gram,
     eq45_coeffs_bessel,
@@ -43,8 +43,8 @@ from wdm.evolutionary import (
     eq45_separable_assemble,
     eq45_separable_kernels,
 )
-from wdm.grid import delta_T, packed_cells
-from wdm.transform import band_atoms
+from domainia.wilson.grid import delta_T, packed_cells
+from domainia.wilson.transform import band_atoms
 
 from .base import Covariance
 from .blocktri import BlockTridiagonalCovariance, blocks_to_dense, to_layout
@@ -59,7 +59,7 @@ _CAPABILITY: dict[str, str | None] = {"bessel": "bessel", "gram": "gram", "separ
 
 
 def keep_mask(cells: Any) -> np.ndarray:
-    """Boolean mask over ``wdm.grid.packed_cells`` of ``cells.grid`` selecting ``cells``.
+    """Boolean mask over ``wilson.grid.packed_cells`` of ``cells.grid`` selecting ``cells``.
 
     Raises unless ``cells`` lists active cells in band order (increasing packed position),
     the order of every Eq. (45) block and of ``eq45_plan``'s kept cells.

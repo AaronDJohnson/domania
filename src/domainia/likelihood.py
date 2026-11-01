@@ -34,14 +34,14 @@ whiten-based expanded order where an oracle differs (``EdgeSchurCache``); like e
 factor method they receive the covariance's constants as ``C=`` (``parts.covs[c]``, E-C1).
 
 **JAX** (spec section 3.3): the map and the signal must be JAX pytrees
-(``wdm.backend.pytree_dataclass``); the covariances stay static and their constants
+(``wilson.backend.pytree_dataclass``); the covariances stay static and their constants
 travel in :attr:`GaussianLikelihood.parts` (``parts.covs[c] = cov.constants(be)``), a
 pytree passed to ``jax.jit`` as an argument and never closed over.  The data are mapped
 once on the host in NumPy float64 (host-constant rule).  When every covariance is
 ``jittable`` and has no static key, the whole noise state is one compiled program
 (``_noise_state``); otherwise each covariance's own ``factor`` runs (its staged rows, or
 eagerly for the ``reference`` strategies) and only the state's remaining arithmetic is
-compiled.  Building a JAX likelihood calls ``wdm.backend.jax_backend()``, which runs
+compiled.  Building a JAX likelihood calls ``wilson.backend.jax_backend()``, which runs
 ``require_x64()``.
 """
 
@@ -53,7 +53,7 @@ from typing import Any, Literal
 
 import numpy as np
 
-from wdm.backend import NUMPY, Backend, get_backend, pytree_dataclass
+from domainia.wilson.backend import NUMPY, Backend, get_backend, pytree_dataclass
 
 from .covariance.base import concrete_failure
 from .covariance.stack import ChannelStack
@@ -192,7 +192,7 @@ def _check_pytree(parts: Any, what: str) -> None:
         if not isinstance(leaf, (jax.Array, np.ndarray, np.generic, bool, int, float, complex)):
             raise TypeError(f"{what}: leaf of type {type(leaf).__name__} is not an array; "
                             "maps and signals must be JAX pytrees "
-                            "(wdm.backend.pytree_dataclass) on the JAX backend")
+                            "(wilson.backend.pytree_dataclass) on the JAX backend")
 
 
 def _check_composition(data: Any, map: Any, covs: tuple = (), *,
@@ -231,7 +231,7 @@ def _check_composition(data: Any, map: Any, covs: tuple = (), *,
 def _resolve_backend(values: Any, backend: str | Backend | None) -> Backend:
     be = get_backend(values, backend=backend)
     if be.name == "jax":
-        from wdm.backend import jax_backend
+        from domainia.wilson.backend import jax_backend
 
         be = jax_backend()                 # require_x64() + pending pytree registrations
     return be

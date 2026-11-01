@@ -18,9 +18,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import wdm
-from wdm.backend import NUMPY
-from wdm.evolutionary import eq45_blocks_cheb, eq45_coeffs_bessel, eq45_plan
+from domainia import wilson as wdm
+from domainia.wilson.backend import NUMPY
+from domainia.wilson.evolutionary import eq45_blocks_cheb, eq45_coeffs_bessel, eq45_plan
 from domainia import linalg as la
 from domainia.covariance import BlockTriCovFactor, DiagFactor, HermitianCovariance, padded_factor
 from domainia.domains import CellSet

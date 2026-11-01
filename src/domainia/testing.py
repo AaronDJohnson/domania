@@ -2,9 +2,9 @@
 likelihood path).  Everything here is ``O(N^2)`` memory or worse: keep ``N`` <~ 2048.
 
 * :func:`dense_W`, :func:`wdm_congruence`: the WDM rows of a cell set
-  (``wdm.matrix.active_W``) and ``W_K Sigma W_K^T``.
+  (``wilson.matrix.active_W``) and ``W_K Sigma W_K^T``.
 * :func:`eq45_dense`: Eq. (45) on a cell set by the direct sum over rfft bins
-  (``wdm.evolutionary.eq45_direct``).
+  (``wilson.evolutionary.eq45_direct``).
 * :func:`blocktri_dense`: a ragged block-tridiagonal matrix assembled densely.
 * :func:`hhat`, :func:`eq54_covariance`, :func:`dense_lambda_generic`: the generic
   Eq. (54) covariance of a modulated stationary process on Fourier bins and its WDM
@@ -20,8 +20,8 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-import wdm
-from wdm.evolutionary import eq45_direct, eq45_plan
+from domainia import wilson
+from domainia.wilson.evolutionary import eq45_direct, eq45_plan
 
 from .domains import CellSet
 
@@ -41,9 +41,9 @@ CArray = NDArray[np.complex128]
 
 def dense_W(cells: CellSet) -> Array:
     """``(cells.size, N)``: row ``p`` is cell ``p``'s atom sampled in time, so ``W x`` are
-    the cells of ``x`` (``wdm.matrix.active_W`` rows, ``W_a W_a^T = dt I``)."""
+    the cells of ``x`` (``wilson.matrix.active_W`` rows, ``W_a W_a^T = dt I``)."""
     g = cells.grid
-    return wdm.matrix.active_W(g.Nf, g.Nt, g.dt)[cells.packed_positions()]
+    return wilson.matrix.active_W(g.Nf, g.Nt, g.dt)[cells.packed_positions()]
 
 
 def wdm_congruence(Sigma: Array, cells: CellSet) -> Array:

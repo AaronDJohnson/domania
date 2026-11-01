@@ -44,7 +44,7 @@ COMMON = REL / "scripts" / "golden" / "workers" / "_common.py"
 
 def _jax_or_skip():
     jax = pytest.importorskip("jax", reason="jax not installed (NumPy-only lane)")
-    from wdm.backend import enable_x64
+    from domainia.wilson.backend import enable_x64
 
     enable_x64()
     return jax
@@ -54,7 +54,7 @@ def _jax_or_skip():
 def jax_be():
     """The JAX backend with float64 enabled; skips when jax is not importable."""
     _jax_or_skip()
-    from wdm.backend import jax_backend
+    from domainia.wilson.backend import jax_backend
 
     return jax_backend()
 
@@ -64,10 +64,10 @@ def backend(request):
     """Both backends (the JAX leg skips when jax is not importable)."""
     if request.param == "jax":
         _jax_or_skip()
-        from wdm.backend import jax_backend
+        from domainia.wilson.backend import jax_backend
 
         return jax_backend()
-    from wdm.backend import NUMPY
+    from domainia.wilson.backend import NUMPY
 
     return NUMPY
 

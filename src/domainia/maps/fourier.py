@@ -4,7 +4,7 @@ Ported from ``toy_models/galactic_binary/matrix.py`` (frozen): ``_geometric``,
 ``pad_maps``, ``crop_maps`` verbatim (L270-306), the cell matrices of ``Grid.dense_atoms``
 (L222-227) and ``_cells`` (L320-332, with ``wdm_full.analyse`` L142-145 and
 ``wdm_bands._phase`` L89-95), and the data map ``cells`` (L818-820).  The atoms are
-``wdm.transform.band_atoms`` (``geometry.band_atoms`` to rounding; bit-identical until the Hz window of
+``wilson.transform.band_atoms`` (``geometry.band_atoms`` to rounding; bit-identical until the Hz window of
 v0.12.0, S1 Task C6).
 """
 
@@ -15,11 +15,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-import wdm
-from wdm.backend import pytree_dataclass
-from wdm.filter import phi_centered
-from wdm.grid import carrier_phase
-from wdm.transform import band_atoms
+from domainia import wilson
+from domainia.wilson.backend import pytree_dataclass
+from domainia.wilson.filter import phi_centered
+from domainia.wilson.grid import carrier_phase
+from domainia.wilson.transform import band_atoms
 
 from ..domains import FourierDomain, WDMDomain
 from .base import _BUILD, LinearMap, _last_axis
@@ -225,7 +225,7 @@ class FourierToWDM(LinearMap):
     the atoms are truncated to ``src`` (the GB exact rows on the analysis window,
     matrix.py:686).  ``C`` holds the unit-norm atoms (GB ``Variant.C``):
     ``impl="dense"`` evaluates ``Re(z[..., lo:lo+width] @ C.T)`` (GB ``cells``, the golden
-    default); ``impl="fft"`` evaluates ``wdm.forward_bands`` (opt-in, <= 1e-12 relative).
+    default); ``impl="fft"`` evaluates ``wilson.forward_bands`` (opt-in, <= 1e-12 relative).
     For a record ``z = rfft(x)`` the cells are ``sqrt(N / (2 dt))`` times
     ``TimeToWDM.apply(x)`` on the same cells (no map applies ``WDMDomain.scale`` yet, so
     ``dst.scale`` must be 1: gap G4).
@@ -290,7 +290,7 @@ class FourierToWDM(LinearMap):
             return be.xp.real(z[..., self.lo:self.lo + self.width] @ self.C.T)
         g = self.dst.cells.grid
         geo = _geometry(self.dst)
-        w = wdm.transform.forward_bands(z, self.src.k0, geo["bands"], g.Nf, g.Nt, g.dt, be=be)
+        w = wilson.transform.forward_bands(z, self.src.k0, geo["bands"], g.Nf, g.Nt, g.dt, be=be)
         return w.reshape(*w.shape[:-2], -1)[..., geo["sel"]]
 
     def adjoint(self, w, be=None):

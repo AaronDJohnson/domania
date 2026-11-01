@@ -1,6 +1,6 @@
 """Data vectors on a domain (spec section 4.1).
 
-Each class is a JAX pytree (:func:`wdm.backend.pytree_dataclass`) whose only leaf is
+Each class is a JAX pytree (:func:`wilson.backend.pytree_dataclass`) whose only leaf is
 ``values``; ``domain`` and ``channels`` are static metadata, so a batch of data
 vectors on one domain ``vmap``s and two different domains compile separately.
 
@@ -16,7 +16,7 @@ import dataclasses
 from dataclasses import dataclass
 from typing import Any
 
-from wdm.backend import is_tracer, pytree_dataclass
+from domainia.wilson.backend import is_tracer, pytree_dataclass
 
 from .domains import ChannelAxis, FourierDomain, TimeDomain, WDMDomain
 

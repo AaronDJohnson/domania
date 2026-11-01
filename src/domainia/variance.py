@@ -1,6 +1,6 @@
 """Diagonal WDM variances (spec §4.3): the band average (Eq. 36) and the midpoint (Eq. 39).
 
-Each is a pytree (``wdm.backend.pytree_dataclass``): the host-built constants are its
+Each is a pytree (``wilson.backend.pytree_dataclass``): the host-built constants are its
 data, the spectrum and the cells its static meta, so a variance is passed to ``jax.jit``
 as an argument.  Calling it with the noise parameters gives the ``(P,)`` variances of the
 cells (``A = 1`` for the log-linear PSD; one channel at a time for a separable PSD).
@@ -16,7 +16,7 @@ Oracles (bitwise on NumPy):
   and ``covariance_builder``'s ``approx`` (L642-646): ``0.5 (<s_I>_m + g(t_n) <s_G>_m)``
   with ``g = exp(mu @ e(t_n))``, band means ``s[:, window] @ (phi^2 / sum phi^2)``,
   midpoint at the band-centre bin ``m Nt/2``.
-* generic -- ``wdm.noise.evolutionary_band_variance`` / ``0.5 S(f_m, t_n)`` (NumPy only).
+* generic -- ``wilson.noise.evolutionary_band_variance`` / ``0.5 S(f_m, t_n)`` (NumPy only).
 """
 
 from __future__ import annotations
@@ -25,9 +25,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-import wdm
-from wdm.backend import Backend, get_backend, pytree_dataclass
-from wdm.filter import phi_centered
+from domainia import wilson
+from domainia.wilson.backend import Backend, get_backend, pytree_dataclass
+from domainia.wilson.filter import phi_centered
 
 from .domains import CellSet
 from .maps.base import _BUILD, on_backend
@@ -40,7 +40,7 @@ def _cell_arrays(cells: CellSet) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     g = cells.grid
     m = np.asarray(cells.m, dtype=np.int64)
     n = np.asarray(cells.n, dtype=np.int64)
-    return m, n, n * wdm.delta_T(g.Nf, g.dt)                           # t_n = n dT (WT Grid.t)
+    return m, n, n * wilson.delta_T(g.Nf, g.dt)                           # t_n = n dT (WT Grid.t)
 
 
 def _separable_means(psd: SeparablePSD, cells: CellSet, how: str) -> tuple[tuple, np.ndarray]:
@@ -109,7 +109,7 @@ class BandAveragedVariance:
             sup = np.flatnonzero(phi2)
             phi2 = phi2[sup]
             f_off = (np.arange(g.Nt) - g.Nt // 2)[sup] / (g.N * g.dt)
-            fb = wdm.band_frequencies(g.Nf, g.dt)[:, None] + f_off[None, :]
+            fb = wilson.band_frequencies(g.Nf, g.dt)[:, None] + f_off[None, :]
             ff = np.abs(fb)
             f_nyq = 0.5 / g.dt
             ff = np.where(ff > f_nyq, 2.0 * f_nyq - ff, ff)
@@ -144,7 +144,7 @@ class BandAveragedVariance:
             return _separable_value(self.means, self.Bn, self.modulated, nu, channel, be)
         g = self.cells.grid
         m, n, _ = _cell_arrays(self.cells)
-        full = wdm.noise.evolutionary_band_variance(g.Nf, g.Nt, g.dt, self.psd.bind(nu))
+        full = wilson.noise.evolutionary_band_variance(g.Nf, g.Nt, g.dt, self.psd.bind(nu))
         return full[m, n]
 
 
@@ -170,7 +170,7 @@ class MidpointVariance:
         g = self.cells.grid
         m, n, t = _cell_arrays(self.cells)
         if isinstance(self.psd, LogLinearPSD):
-            set_("Lm", self.psd.L(wdm.band_frequencies(g.Nf, g.dt))[m])
+            set_("Lm", self.psd.L(wilson.band_frequencies(g.Nf, g.dt))[m])
             set_("t", t)
         elif isinstance(self.psd, SeparablePSD):
             means, Bn = _separable_means(self.psd, self.cells, "mid")
@@ -195,5 +195,5 @@ class MidpointVariance:
             return _separable_value(self.means, self.Bn, self.modulated, nu, channel, be)
         g = self.cells.grid
         m, _, t = _cell_arrays(self.cells)
-        f = wdm.band_frequencies(g.Nf, g.dt)[m]
+        f = wilson.band_frequencies(g.Nf, g.dt)[m]
         return 0.5 * np.asarray(self.psd(f, t, nu))

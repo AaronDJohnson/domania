@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-from wdm.backend import Backend, get_backend, pytree_dataclass
+from domainia.wilson.backend import Backend, get_backend, pytree_dataclass
 
 from ..linalg import cblock_backward, cblock_factor, cblock_forward
 from .base import Covariance, QuadForm, as_evaluator

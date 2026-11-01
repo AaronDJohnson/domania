@@ -8,10 +8,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-import wdm
-from wdm.grid import active_mask
-from wdm.backend import NUMPY
-from wdm.matrix import active_W
+from domainia import wilson as wdm
+from domainia.wilson.grid import active_mask
+from domainia.wilson.backend import NUMPY
+from domainia.wilson.matrix import active_W
 from domainia import linalg as la
 from domainia.covariance import BlockTriCovFactor, CholFactor, DiagFactor, padded_factor, schur_factor
 

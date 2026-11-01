@@ -29,11 +29,11 @@ Layouts of a block-tridiagonal matrix (spec section 3.2):
 * ``"padded"``: ``(nb, B, B)`` arrays with identity dummy slots (:class:`BandLayout`),
   a ``be.scan`` over the bands; jit/vmap-able, the JAX default (WG).
 
-Factors are pytrees (:func:`wdm.backend.pytree_dataclass`): they stack along a rung
+Factors are pytrees (:func:`wilson.backend.pytree_dataclass`): they stack along a rung
 axis and pass through ``jax.jit``/``vmap``.  A factor whose Cholesky failed carries
 ``ok = False`` (NaN entries on the padded layout, a truncated factor on the ragged
 one); callers map that to ``-inf`` (spec section 4.7, PD policy).  The JAX Cholesky
-reads the lower triangle only (``symmetrize_input=False``, see ``wdm.backend``); WG
+reads the lower triangle only (``symmetrize_input=False``, see ``wilson.backend``); WG
 called ``jnp.linalg.cholesky`` with JAX's default, which differs by <= 7.4e-14 relative
 on inputs that are not bitwise symmetric (JAX is never claimed bitwise).
 
@@ -50,7 +50,7 @@ from typing import Any, Literal
 
 import numpy as np
 
-from wdm.backend import Backend, get_backend, is_tracer, jax_backend, pytree_dataclass
+from domainia.wilson.backend import Backend, get_backend, is_tracer, jax_backend, pytree_dataclass
 
 from .domains import CellSet
 
@@ -592,7 +592,7 @@ def pcg(apply_A: Callable[[Any], Any], apply_M: Callable[[Any], Any], B: Any, *,
 def device_constants(tree: Any) -> Any:
     """Move a pytree of host constants to the JAX device once (spec section 3.3).
 
-    Calls :func:`wdm.backend.jax_backend` first, so it raises ``RuntimeError`` when
+    Calls :func:`wilson.backend.jax_backend` first, so it raises ``RuntimeError`` when
     ``jax_enable_x64`` is off and registers every pending pytree class.
     """
     jax_backend()

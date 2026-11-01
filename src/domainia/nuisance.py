@@ -31,9 +31,9 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 import numpy as np
-import wdm
-from wdm.backend import Backend, get_backend, is_tracer, pytree_dataclass
-from wdm.grid import active_mask
+from domainia import wilson
+from domainia.wilson.backend import Backend, get_backend, is_tracer, pytree_dataclass
+from domainia.wilson.grid import active_mask
 
 from .covariance.base import CholFactor, Covariance, QuadForm, concrete_failure, factor_constants
 from .covariance.eq45 import keep_mask
@@ -96,7 +96,7 @@ class FourierBandNuisance:
         g = cells.grid
         if g.N != self.N or g.dt != self.dt:
             raise ValueError("the cells' grid is not this record's")
-        W = wdm.forward_time_many(self.discarded_basis(), g.Nf, g.Nt, g.dt)[:, active_mask(g.Nf, g.Nt)]
+        W = wilson.forward_time_many(self.discarded_basis(), g.Nf, g.Nt, g.dt)[:, active_mask(g.Nf, g.Nt)]
         return W[:, keep_mask(cells)].T
 
 

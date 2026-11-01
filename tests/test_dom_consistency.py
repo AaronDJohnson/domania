@@ -23,7 +23,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-import wdm
+from domainia import wilson as wdm
 from dom_toys import ToySelect
 
 from domainia.covariance import DiagonalCovariance, Eq45Covariance, ExactTimeCovariance, PushedRows, SchurEdge

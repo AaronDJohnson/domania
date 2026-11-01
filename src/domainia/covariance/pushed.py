@@ -21,8 +21,8 @@ from math import exp, lgamma, log
 from typing import Any, Literal
 
 import numpy as np
-from wdm.backend import NUMPY, Backend
-from wdm.transform import atom_spectrum, base_atom_spectra, forward_time_many
+from domainia.wilson.backend import NUMPY, Backend
+from domainia.wilson.transform import atom_spectrum, base_atom_spectra, forward_time_many
 
 from .exact_fourier import ExactFourierCovariance
 from .exact_time import CovOperator, ExactTimeCovariance, bessel_coefficients
@@ -203,7 +203,7 @@ class PushedRows:
             if be.name != "numpy":
                 import jax
 
-                from wdm.backend import require_x64
+                from domainia.wilson.backend import require_x64
 
                 require_x64()
                 C = jax.device_put(C)

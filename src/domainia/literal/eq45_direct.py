@@ -10,7 +10,7 @@ same integral (spec 10.2):
 * **record grid** (``LogLinearPSD``, ``GenericPSD``; the sinusoid): ``V_p`` is the rfft of the
   cell's atom on the cells' grid record and ``w_k = eta_k / T`` (Eq. 51 weights, ``T = N dt`` of
   that grid -- ``T'`` on a padded grid).  Block tri-diagonal in ``m`` (the atoms of bands more
-  than one apart share no bin), laid out as ``wdm.evolutionary.eq45_gram_plan``'s padded bands:
+  than one apart share no bin), laid out as ``wilson.evolutionary.eq45_gram_plan``'s padded bands:
   its atom spectra, weights and overlap bins are reused as constants, only the sum differs from
   the Gram builder.  ``assembly="blocktri"`` (block Cholesky, jittable) or ``"dense"``.
 * **band windows** (``SeparablePSD``; the galactic binary): ``V_p`` is the unit-norm atom on its
@@ -30,10 +30,10 @@ from __future__ import annotations
 from typing import Any, Literal
 
 import numpy as np
-from wdm.backend import Backend, get_backend
-from wdm.evolutionary import eq45_gram_plan, eq45_plan
-from wdm.grid import delta_T
-from wdm.transform import band_atoms
+from domainia.wilson.backend import Backend, get_backend
+from domainia.wilson.evolutionary import eq45_gram_plan, eq45_plan
+from domainia.wilson.grid import delta_T
+from domainia.wilson.transform import band_atoms
 
 from ..covariance.base import Covariance
 from ..covariance.blocktri import BlockTridiagonalCovariance, blocks_to_dense, to_layout

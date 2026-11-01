@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from wdm.backend import Backend
+from domainia.wilson.backend import Backend
 
 from ..domains import CellSet
 from .base import Covariance, DiagFactor, as_evaluator

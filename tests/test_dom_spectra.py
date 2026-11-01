@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-import wdm
+from domainia import wilson as wdm
 from dom_db_inputs import GB_CASES, SIN_DT, SIN_FMIN, SIN_T, TableEnvelope, gb_case, jax_or_skip
 
 from domainia.domains import FourierDomain

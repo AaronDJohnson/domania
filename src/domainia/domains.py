@@ -8,9 +8,9 @@ Every domain is a frozen, hashable dataclass, so it can be the static part of a
   record, in one of three unit conventions (``"rfft"``: ``numpy.fft.rfft(x)``;
   ``"dt_rfft"``: ``dt * rfft(x)``; ``"sigma0"``: ``rfft(x) / sigma0``, the GB
   normalisation).
-* :class:`CellSet`: a set of active WDM cells of one ``wdm.Grid``, always in **band
+* :class:`CellSet`: a set of active WDM cells of one ``wilson.Grid``, always in **band
   order** (``m`` ascending, then ``n``), i.e. a subsequence of
-  ``wdm.grid.packed_cells(Nf, Nt)``.
+  ``wilson.grid.packed_cells(Nf, Nt)``.
 * :class:`WDMDomain`: a cell set with a constant ``scale`` (the GB cells are
   ``Re(C z)`` with unit-norm atoms on ``z = rfft / sigma0``; the sinusoid uses 1).
 * :class:`ChannelAxis`: named channels (``("A", "E")`` for the GB); empty for one
@@ -26,8 +26,8 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
-import wdm
-from wdm.grid import packed_cells
+from domainia import wilson
+from domainia.wilson.grid import packed_cells
 
 __all__ = [
     "FOURIER_UNITS",
@@ -139,7 +139,7 @@ def _cell_index(name: str, value: object) -> IntArray:
 
 
 def _active(m: IntArray, n: IntArray, Nf: int) -> BoolArray:
-    """``wdm.active_mask`` evaluated at the cells ``(m, n)``: interior bands every ``n``,
+    """``wilson.active_mask`` evaluated at the cells ``(m, n)``: interior bands every ``n``,
     DC even ``n``, Nyquist ``(Nf + n)`` even."""
     interior = (m >= 1) & (m <= Nf - 1)
     dc = (m == 0) & (n % 2 == 0)
@@ -148,7 +148,7 @@ def _active(m: IntArray, n: IntArray, Nf: int) -> BoolArray:
 
 
 def _packed_index(m: IntArray, n: IntArray, Nf: int, Nt: int) -> IntArray:
-    """Position of active cell ``(m, n)`` in ``wdm.grid.packed_cells(Nf, Nt)`` order:
+    """Position of active cell ``(m, n)`` in ``wilson.grid.packed_cells(Nf, Nt)`` order:
     ``Nt/2`` DC cells, ``Nt`` cells per interior band, then the Nyquist cells."""
     h = Nt // 2
     out = h + (m - 1) * Nt + n
@@ -165,13 +165,13 @@ class CellSet:
     :meth:`drop_columns`, :meth:`columns` and :meth:`complement`.
     """
 
-    grid: wdm.Grid
+    grid: wilson.Grid
     m: tuple[int, ...]
     n: tuple[int, ...]
 
     def __post_init__(self) -> None:
-        if not isinstance(self.grid, wdm.Grid):
-            raise TypeError(f"grid must be a wdm.Grid; got {type(self.grid).__name__}")
+        if not isinstance(self.grid, wilson.Grid):
+            raise TypeError(f"grid must be a wilson.Grid; got {type(self.grid).__name__}")
         m = _cell_index("m", self.m)                            # copies: the flags below
         n = _cell_index("n", self.n)                            # must not touch the caller's
         if m.shape != n.shape:
@@ -224,11 +224,11 @@ class CellSet:
         return self._n  # type: ignore[attr-defined]
 
     def packed_positions(self) -> IntArray:
-        """Each cell's index in ``wdm.grid.packed_cells(Nf, Nt)`` (the full active order)."""
+        """Each cell's index in ``wilson.grid.packed_cells(Nf, Nt)`` (the full active order)."""
         return _packed_index(self._m, self._n, self.grid.Nf, self.grid.Nt)  # type: ignore[attr-defined]
 
     def keep_mask(self) -> BoolArray:
-        """Boolean mask over the grid's ``N`` packed cells (``wdm.evolutionary.eq45_plan`` keep)."""
+        """Boolean mask over the grid's ``N`` packed cells (``wilson.evolutionary.eq45_plan`` keep)."""
         keep = np.zeros(self.grid.N, dtype=bool)
         keep[self.packed_positions()] = True
         return keep
@@ -252,13 +252,13 @@ class CellSet:
 
     # -- constructors -----------------------------------------------------------
     @classmethod
-    def all_active(cls, grid: wdm.Grid) -> CellSet:
-        """Every active cell: ``wdm.grid.packed_cells(Nf, Nt)``."""
+    def all_active(cls, grid: wilson.Grid) -> CellSet:
+        """Every active cell: ``wilson.grid.packed_cells(Nf, Nt)``."""
         m, n = packed_cells(grid.Nf, grid.Nt)
         return cls(grid, tuple(m.tolist()), tuple(n.tolist()))
 
     @classmethod
-    def bands(cls, grid: wdm.Grid, bands: tuple[int, ...] | list[int]) -> CellSet:
+    def bands(cls, grid: wilson.Grid, bands: tuple[int, ...] | list[int]) -> CellSet:
         """Every active cell of the bands ``bands`` (strictly ascending)."""
         b = np.asarray(bands, dtype=np.int64).reshape(-1)
         if b.size == 0 or np.any(np.diff(b) <= 0):
@@ -275,7 +275,7 @@ class CellSet:
         return cls(grid, tuple(m.tolist()), tuple(n.tolist()))
 
     @classmethod
-    def from_mask(cls, grid: wdm.Grid, keep: BoolArray) -> CellSet:
+    def from_mask(cls, grid: wilson.Grid, keep: BoolArray) -> CellSet:
         """The cells where ``keep`` (a boolean mask over the ``N`` packed cells) is True."""
         keep = np.asarray(keep)
         if keep.dtype != np.bool_ or keep.shape != (grid.N,):
@@ -293,7 +293,7 @@ class CellSet:
         trail = _int("trail", trail, minimum=0)
         if lead + trail > self.grid.Nt:
             raise ValueError(f"lead + trail = {lead + trail} exceeds Nt = {self.grid.Nt}")
-        cols = np.asarray(wdm.grid.edge_columns(self.grid.Nt, lead, trail), dtype=np.int64)
+        cols = np.asarray(wilson.grid.edge_columns(self.grid.Nt, lead, trail), dtype=np.int64)
         return np.isin(self._n, cols)  # type: ignore[attr-defined]
 
     def drop_columns(self, lead: int, trail: int) -> CellSet:

@@ -11,10 +11,10 @@ import sys
 
 import numpy as np
 import pytest
-import wdm
+from domainia import wilson as wdm
 from dom_db_inputs import (DATA, REL, SIN_CUT, SIN_DT, SIN_NF, SIN_NT, SIN_PAD_COLUMNS, DenseCov,
                            fingerprint_gap, jax_or_skip, sha256_array, sinusoid_data, sinusoid_g6)
-from wdm.matrix import active_W
+from domainia.wilson.matrix import active_W
 
 from domainia.domains import CellSet, TimeDomain, WDMDomain
 from domainia.maps import TimeToWDM, WDMToTime
@@ -82,7 +82,7 @@ def test_push_equals_W_sigma_WT(grid):
 
 
 def test_push_of_an_exact_covariance_matches_wdm_exact_covariance():
-    """wdm.evolutionary.exact_covariance (dense W Sigma W^T) is the S1 oracle."""
+    """domainia.wilson.evolutionary.exact_covariance (dense W Sigma W^T) is the S1 oracle."""
     Nf, Nt, dt = 8, 16, 0.5
     g, _, M = _maps(Nf, Nt, dt)
     Sn = lambda f, t: (np.maximum(f, 0.05) / 1.0) ** (-1.0 + 0.8 * (t / (g.N * dt) - 0.5))  # noqa: E731

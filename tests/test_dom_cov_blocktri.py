@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from wdm.backend import NUMPY
+from domainia.wilson.backend import NUMPY
 
 from domainia.covariance import BlockTridiagonalCovariance
 from domainia.covariance.blocktri import BlockTriCovFactor, blocks_to_dense, dummy_slots, to_layout

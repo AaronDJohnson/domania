@@ -35,7 +35,7 @@ def _base(c: T.GBCase, base: str, ch: int):
     R = CellSet.bands(c.pad_grid, c.R_bands)
     if base == "tri":
         return Eq45Covariance(c.pad_psd, R, builder="separable", assembly="blocktri", layout="ragged", channel=ch)
-    from wdm.filter import phi_centered
+    from domainia.wilson.filter import phi_centered
 
     NTp, nR = c.NTp, c.R_bands.size
     sI, sG = np.asarray(c.P["pad_store_sI"], float), np.asarray(c.P["pad_store_sG"], float)

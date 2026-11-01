@@ -57,7 +57,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-from wdm.backend import Backend, get_backend, pytree_dataclass
+from domainia.wilson.backend import Backend, get_backend, pytree_dataclass
 
 from .base import Covariance, QuadForm, attach_constants, factor_constants, quad_form
 

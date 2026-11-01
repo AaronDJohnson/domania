@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-import wdm
-from wdm.backend import NUMPY
-from wdm.evolutionary import exact_covariance
+from domainia import wilson as wdm
+from domainia.wilson.backend import NUMPY
+from domainia.wilson.evolutionary import exact_covariance
 
 import domtest_inputs as T
 from domainia.covariance import (CHEB_TOL, ExactFourierCovariance, ExactTimeCovariance, PushedRows, cheb_order,

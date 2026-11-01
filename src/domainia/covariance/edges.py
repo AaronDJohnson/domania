@@ -22,9 +22,9 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 import numpy as np
-from wdm.backend import NUMPY, Backend, get_backend, pytree_dataclass
-from wdm.grid import active_mask, packed_cells
-from wdm.transform import band_atoms, forward_time_many, inverse_time_many
+from domainia.wilson.backend import NUMPY, Backend, get_backend, pytree_dataclass
+from domainia.wilson.grid import active_mask, packed_cells
+from domainia.wilson.transform import band_atoms, forward_time_many, inverse_time_many
 
 from ..linalg import BandLayout
 from .base import (CholFactor, Covariance, DiagFactor, QuadForm, concrete_failure, factor_constants,
@@ -282,7 +282,7 @@ PaddedForm = Literal["solve", "reduce"]
 
 def lift_samples(x: Any, C: Any, Nf: int, Nt: int, dt: float, n: int, be: Backend) -> Any:
     """The padded marginal's map from ``n`` data samples to every active cell of the extended
-    ``(Nf, Nt)`` grid: zero padding at the end, ``wdm.forward_time_many``, the active cells
+    ``(Nf, Nt)`` grid: zero padding at the end, ``wilson.forward_time_many``, the active cells
     ``C["m"], C["n_idx"]``.  ``(k, n) -> (k, n')`` or ``(n,) -> (n',)``."""
     xp = be.xp
     one = x.ndim == 1
@@ -624,7 +624,7 @@ class PadMask:
         store bins ``[store_k0, store_k0 + store_n)`` (they carry ``sqrt(N/N')``);
         ``rho`` ``(P,)`` each kept atom's energy on the data; ``kept_band`` (position among
         the analysis bands) and ``kept_n`` (column) of each kept cell; ``R_grid`` the padded
-        grid (``wdm.Grid(Nf, Nt', dt)``) and ``R_bands`` its bands (every band overlapping
+        grid (``wilson.Grid(Nf, Nt', dt)``) and ``R_bands`` its bands (every band overlapping
         the store); ``k0`` the first analysis band's position among ``R_bands``.  A cell
         ``r`` of ``R`` (value 1) has padded bins ``conj(u_r) sqrt(N'/N)``; cropping them to the
         record (``maps.fourier.crop_maps``) gives its store bins.

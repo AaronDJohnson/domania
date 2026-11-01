@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-import wdm
+from domainia import wilson as wdm
 from dom_db_inputs import (GB_CASES, GB_CUT, GB_PAD_COLUMNS, DenseCov, fingerprint_gap, gb_case,
                            jax_or_skip, same_build, sha256_array)
 

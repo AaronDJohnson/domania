@@ -18,7 +18,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 import numpy as np
-from wdm.backend import Backend
+from domainia.wilson.backend import Backend
 
 from ..covariance.base import Covariance, DiagFactor
 from ..covariance.blocktri import blocktri_cov_factor, dummy_slots

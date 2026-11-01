@@ -24,8 +24,8 @@ from typing import Any
 
 import numpy as np
 import pytest
-import wdm
-from wdm.backend import get_backend, pytree_dataclass
+from domainia import wilson as wdm
+from domainia.wilson.backend import get_backend, pytree_dataclass
 
 import domtest_inputs as T
 from domainia.covariance import DiagonalCovariance, ExactTimeCovariance, FCFactor, VandermondeExactTime
@@ -436,7 +436,7 @@ def test_gaussian_likelihood_picks_the_mode_route(backend_name):
     lnL = the 40-digit marginal Gaussian (A_n = 1, no signal) on both backends."""
     if backend_name == "jax":
         pytest.importorskip("jax", reason="jax not installed (NumPy-only lane)")
-        from wdm.backend import enable_x64
+        from domainia.wilson.backend import enable_x64
 
         enable_x64()
     ref = T.golden_json(REFERENCE)

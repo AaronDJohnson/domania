@@ -26,7 +26,7 @@ if str(REL) not in sys.path:          # activate.sh exports it; a bare run still
 from scripts.golden.goldens_io import read_json, sha256_array, to_float  # noqa: E402
 from scripts.golden.workers._common import runtime_fingerprint  # noqa: E402
 
-import wdm  # noqa: E402
+from domainia import wilson as wdm  # noqa: E402
 
 GOLDEN = REL / "golden"
 DATA = REL / "data"
@@ -48,7 +48,7 @@ __all__ = ["DATA", "GB_CASES", "GB_CUT", "GB_PAD_COLUMNS", "GOLDEN", "REL", "SIN
 def jax_or_skip():
     """``(jax, JAX backend)`` with float64 on; skips in the NumPy-only lane."""
     jax = pytest.importorskip("jax", reason="jax not installed (NumPy-only lane)")
-    from wdm.backend import enable_x64, jax_backend
+    from domainia.wilson.backend import enable_x64, jax_backend
 
     enable_x64()
     return jax, jax_backend()

@@ -84,7 +84,7 @@ def test_misuse_is_refused():
 
 def test_jax_scalars_give_the_same_numbers():
     jnp = pytest.importorskip("jax.numpy")
-    from wdm.backend import jax_backend
+    from domainia.wilson.backend import jax_backend
 
     be = jax_backend()
     dens = RealGaussian(-56782.61703147072, "log10_A_n")

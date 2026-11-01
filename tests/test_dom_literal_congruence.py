@@ -6,7 +6,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-import wdm
+from domainia import wilson as wdm
 from domainia.domains import CellSet
 from domainia.literal import wdm_congruence, wdm_rows
 from domainia.testing import dense_W

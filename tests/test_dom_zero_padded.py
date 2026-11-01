@@ -12,9 +12,9 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-import wdm
-from wdm.backend import NUMPY
-from wdm.grid import active_mask
+from domainia import wilson as wdm
+from domainia.wilson.backend import NUMPY
+from domainia.wilson.grid import active_mask
 
 import domtest_inputs as T
 from domainia.covariance import (BlockTridiagonalCovariance, DenseCovariance, DiagonalCovariance, Eq45Covariance,
@@ -251,7 +251,7 @@ def test_time_marginal_is_m_lambda_m_on_the_kept_cells():
     cells' rho lies in (0, 1], is 1 away from the edges and about 1/2 in column 0; and the
     time-marginal density is the kept cells' M Lambda M density,
     ln N(x; 0, C_dd) = ln N(A x; 0, (M Lambda M)_KK) + ln|det A|."""
-    from wdm.evolutionary import apply_time_mask, energy_fraction
+    from domainia.wilson.evolutionary import apply_time_mask, energy_fraction
 
     nf, nt, dt = 8, 64, 1 / 32
     g = wdm.Grid(nf, nt + 16, dt)

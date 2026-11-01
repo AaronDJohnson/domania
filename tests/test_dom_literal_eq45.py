@@ -9,14 +9,14 @@ import numpy as np
 import pytest
 
 import domtest_inputs as T
-import wdm
+from domainia import wilson as wdm
 from domainia.covariance import Eq45Covariance
 from domainia.covariance.blocktri import blocks_to_dense, to_layout
 from domainia.domains import CellSet
 from domainia.literal import Eq45Direct
 from domainia.spectra import GenericPSD, LogLinearPSD
 from domainia.testing import eq45_dense
-from wdm.backend import NUMPY
+from domainia.wilson.backend import NUMPY
 
 GRIDS = [wdm.Grid(8, 16, 1 / 16), wdm.Grid(16, 32, 1 / 32)]
 NUS = [np.array([-1.7, 0.9]), np.array([-2.3, -1.4])]

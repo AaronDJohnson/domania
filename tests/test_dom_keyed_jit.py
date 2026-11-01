@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-import wdm
-from wdm.backend import NUMPY, is_tracer
+from domainia import wilson as wdm
+from domainia.wilson.backend import NUMPY, is_tracer
 
 from domainia.covariance import (ChannelStack, DiagonalCovariance, ExactTimeCovariance, PushedRows, SchurEdge,
                                  cheb_order)

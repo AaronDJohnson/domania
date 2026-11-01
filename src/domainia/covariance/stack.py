@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from wdm.backend import Backend, get_backend, pytree_dataclass
+from domainia.wilson.backend import Backend, get_backend, pytree_dataclass
 
 from .base import Covariance
 

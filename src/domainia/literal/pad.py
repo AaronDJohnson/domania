@@ -34,10 +34,10 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 import numpy as np
-import wdm
-from wdm.backend import NUMPY, Backend, pytree_dataclass
-from wdm.grid import active_mask, delta_T
-from wdm.transform import forward_time_many, inverse_time_many
+from domainia import wilson
+from domainia.wilson.backend import NUMPY, Backend, pytree_dataclass
+from domainia.wilson.grid import active_mask, delta_T
+from domainia.wilson.transform import forward_time_many, inverse_time_many
 
 from ..domains import CellSet, TimeDomain, WDMDomain
 from ..maps.base import Compose, LinearMap, _last_axis
@@ -117,7 +117,7 @@ class _ShiftedLogLinearPSD(LogLinearPSD):
     capabilities = frozenset()
 
     def alpha(self, t: Any, nu: Any, be: Backend | None = None) -> Any:
-        from wdm.backend import get_backend
+        from domainia.wilson.backend import get_backend
 
         be = be or get_backend(t, *(nu if isinstance(nu, (tuple, list)) else (nu,)))
         return super().alpha(be.asarray(t, dtype=float) + self.t0, nu, be)
@@ -148,13 +148,13 @@ class CenteredPad:
     ``p`` total padding columns (16 in the paper), ``layout`` ``"centered"`` (``p/2`` each side;
     ``p/2`` must be even so the kept cells keep their DC / Nyquist parity) or ``"end"``."""
 
-    grid: wdm.Grid
+    grid: wilson.Grid
     p: int = 16
     layout: Literal["centered", "end"] = "centered"
 
     def __post_init__(self) -> None:
-        if not isinstance(self.grid, wdm.Grid):
-            raise TypeError(f"grid must be a wdm.Grid; got {type(self.grid).__name__}")
+        if not isinstance(self.grid, wilson.Grid):
+            raise TypeError(f"grid must be a wilson.Grid; got {type(self.grid).__name__}")
         if self.layout not in PAD_LAYOUTS:
             raise ValueError(f"layout must be one of {PAD_LAYOUTS}; got {self.layout!r}")
         p = operator.index(self.p)
@@ -165,9 +165,9 @@ class CenteredPad:
 
     # -- geometry -------------------------------------------------------------------------
     @property
-    def ext(self) -> wdm.Grid:
+    def ext(self) -> wilson.Grid:
         """The extended grid ``(Nf, Nt + p, dt)``."""
-        return wdm.Grid(self.grid.Nf, self.grid.Nt + self.p, self.grid.dt)
+        return wilson.Grid(self.grid.Nf, self.grid.Nt + self.p, self.grid.dt)
 
     @property
     def lead(self) -> int:
@@ -279,11 +279,11 @@ class CenteredPad:
         return out
 
     def dense_mask(self) -> np.ndarray:
-        """``M = W' chi W'^T / dt`` from the dense ``W'`` (``wdm.matrix.active_W``; the oracle)."""
+        """``M = W' chi W'^T / dt`` from the dense ``W'`` (``wilson.matrix.active_W``; the oracle)."""
         e = self.ext
         if e.N > DENSE_MASK_MAX:
             raise ValueError(f"dense_mask is the small-grid oracle (N' <= {DENSE_MASK_MAX}); N' = {e.N}")
-        W = wdm.matrix.active_W(e.Nf, e.Nt, e.dt)
+        W = wilson.matrix.active_W(e.Nf, e.Nt, e.dt)
         start, stop = self.samples
         return W[:, start:stop] @ W[:, start:stop].T / e.dt
 
