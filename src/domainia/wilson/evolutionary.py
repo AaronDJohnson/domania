@@ -216,8 +216,9 @@ def wrap_cut_columns(Nf: int, Nt: int, dt: float, tol: float = 1e-3, *,
     """``(leading, trailing)`` time columns to cut so that no kept atom of ``bands``
     (all by default) wraps more than ``tol`` of its energy (WDM II: ``tol = 1e-3``).
 
-    The rule is geometric (it ignores the noise).  ``(6, 5)`` on the sinusoid grid
-    ``(64, 256, 2**-10)``; ``(5, 4)`` on the 3- and 6-month GB analysis bands.
+    The rule is geometric (it ignores the noise).  With the default window: ``(6, 5)`` on the
+    sinusoid grid ``(64, 256, 2**-10)``; ``(5, 4)`` on the 3- and 6-month GB analysis bands.
+    Another window has other atoms, so other cuts.
 
     Parameters
     ----------

@@ -269,9 +269,8 @@ def band_averaged_variance(
     # and so does every admissible window (its partition of unity makes phi(f) or
     # phi(f - dF) nonzero at every bin), so ``in_band`` is never empty. An earlier
     # revision carried an ``if not np.any(in_band): Sn_eff = inf`` fallback for
-    # that case. It was
-    # unreachable, and a silent infinite variance is the last thing this
-    # package should produce, so it is gone rather than merely untested.
+    # that case. It was unreachable, and a silent infinite variance is the last
+    # thing this package should produce, so it is gone rather than merely untested.
     in_band = phi2 > 0
     # Match the window weights to the PSD's precision, so a float32 PSD yields
     # a float32 variance grid instead of being promoted back to float64 by the

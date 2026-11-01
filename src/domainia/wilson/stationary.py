@@ -738,6 +738,13 @@ def psd_from_K(
     >>> K_diag, _ = wdm.stationary.build_K_full_active(8, 16, 1.0, flat)
     >>> wdm.stationary.psd_from_K(K_diag, 8, 16, 1.0).shape
     (65,)
+
+    With another window, pass the same ``window=`` to both:
+
+    >>> K8, _ = wdm.stationary.build_K_full_active(8, 16, 1.0, flat, window=wdm.Meyer(8))
+    >>> S8 = wdm.stationary.psd_from_K(K8, 8, 16, 1.0, window=wdm.Meyer(8))
+    >>> bool(np.allclose(S8, 1e-3, rtol=1e-12, atol=0))
+    True
     """
     validate_grid(Nf, Nt)
     validate_dt(dt)
@@ -859,9 +866,9 @@ def apply_lambda_from_psd(
     that only ever need matvecs (MCMC, conjugate-gradient solves) the
     operator form is preferable.
 
-    The result is bit-for-bit equal to ``Lambda @ x.ravel()`` from
+    The result equals ``Lambda @ x.ravel()`` from
     :func:`build_lambda_blocks_full_active` plus
-    :func:`assemble_lambda_full_active`.
+    :func:`assemble_lambda_full_active` to machine precision.
 
     Examples
     --------
@@ -930,9 +937,9 @@ def psd_from_lambda_blocks(
     2. Apply $\Lambda$ to that real wmn vector (block-tridiag matvec).
     3. Apply :func:`domainia.wilson.transform.inverse` and take the real part.
 
-    The round-trip with :func:`build_lambda_blocks_full_active` is exact
-    to machine precision: feeding the returned $\mathcal{S}_n$ back to
-    the forward reproduces $\Lambda$ bit-for-bit.
+    The round-trip with :func:`build_lambda_blocks_full_active` holds to
+    machine precision: feeding the returned $\mathcal{S}_n$ back to the
+    forward reproduces $\Lambda$.
 
     Parameters
     ----------

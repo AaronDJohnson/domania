@@ -14,7 +14,7 @@ import pytest
 import domainia
 from domainia import wilson
 from domainia.testing import ALT_WINDOW, smoothstep
-from domainia.wilson import MEYER, Meyer, RampWindow, WindowError
+from domainia.wilson import MEYER, Meyer, RampWindow, SampledWindow, WindowError
 
 from .meyer_cases import THREADED, psd, psd_ft, wilson_cases
 
@@ -48,7 +48,27 @@ CONSUMERS = frozenset({
 #: Names that hard-code a window inside a kernel: the default instance and the constructors.
 HARD_CODED = frozenset({"MEYER", "Meyer", "RampWindow", "SampledWindow"})
 WINDOWS = [MEYER, Meyer(1), Meyer(8), RampWindow(smoothstep, "smoothstep"), ALT_WINDOW]
-GRIDS = [(8, 16, 1.0), (16, 8, 0.25), (4, 32, 2.0)]
+#: (16, 8, 0.25) is the only Nt = 8 geometry, and there the slab samples a Meyer rolloff at
+#: x = 1/2 only, where every symmetric ramp agrees: MEYER, Meyer(1), Meyer(8) and smoothstep
+#: coincide to 1 ulp, and only ALT_WINDOW tells windows apart.  (16, 16, 0.25) has the same
+#: Nf and dt with no two test windows alike.
+GRIDS = [(8, 16, 1.0), (16, 8, 0.25), (4, 32, 2.0), (16, 16, 0.25)]
+
+
+def _osc0(u):
+    """``cos(3 pi u / 2)`` on ``|u| < 1``, exactly 0 at ``|u| = 1/3``: admissible (power
+    complementary), with a zero sample inside the slab where Meyer is near its peak."""
+    u = np.asarray(u, float)
+    v = np.where(np.abs(u) < 1.0, np.cos(1.5 * np.pi * u), 0.0)
+    return np.where(np.abs(np.abs(u) - 1.0 / 3.0) < 1e-15, 0.0, v)
+
+
+#: A window that vanishes on a sampled bin where Meyer does not.  A kernel that ranks or masks
+#: candidate bins by Meyer's samples instead of this window's divides by that zero; every
+#: window in WINDOWS is nonzero wherever Meyer is, which hides the mix-up.
+ZEROS_WINDOW = SampledWindow(_osc0, "osc0")
+#: The grids where ``|u| = 1/3`` is a sample (3 divides ``Nt / 2``).
+ZEROS_GRIDS = [(4, 12, 1.0), (8, 24, 0.5)]
 #: Relative tolerance (to the reference's peak) of the definition-level comparisons.
 RTOL = 1e-13
 #: atom_spectrum's phase ramp exp(-2 pi i k (n - a) / Nt) rounds its argument at every bin,
@@ -90,27 +110,65 @@ def _callee(node: ast.Call) -> str | None:
     return f.id if isinstance(f, ast.Name) else f.attr if isinstance(f, ast.Attribute) else None
 
 
+def _window_name(node: ast.AST) -> str | None:
+    """The HARD_CODED name ``node`` is (``MEYER``, ``wilson.MEYER``, ``Meyer``), else None."""
+    name = (node.id if isinstance(node, ast.Name)
+            else node.attr if isinstance(node, ast.Attribute) else None)
+    return name if name in HARD_CODED else None
+
+
 def _hard_coded(value: ast.expr) -> bool:
     """A literal, or an expression that names MEYER or a window constructor anywhere
     (``MEYER``, ``wilson.MEYER``, ``Meyer(8)``, ``window if a == 0 else MEYER``)."""
-    return isinstance(value, ast.Constant) or any(
-        (isinstance(n, ast.Name) and n.id in HARD_CODED)
-        or (isinstance(n, ast.Attribute) and n.attr in HARD_CODED) for n in ast.walk(value))
+    return isinstance(value, ast.Constant) or any(_window_name(n) for n in ast.walk(value))
+
+
+def _body_hard_codes(tree: ast.AST, reported: set[int]) -> list[tuple[int, str, str]]:
+    """Every HARD_CODED name inside a function (or lambda) body: a rebinding
+    ``window = MEYER`` on some path, a local alias ``w0 = MEYER``, a ``Meyer(8)`` built in place.
+
+    Allowed: parameter defaults (``window: Window = MEYER``) and comparison operands
+    (``window is MEYER``, ``window == Meyer(4)``).  Imports, module-level statements
+    (``ALT_WINDOW = SampledWindow(...)``) and class-body statements (dataclass field defaults,
+    ``window: Window = field(default=MEYER)``) are not in a function body, so they pass too.
+    Names already in ``reported`` (flagged by a call rule) are not reported twice.
+    """
+    allowed, bodies = set(reported), []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            defaults = (*node.args.defaults, *(d for d in node.args.kw_defaults if d is not None))
+            for default in defaults:
+                allowed.update(id(n) for n in ast.walk(default))
+            bodies.extend(node.body if isinstance(node.body, list) else [node.body])
+        elif isinstance(node, ast.Compare):
+            for op in (node.left, *node.comparators):
+                allowed.add(id(op.func if isinstance(op, ast.Call) else op))
+    bad = []
+    for stmt in bodies:
+        for n in ast.walk(stmt):
+            name = _window_name(n)
+            if name and id(n) not in allowed:
+                allowed.add(id(n))                      # a nested function's body is walked twice
+                bad.append((n.lineno, name, "hard-codes a window in a function body"))
+    return bad
 
 
 def _window_violations(source: str) -> list[tuple[int, str, str]]:
-    """``(line, callee, reason)`` of every call in ``source`` that loses or bypasses the window.
+    """``(line, name, reason)`` of every place in ``source`` that loses or bypasses the window.
 
     * a consumer call without ``window=`` (``base=`` excuses ``atom_spectrum`` only: the base
       carries the window it was built with), or with a hard-coded ``window=``;
     * ``sample_window`` of a hard-coded window;
     * any ``.sample(...)`` (it bypasses ``sample_window``'s validation) and any
-      ``phi_centered`` or ``phi_fft_order`` (they sample Meyer directly).
+      ``phi_centered`` or ``phi_fft_order`` (they sample Meyer directly);
+    * a hard-coded window anywhere in a function body (:func:`_body_hard_codes`): the call rules
+      see only keywords, so ``window = MEYER`` followed by ``window=window`` would pass them.
 
     Any other ``window=`` expression passes (``window=window``, ``window=self.dst.window``).
     """
-    bad = []
-    for node in ast.walk(ast.parse(source)):
+    tree = ast.parse(source)
+    bad, reported = [], set()
+    for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
         name = _callee(node)
@@ -123,13 +181,16 @@ def _window_violations(source: str) -> list[tuple[int, str, str]]:
             win = node.args[0] if node.args else kw.get("window")
             if win is None or _hard_coded(win):
                 bad.append((node.lineno, name, "samples a hard-coded window"))
+                if win is not None:
+                    reported.update(id(n) for n in ast.walk(win))
         elif name in CONSUMERS:
             if "window" in kw:
                 if _hard_coded(kw["window"]):
                     bad.append((node.lineno, name, "passes a hard-coded window"))
+                    reported.update(id(n) for n in ast.walk(kw["window"]))
             elif not (name == "atom_spectrum" and "base" in kw):
                 bad.append((node.lineno, name, "drops the window"))
-    return sorted(bad)
+    return sorted(bad + _body_hard_codes(tree, reported))
 
 
 def _missing_window(path: Path) -> list[tuple[int, str, str]]:
@@ -178,6 +239,40 @@ def test_the_scan_covers_every_wilson_module_but_filter_and_windows():
     ("wilson.filter.phi_fft_order(Nf, Nt, dt)", True),
 ])
 def test_the_window_scan_flags_exactly_the_calls_that_lose_the_window(source, flagged):
+    assert bool(_window_violations(source)) is flagged
+
+
+_PASS_ON = "    return forward(x, Nf, Nt, dt, window=window)\n"
+
+
+@pytest.mark.parametrize("source, flagged", [
+    # Rebinding and aliases: every call passes window=window, the body hard-codes MEYER.
+    ("def f(x, *, window=MEYER):\n    window = MEYER if is_tracer(x) else window\n" + _PASS_ON, True),
+    ("def f(x, *, bands=None, window=MEYER):\n    if bands is not None:\n        window = MEYER\n"
+     + _PASS_ON, True),
+    ("def f(x, *, window=MEYER):\n    window = window if be.xp is np else wilson.MEYER\n" + _PASS_ON,
+     True),
+    ("def f(x, *, window=None):\n    window = Meyer(8) if window is None else window\n" + _PASS_ON,
+     True),
+    ("def f(x):\n    w0 = MEYER\n    return forward(x, Nf, Nt, dt, window=w0)\n", True),
+    ("def f(x):\n    return g(x, SampledWindow(fn, 's'))\n", True),
+    ("def f(x):\n    def inner(y):\n        return RampWindow(ramp, 'r')\n    return inner(x)\n", True),
+    ("class A:\n    def f(self, x):\n        self.window = MEYER\n", True),
+    ("h = lambda x: g(x, MEYER)\n", True),
+    # Allowed: defaults, imports, module and class bodies, comparisons.
+    ("def f(x, *, window: Window = MEYER):\n" + _PASS_ON, False),
+    ("def f(x, window=wilson.MEYER, other=Meyer(8)):\n" + _PASS_ON, False),
+    ("h = lambda x, window=MEYER: forward(x, Nf, Nt, dt, window=window)\n", False),
+    ("from .windows import MEYER, Meyer, RampWindow, SampledWindow, Window\n", False),
+    ("import domainia.wilson.windows as windows\nMEYER = windows.Meyer()\n", False),
+    ("ALT_WINDOW = SampledWindow(wide_profile, 'wide-smoothstep')\n", False),
+    ("@dataclass(frozen=True)\nclass D:\n    window: Window = MEYER\n", False),
+    ("@dataclass(frozen=True)\nclass D:\n    window: Window = field(default=MEYER, kw_only=True)\n",
+     False),
+    ("def f(x, *, window=MEYER):\n    if window is MEYER:\n        return fast(x)\n" + _PASS_ON, False),
+    ("def f(x, *, window=MEYER):\n    return window == wilson.MEYER or window != Meyer(4)\n", False),
+])
+def test_the_window_scan_flags_a_window_hard_coded_in_a_function_body(source, flagged):
     assert bool(_window_violations(source)) is flagged
 
 
@@ -396,11 +491,14 @@ def test_stationary_builders_are_the_blocks_of_the_dense_covariance(window, Nf, 
            RTOL_KERNEL, "build_K_full_active")
 
 
-@pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
-@pytest.mark.parametrize("Nf, Nt, dt", GRIDS)
+@pytest.mark.parametrize("Nf, Nt, dt, window", [
+    *(pytest.param(*g, w, id=f"{g[0]}-{g[1]}-{g[2]}-{w.name}") for g in GRIDS for w in WINDOWS),
+    *(pytest.param(*g, ZEROS_WINDOW, id=f"{g[0]}-{g[1]}-{g[2]}-{ZEROS_WINDOW.name}")
+      for g in ZEROS_GRIDS)])
 def test_stationary_backward_maps_recover_the_psd(window, Nf, Nt, dt):
     """``psd_from_K`` and ``psd_from_lambda_blocks`` invert the builders with the same window,
-    and ``psd_from_lambda_blocks`` recovers the PSD from the blocks of ``build_C_wdm``."""
+    and ``psd_from_lambda_blocks`` recovers the PSD from the blocks of ``build_C_wdm``; also for
+    a window with a zero sample inside the slab (``ZEROS_WINDOW``)."""
     S = psd(np.fft.rfftfreq(Nf * Nt, dt))
     K_diag, _ = St.build_K_full_active(Nf, Nt, dt, psd, window=window)
     _close(St.psd_from_K(K_diag, Nf, Nt, dt, window=window), S, RTOL_KERNEL, "psd_from_K")
@@ -412,31 +510,93 @@ def test_stationary_backward_maps_recover_the_psd(window, Nf, Nt, dt):
            "psd_from_lambda_blocks(blocks of build_C_wdm)")
 
 
+#: Static arguments of a jitted kernel: the grid and the window (hashable, so a cache key).
+_STATIC = ("Nf", "Nt", "dt", "window")
+
+
+def _on_device(out):
+    """``out`` on the host, after checking it came back as a ``jax.Array`` (no NumPy fallback)."""
+    import jax
+
+    assert isinstance(out, jax.Array), type(out)
+    return np.asarray(out)
+
+
+#: Every grid on NumPy; the JAX lanes on two grids only (a dropped window shows on any grid).
+_LANES = ([(*g, "numpy") for g in GRIDS]
+          + [(*g, lane) for g in GRIDS[:2] for lane in ("jax", "jax-jit")])
+
+
 @pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
-@pytest.mark.parametrize("Nf, Nt, dt", GRIDS)
-def test_apply_lambda_from_psd_is_the_dense_covariance(window, Nf, Nt, dt):
+@pytest.mark.parametrize("Nf, Nt, dt, lane", _LANES)
+def test_apply_lambda_from_psd_is_the_dense_covariance(window, Nf, Nt, dt, lane, request):
     """``apply_lambda_from_psd(x)`` is ``build_C_wdm_active @ x`` on the active cells (junk in
-    the inactive cells of ``x`` is ignored)."""
+    the inactive cells of ``x`` is ignored) on NumPy, on JAX with ``be=jax`` and under
+    ``jax.jit`` with the window static (the JAX lanes skip without jax)."""
     N = Nf * Nt
     mask = wilson.active_mask(Nf, Nt)
     x = np.random.default_rng(N + Nf + 3).standard_normal((Nf + 1, Nt))
+    S = psd(np.fft.rfftfreq(N, dt))
     want = np.zeros_like(x)
     want[mask] = _dense(window, Nf, Nt, dt)[3] @ x[mask]
-    got = St.apply_lambda_from_psd(x, Nf, Nt, dt, psd(np.fft.rfftfreq(N, dt)), window=window)
-    _close(got, want, RTOL_KERNEL, "apply_lambda_from_psd")
+    if lane == "numpy":
+        got = St.apply_lambda_from_psd(x, Nf, Nt, dt, S, window=window)
+    else:
+        be = request.getfixturevalue("jax_be")
+        if lane == "jax":
+            out = St.apply_lambda_from_psd(be.asarray(x), Nf, Nt, dt, be.asarray(S), be=be,
+                                           window=window)
+        else:
+            import jax
+
+            jitted = jax.jit(St.apply_lambda_from_psd, static_argnames=_STATIC)
+            out = jitted(be.asarray(x), Nf=Nf, Nt=Nt, dt=dt, Sn_rfft=be.asarray(S), window=window)
+        got = _on_device(out)
+    _close(got, want, RTOL_KERNEL, f"apply_lambda_from_psd[{lane}]")
+
+
+@pytest.mark.parametrize("lane", ["jax", "jax-jit"])
+def test_forward_and_inverse_take_the_window_on_jax(lane, jax_be):
+    """``forward`` and ``inverse`` with ``window=ALT_WINDOW`` on JAX (``be=jax``, and jitted with
+    the window static) are the NumPy kernels, which the value tests above pin."""
+    Nf, Nt, dt = 8, 16, 1.0
+    N = Nf * Nt
+    rng = np.random.default_rng(N + Nf + 6)
+    z = np.fft.rfft(rng.standard_normal(N))
+    w = rng.standard_normal((Nf + 1, Nt))
+    if lane == "jax":
+        fwd = wilson.forward(jax_be.asarray(z), Nf, Nt, dt, be=jax_be, window=ALT_WINDOW)
+        inv = wilson.inverse(jax_be.asarray(w), Nf, Nt, dt, be=jax_be, window=ALT_WINDOW)
+    else:
+        import jax
+
+        fwd = jax.jit(wilson.forward, static_argnames=_STATIC)(
+            jax_be.asarray(z), Nf=Nf, Nt=Nt, dt=dt, window=ALT_WINDOW)
+        inv = jax.jit(wilson.inverse, static_argnames=_STATIC)(
+            jax_be.asarray(w), Nf=Nf, Nt=Nt, dt=dt, window=ALT_WINDOW)
+    _close(_on_device(fwd), wilson.forward(z, Nf, Nt, dt, window=ALT_WINDOW), RTOL_KERNEL,
+           f"forward[{lane}]")
+    _close(_on_device(inv), wilson.inverse(w, Nf, Nt, dt, window=ALT_WINDOW), RTOL_KERNEL,
+           f"inverse[{lane}]")
 
 
 @pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
 @pytest.mark.parametrize("Nf, Nt, dt", GRIDS)
 def test_band_variances_are_the_diagonal_of_the_dense_covariance(window, Nf, Nt, dt):
     """``band_averaged_variance`` and the stationary limit of ``evolutionary_band_variance``
-    are ``diag(build_C_wdm_active)`` on the active cells."""
+    (all bands, and selected ``bands=``) are ``diag(build_C_wdm_active)`` on the active cells."""
     mask = wilson.active_mask(Nf, Nt)
     want = np.diag(_dense(window, Nf, Nt, dt)[3])
     _close(No.band_averaged_variance(Nf, Nt, dt, psd, window=window)[mask], want, RTOL_KERNEL,
            "band_averaged_variance")
     _close(No.evolutionary_band_variance(Nf, Nt, dt, _stationary, window=window)[mask], want,
            RTOL_KERNEL, "evolutionary_band_variance")
+    bands = np.array([0, Nf // 2, Nf])
+    grid = np.zeros((Nf + 1, Nt))
+    grid[mask] = want
+    sub = No.evolutionary_band_variance(Nf, Nt, dt, _stationary, bands=bands, window=window)
+    _close(sub[mask[bands]], grid[bands][mask[bands]], RTOL_KERNEL,
+           "evolutionary_band_variance(bands)")
 
 
 @pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
@@ -455,8 +615,8 @@ def test_empirical_variance_is_the_mean_square_of_the_same_draws(window, Nf, Nt,
 @pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
 @pytest.mark.parametrize("Nf, Nt, dt", GRIDS)
 def test_time_masks_are_the_dense_mask(window, Nf, Nt, dt):
-    """``energy_fraction`` is ``diag(M)`` and ``apply_time_mask`` applies ``M``,
-    ``M = W_a diag(w2) W_a^T / dt``."""
+    """``energy_fraction`` is ``diag(M)`` and ``apply_time_mask`` applies ``M`` (to a stack of
+    rows and to one 1-D row), ``M = W_a diag(w2) W_a^T / dt``."""
     N = Nf * Nt
     rng = np.random.default_rng(N + Nf + 4)
     Wa = _dense(window, Nf, Nt, dt)[2]
@@ -467,6 +627,8 @@ def test_time_masks_are_the_dense_mask(window, Nf, Nt, dt):
            "energy_fraction")
     _close(E.apply_time_mask(Y, w2, Nf, Nt, dt, window=window), Y @ Mm.T, RTOL_KERNEL,
            "apply_time_mask")
+    _close(E.apply_time_mask(Y[0], w2, Nf, Nt, dt, window=window), (Mm @ Y[0])[None, :],
+           RTOL_KERNEL, "apply_time_mask(1-D)")
 
 
 def _wrap_reference(W, Nf, Nt):
@@ -555,20 +717,25 @@ def _assemble_gram(gplan, diag, up, n):
 @pytest.mark.parametrize("Nf, Nt, dt", GRIDS)
 def test_eq45_plan_carries_the_window_to_every_eq45_builder(window, Nf, Nt, dt):
     """``plan.base`` is ``base_atom_spectra(window=)``, and in the stationary limit the plan's
-    ``eq45_direct``, ``eq45_blocks_cheb`` and ``eq45_blocks_gram`` are ``build_C_wdm_active``."""
+    ``eq45_direct``, ``eq45_blocks_cheb`` and ``eq45_blocks_gram`` are ``build_C_wdm_active``,
+    on all cells and on a ``keep`` subset (the kept rows and columns)."""
     Ca = _dense(window, Nf, Nt, dt)[3]
-    plan = E.eq45_plan(Nf, Nt, dt, window=window)
     base = T.base_atom_spectra(Nf, Nt, dt, window=window)
-    assert sorted(plan.base) == sorted(base)
-    assert all(np.array_equal(plan.base[key], G) for key, G in base.items())
-    _close(E.eq45_direct(plan, _stationary), Ca, RTOL_KERNEL, "eq45_direct")
-    coeffs = E.eq45_coeffs_interp(_stationary, plan.f, plan.t_max, plan.P, k=plan.k_used)
-    _close(_assemble_cheb(plan, *E.eq45_blocks_cheb(plan, coeffs)), Ca, RTOL_KERNEL,
-           "eq45_blocks_cheb")
-    gplan = E.eq45_gram_plan(plan)
-    blocks = E.eq45_blocks_gram(gplan, np.ones((gplan.nb, gplan.B)),
-                                E.eq45_gram_gather(gplan, np.log(psd(plan.f))))
-    _close(_assemble_gram(gplan, *blocks, Ca.shape[0]), Ca, RTOL_KERNEL, "eq45_blocks_gram")
+    keep = ~np.isin(np.nonzero(wilson.active_mask(Nf, Nt))[1], (0, 1, Nt - 1))
+    for tag, plan, ref in (("", E.eq45_plan(Nf, Nt, dt, window=window), Ca),
+                           ("(keep)", E.eq45_plan(Nf, Nt, dt, keep, window=window),
+                            Ca[np.ix_(keep, keep)])):
+        assert sorted(plan.base) == sorted(base)
+        assert all(np.array_equal(plan.base[key], G) for key, G in base.items())
+        _close(E.eq45_direct(plan, _stationary), ref, RTOL_KERNEL, f"eq45_direct{tag}")
+        coeffs = E.eq45_coeffs_interp(_stationary, plan.f, plan.t_max, plan.P, k=plan.k_used)
+        _close(_assemble_cheb(plan, *E.eq45_blocks_cheb(plan, coeffs)), ref, RTOL_KERNEL,
+               f"eq45_blocks_cheb{tag}")
+        gplan = E.eq45_gram_plan(plan)
+        blocks = E.eq45_blocks_gram(gplan, np.ones((gplan.nb, gplan.B)),
+                                    E.eq45_gram_gather(gplan, np.log(psd(plan.f))))
+        _close(_assemble_gram(gplan, *blocks, ref.shape[0]), ref, RTOL_KERNEL,
+               f"eq45_blocks_gram{tag}")
 
 
 @pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
@@ -576,7 +743,8 @@ def test_eq45_plan_carries_the_window_to_every_eq45_builder(window, Nf, Nt, dt):
 def test_gaussian_forms_are_the_dense_frequency_and_wdm_forms(window, Nf, Nt, dt):
     """``gaussian`` and ``gaussian_from_func`` are the GW inner product of the spectra of
     ``W_a^T w / dt``; ``loglike_gaussian`` and ``loglike_gaussian_many`` (also the per-row
-    ``loglike_gaussian``) are ``-r_a^T C_a^{-1} r_a / 2 - ln det(2 pi C_a) / 2``."""
+    ``loglike_gaussian``, and one data grid against a stack of templates) are
+    ``-r_a^T C_a^{-1} r_a / 2 - ln det(2 pi C_a) / 2``."""
     N = Nf * Nt
     mask = wilson.active_mask(Nf, Nt)
     Wa, Ca = _dense(window, Nf, Nt, dt)[2:]
@@ -598,3 +766,7 @@ def test_gaussian_forms_are_the_dense_frequency_and_wdm_forms(window, Nf, Nt, dt
     _close(many, -0.5 * quad - 0.5 * logdet, RTOL_KERNEL, "loglike_gaussian_many")
     rows = [I.loglike_gaussian(a, b, Nf, Nt, dt, S, window=window) for a, b in zip(w[:2], w[2:])]
     _close(many, np.array(rows), RTOL_KERNEL, "loglike_gaussian_many(per-row loglike_gaussian)")
+    r1 = (w[0] - w[2:])[:, mask]                                      # one data grid, two templates
+    quad1 = np.einsum("bi,bi->b", r1, np.linalg.solve(Ca, r1.T).T)
+    _close(I.loglike_gaussian_many(w[0], w[2:], Nf, Nt, dt, S, window=window),
+           -0.5 * quad1 - 0.5 * logdet, RTOL_KERNEL, "loglike_gaussian_many(broadcast)")
