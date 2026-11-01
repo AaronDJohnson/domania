@@ -128,7 +128,10 @@ file's imports and assertions.
   trip, dense-oracle agreement) is asserted against `domainia.testing` instead.
 * **(c) Clean: keep, with imports rewritten.** The remaining wilson tests (with
   `vendored/` and `oracle/`) and the domainia tests of domains, data, linalg,
-  blocktri, testing and maps base.
+  blocktri, testing and maps base. The rename also sweeps the docstrings: about 170
+  `wdm.` references in `wilson/src/wdm/*.py` doctest examples (`>>> import wdm`,
+  `wdm.forward(...)`) become `domainia.wilson`. Otherwise `--doctest-modules`
+  collection fails.
 
 ## 2. Windows (`domainia/wilson/windows.py`)
 
@@ -167,9 +170,21 @@ class WindowError(ValueError): ...
 * `Meyer(d).sample(Nf, Nt, dt)` returns `filter.phi_centered(Nf, Nt, dt, d)`
   bit for bit.
 * `sample` validates each result once per `(window, Nf, Nt, dt)` and caches it in a
-  bounded LRU. It checks evenness, support (exactly 0 at the f = −ΔF bin) and the
-  partition of unity to 1e-12 relative. A failure raises `WindowError` naming the
-  condition, the window and the worst bin. The returned array is read-only.
+  bounded LRU. The returned array is read-only. A failure raises `WindowError` naming
+  the condition, the window and the worst bin. With h = Nt/2, the centered index of
+  f = 0, the checks on the sampled array φ are:
+  * **evenness:** φ[h + j] == φ[h − j] exactly for j = 1 … h − 1. Index 0 (f = −ΔF)
+    has no mirror on the grid and is covered by the support check;
+  * **support:** φ[0] == 0 exactly. For `SampledWindow`, `fn` is also evaluated on 64
+    points of |u| ∈ [1, 2] and must be exactly 0 there. Mass outside the slab would
+    otherwise be truncated silently, and the slab-only checks would still pass.
+    `Meyer` and `RampWindow` are zero for |u| ≥ 3/4 by construction (the same `np.where`
+    geometry as `phi_centered`);
+  * **partition of unity:** |φ[h + j]² + φ[j]² − 1/ΔF| ≤ 1e-12 / ΔF for
+    j = 0 … h − 1. These are φ(f) and φ(f − ΔF) at f = j·2ΔF/Nt ∈ [0, ΔF). The f = ΔF
+    end needs no check, because evenness plus φ[0] = 0 cover it.
+  * `RampWindow` also checks its ramp: ν(0) = 0, ν(1) = 1, and
+    |ν(x) + ν(1 − x) − 1| ≤ 1e-12 on 257 points of [0, 1].
 * `RampWindow` and `SampledWindow` compare by `(name, fn identity)`. Two windows built
   from the same function and name are equal.
 * Threading: every function that calls `phi_centered(Nf, Nt, dt)` today takes a
@@ -209,8 +224,14 @@ def transform(channel_data: Mapping[str, ndarray], source, target) -> dict[str, 
   different `(Nf, Nt)` or window goes through the spectrum.
 * Inputs are refused (`ValueError`) for an empty dict, mismatched channel shapes, the
   wrong shape for `source`, non-finite values, `N` disagreeing between source and
-  target, a non-zero inactive WDM entry, or a non-real DC/Nyquist bin beyond 1e-12 of
-  the channel's spectral norm. A non-dict or non-domain argument raises `TypeError`.
+  target, a non-zero inactive WDM entry, or a DC bin (or, for even `N`, a Nyquist bin)
+  with non-zero imaginary part. The endpoint rule is exact, matching enchilada's
+  `block_state.check_rfft_endpoints`. domainia's own outputs make the endpoints exactly
+  real, so its round trips always pass. A non-dict or non-domain argument raises
+  `TypeError`.
+* `WDMDomain.full` uses `wilson.Grid`, which already requires positive even `Nf` and
+  `Nt`. With `Nf` even, its Nyquist-active rule ((Nf + n) even) equals enchilada's
+  `WDMGrid.active_mask` (edge bands active at even `n`).
 * Time → WDM promotes to float64. Fourier input is normalised in at least complex128
   before dividing by `dt`, as enchilada does today.
 * Outputs are fresh float64 / complex128 arrays. Inactive WDM entries are set to exactly
