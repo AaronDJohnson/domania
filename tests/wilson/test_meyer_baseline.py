@@ -42,3 +42,8 @@ def test_explicit_meyer_reproduces_the_baseline_bit_for_bit(baseline):
     want = {k: v for k, v in baseline.items()
             if k.startswith("wilson::") and k.split("::")[1].startswith(THREADED)}
     assert want and not _mismatches(got, want)
+
+
+def test_explicit_meyer_on_both_layers_reproduces_the_whole_baseline(baseline):
+    got = compute(wilson, DM, {"window": wilson.MEYER}, {"window": wilson.MEYER})
+    assert not _mismatches(got, baseline)

@@ -3,7 +3,9 @@
 Every evaluator here is the WT oracle's library call (``wdm_paper_2/toy_models/src/
 wdm_toys/matrix.py``: ``Grid.forward``/``forward_many``/``inverse_many``/``atom``,
 ``Variant.extend``, ``MatrixWhittle``; ``band.py``: ``FourierBand``), so the NumPy path is
-bitwise: ``TimeToWDM.apply(d) == forward_time(d)[mask][keep]``.
+bitwise: ``TimeToWDM.apply(d) == forward_time(d, window=dst.window)[mask][keep]``.  The
+Wilson window is the ``WDMDomain``'s (``dst.window`` of ``TimeToWDM``, ``src.window`` of
+``WDMToTime``).
 """
 
 from __future__ import annotations
@@ -71,10 +73,10 @@ class TimeToWDM(LinearMap):
         x = be.asarray(x)
         g = self.grid
         if x.ndim == 1:
-            w = wilson.forward_time(x, g.Nf, g.Nt, g.dt, be=be)
+            w = wilson.forward_time(x, g.Nf, g.Nt, g.dt, be=be, window=self.dst.window)
             return w[self.m_idx, self.n_idx]
         X, lead = _flat(x, g.N)
-        w = wilson.forward_time_many(X, g.Nf, g.Nt, g.dt, be=be)
+        w = wilson.forward_time_many(X, g.Nf, g.Nt, g.dt, be=be, window=self.dst.window)
         return w[:, self.m_idx, self.n_idx].reshape(*lead, self.m_idx.size)
 
     def _scatter(self, y, be):
@@ -87,13 +89,14 @@ class TimeToWDM(LinearMap):
         be = self._be(y, be)
         y = be.asarray(y)
         g = self.grid
-        x = g.dt * wilson.inverse_time_many(self._scatter(y, be), g.Nf, g.Nt, g.dt, be=be)
+        x = g.dt * wilson.inverse_time_many(self._scatter(y, be), g.Nf, g.Nt, g.dt, be=be,
+                                            window=self.dst.window)
         return x.reshape(*y.shape[:-1], g.N)
 
     def rows(self, idx):
         g = self.grid
         idx = np.atleast_1d(np.asarray(idx, dtype=np.int64))
-        base = base_atom_spectra(g.Nf, g.Nt, g.dt)
+        base = base_atom_spectra(g.Nf, g.Nt, g.dt, window=self.dst.window)
         m, n = np.asarray(self.m_idx), np.asarray(self.n_idx)
         return np.stack([np.fft.irfft(atom_spectrum(int(m[p]), int(n[p]), g.Nf, g.Nt, g.dt,
                                                     base=base), n=g.N) for p in idx])
@@ -134,7 +137,8 @@ class WDMToTime(LinearMap):
         Y = y.reshape(-1, y.shape[-1])
         full = be.xp.zeros((Y.shape[0], g.Nf + 1, g.Nt), dtype=Y.dtype)
         full = be.set(full, (slice(None), self.m_idx, self.n_idx), Y, copy=False)
-        return wilson.inverse_time_many(full, g.Nf, g.Nt, g.dt, be=be).reshape(*y.shape[:-1], g.N)
+        return wilson.inverse_time_many(full, g.Nf, g.Nt, g.dt, be=be,
+                                        window=self.src.window).reshape(*y.shape[:-1], g.N)
 
     def adjoint(self, x, be=None):
         be = self._be(x, be)

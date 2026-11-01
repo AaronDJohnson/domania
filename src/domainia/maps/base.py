@@ -36,6 +36,7 @@ from typing import Any, Protocol
 
 import numpy as np
 from domainia.wilson.backend import NUMPY, Backend, get_backend, pytree_dataclass, require_x64
+from domainia.wilson.windows import Window
 
 from ..domains import FourierDomain, TimeDomain, WDMDomain
 
@@ -175,10 +176,28 @@ class PushedCovariance:
     ``"cells"`` -- ``0.5 * Re((C[idx] @ M') @ conj(C).T)`` (GB ``exact_rows_builder``,
     matrix.py:686-693); ``"analysis"`` -- ``F[idx] Sigma F^H``; ``"complex"`` --
     ``(A M' A^H)[idx]``.
+
+    A covariance that carries a Wilson ``window`` (``EvolutionaryCovariance``, a
+    ``DiagonalCovariance`` over a ``BandAveragedVariance``, a ``PushedCovariance`` onto WDM
+    cells) lives in that window's basis: on a map whose ``src`` is a ``WDMDomain`` with another
+    window it raises ``ValueError``.
     """
 
     map: LinearMap
     cov: Any
+
+    def __post_init__(self) -> None:
+        src, window = getattr(self.map, "src", None), getattr(self.cov, "window", None)
+        if isinstance(src, WDMDomain) and isinstance(window, Window) and window != src.window:
+            raise ValueError(f"the covariance is built for the window {window.name} but the map's "
+                             f"source domain uses {src.window.name}: push within one basis")
+
+    @property
+    def window(self) -> Window | None:
+        """The Wilson window of the cells this covariance lives on (``map.dst.window``), or
+        ``None`` when ``map.dst`` is not a ``WDMDomain``."""
+        dst = getattr(self.map, "dst", None)
+        return dst.window if isinstance(dst, WDMDomain) else None
 
     @property
     def size(self) -> int:
@@ -267,8 +286,12 @@ class Compose(LinearMap):
 
     def __post_init__(self) -> None:
         if isinstance(self.outer, LinearMap) and isinstance(self.inner, LinearMap):
-            if self.outer.src != self.inner.dst:
-                raise ValueError(f"cannot compose: {self.inner.dst!r} != {self.outer.src!r}")
+            a, b = self.inner.dst, self.outer.src
+            if isinstance(a, WDMDomain) and isinstance(b, WDMDomain) and a.window != b.window:
+                raise ValueError(f"cannot compose: inner.dst and outer.src use different windows "
+                                 f"({a.window.name} vs {b.window.name})")
+            if b != a:
+                raise ValueError(f"cannot compose: {a!r} != {b!r}")
 
     @property
     def src(self) -> Any:
@@ -307,7 +330,10 @@ class Compose(LinearMap):
 @pytree_dataclass(data=("pos",), meta=("src", "dst"))
 @dataclass(frozen=True, eq=False)
 class Restrict(LinearMap):
-    """The cells ``dst.cells`` (a subset, in its own order) of a vector on ``src.cells``."""
+    """The cells ``dst.cells`` (a subset, in its own order) of a vector on ``src.cells``.
+
+    ``src`` and ``dst`` must share the grid and the Wilson window (``ValueError`` naming both
+    windows otherwise): a restriction never changes the basis."""
 
     src: WDMDomain
     dst: WDMDomain
@@ -317,6 +343,9 @@ class Restrict(LinearMap):
         if self.pos is _BUILD:
             self.src.require_unit_scale("Restrict")
             self.dst.require_unit_scale("Restrict")
+            if self.src.window != self.dst.window:
+                raise ValueError(f"src and dst use different windows ({self.src.window.name} vs "
+                                 f"{self.dst.window.name}): restrict within one basis")
             where = {c: i for i, c in enumerate(zip(self.src.cells.m, self.src.cells.n))}
             missing = [c for c in zip(self.dst.cells.m, self.dst.cells.n) if c not in where]
             if missing or self.src.cells.grid != self.dst.cells.grid:

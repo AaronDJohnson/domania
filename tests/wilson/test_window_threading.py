@@ -7,24 +7,36 @@ from __future__ import annotations
 import ast
 from functools import lru_cache
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 import domainia
+import domainia.covariance
+import domainia.domains
+import domainia.maps
+import domainia.spectra
+import domainia.testing
+import domainia.variance
 from domainia import wilson
 from domainia.testing import ALT_WINDOW, smoothstep
 from domainia.wilson import MEYER, Meyer, RampWindow, SampledWindow, WindowError
 
-from .meyer_cases import THREADED, psd, psd_ft, wilson_cases
+from .meyer_cases import THREADED, domainia_cases, psd, psd_ft, wilson_cases
 
-#: Source files (relative to src/domainia) whose every consumer call must pass ``window=``.
-#: ``wilson/filter.py`` and ``wilson/windows.py`` must never be scanned: they are where the
-#: Meyer samples come from (``phi_centered``, ``phi_fft_order``) and where ``.sample`` is
-#: called, behind ``sample_window``'s validation.
+#: Source files (relative to src/domainia) whose every consumer call must pass ``window=``:
+#: every module of the package but UNSCANNED.  ``wilson/filter.py`` and ``wilson/windows.py``
+#: must never be scanned: they are where the Meyer samples come from (``phi_centered``,
+#: ``phi_fft_order``) and where ``.sample`` is called, behind ``sample_window``'s validation.
 SCANNED = ("wilson/transform.py", "wilson/matrix.py", "wilson/stationary.py", "wilson/noise.py",
            "wilson/evolutionary.py", "wilson/inner_product.py", "wilson/grid.py", "wilson/backend.py",
-           "wilson/special.py", "wilson/__init__.py")
+           "wilson/special.py", "wilson/__init__.py",
+           "domains.py", "maps/base.py", "maps/time.py", "maps/fourier.py", "variance.py",
+           "covariance/evolutionary.py", "covariance/base.py", "covariance/diagonal.py",
+           "covariance/dense.py", "covariance/blocktri.py", "covariance/stack.py", "testing.py",
+           "linalg.py", "data.py", "spectra.py", "__init__.py", "maps/__init__.py",
+           "covariance/__init__.py")
 #: The two modules that legitimately sample the Meyer window directly.
 UNSCANNED = frozenset({"wilson/filter.py", "wilson/windows.py"})
 #: Meyer sampling helpers: only ``wilson/filter.py`` (and ``wilson/windows.py``) may call them.
@@ -44,6 +56,10 @@ CONSUMERS = frozenset({
     "eq45_plan",
     "gaussian", "gaussian_from_func", "loglike_gaussian", "loglike_gaussian_many",
     "dense_W", "wdm_congruence", "eq45_dense", "_dense_atoms",
+    # The window-taking constructors: building one without window= drops the window.  A
+    # ``cls(...)`` inside a classmethod is invisible to this name-based scan (value tests in
+    # tests/test_dom_windows.py cover those).
+    "WDMDomain", "EvolutionaryCovariance", "BandAveragedVariance",
 })
 #: Names that hard-code a window inside a kernel: the default instance and the constructors.
 HARD_CODED = frozenset({"MEYER", "Meyer", "RampWindow", "SampledWindow"})
@@ -64,7 +80,7 @@ def _osc0(u):
 
 
 #: A window that vanishes on a sampled bin where Meyer does not.  A kernel that ranks or masks
-#: candidate bins by Meyer's samples instead of this window's divides by that zero; every
+#: candidate bins by Meyer's samples instead of this window's estimates 0 at that bin; every
 #: window in WINDOWS is nonzero wherever Meyer is, which hides the mix-up.
 ZEROS_WINDOW = SampledWindow(_osc0, "osc0")
 #: The grids where ``|u| = 1/3`` is a sample (3 divides ``Nt / 2``).
@@ -203,12 +219,14 @@ def test_no_kernel_call_drops_the_window(rel):
     assert _missing_window(Path(domainia.__file__).parent / rel) == []
 
 
-def test_the_scan_covers_every_wilson_module_but_filter_and_windows():
-    """A new ``wilson`` module is scanned unless it is added to UNSCANNED on purpose."""
+def test_the_scan_covers_every_module_but_filter_and_windows():
+    """A new module anywhere in the package (``domainia.translate`` too, once it exists) is
+    scanned unless it is added to UNSCANNED on purpose."""
     root = Path(domainia.__file__).parent
-    modules = {f"wilson/{p.name}" for p in (root / "wilson").glob("*.py")}
+    modules = {p.relative_to(root).as_posix() for p in root.rglob("*.py")}
     assert UNSCANNED <= modules
     assert modules - UNSCANNED <= set(SCANNED)
+    assert set(SCANNED) <= modules
     assert not UNSCANNED & set(SCANNED)
 
 
@@ -237,6 +255,16 @@ def test_the_scan_covers_every_wilson_module_but_filter_and_windows():
     ("filter.phi_centered(Nf, Nt, dt, 8)", True),
     ("phi_fft_order(Nf, Nt, dt)", True),
     ("wilson.filter.phi_fft_order(Nf, Nt, dt)", True),
+    # The window-taking constructors of the domainia layer.
+    ("WDMDomain(cells, window=window)", False),
+    ("D.WDMDomain(cells, 2.0, window=self.dst.window)", False),
+    ("EvolutionaryCovariance(psd, cells, builder='direct', window=self.window)", False),
+    ("BandAveragedVariance(psd, cells, window=window)", False),
+    ("WDMDomain(cells)", True),
+    ("domains.WDMDomain(cells, scale=2.0)", True),
+    ("EvolutionaryCovariance(psd, cells, builder='direct')", True),
+    ("BandAveragedVariance(psd, cells)", True),
+    ("WDMDomain(cells, window=wilson.MEYER)", True),
 ])
 def test_the_window_scan_flags_exactly_the_calls_that_lose_the_window(source, flagged):
     assert bool(_window_violations(source)) is flagged
@@ -271,6 +299,16 @@ _PASS_ON = "    return forward(x, Nf, Nt, dt, window=window)\n"
      False),
     ("def f(x, *, window=MEYER):\n    if window is MEYER:\n        return fast(x)\n" + _PASS_ON, False),
     ("def f(x, *, window=MEYER):\n    return window == wilson.MEYER or window != Meyer(4)\n", False),
+    # The domainia layer's patterns: the window travels as data, checked but never rebuilt.
+    ("class D:\n    def __init__(self, *, window: Window = MEYER):\n        self.window = window\n", False),
+    ("class D:\n    @classmethod\n    def full(cls, grid, *, window=MEYER):\n"
+     "        return cls(grid, window=window)\n", False),
+    ("def f(self):\n    require_window(self.window)\n    if src.window != dst.window:\n"
+     "        raise ValueError\n", False),
+    ("@dataclass(frozen=True)\nclass D:\n    window: Window = field(default_factory=lambda: MEYER)\n",
+     True),
+    ("def f(window):\n    if isinstance(window, Meyer):\n        return fast(x)\n", True),
+    ("def f(window):\n    return window in (MEYER,)\n", True),
 ])
 def test_the_window_scan_flags_a_window_hard_coded_in_a_function_body(source, flagged):
     assert bool(_window_violations(source)) is flagged
@@ -288,6 +326,25 @@ def test_every_kernel_samples_the_window_it_is_given(case):
 
 @pytest.mark.parametrize("case", [c for _, c in _CASES], ids=[n for n, _ in _CASES])
 def test_every_kernel_validates_the_window_it_is_given(case):
+    with pytest.raises(WindowError, match="partition of unity"):
+        case({"window": InadmissibleWindow()})
+
+
+_DM = SimpleNamespace(domains=domainia.domains, maps=domainia.maps, spectra=domainia.spectra,
+                      variance=domainia.variance, covariance=domainia.covariance, testing=domainia.testing)
+#: The domainia-layer cases: ``kw`` goes to ``WDMDomain`` and to the cell-based constructors.
+_DCASES = domainia_cases(_DM, wilson, 8, 16, 1.0)
+
+
+@pytest.mark.parametrize("case", [c for _, c in _DCASES], ids=[n for n, _ in _DCASES])
+def test_every_domainia_consumer_samples_the_window_it_is_given(case):
+    w = CountingWindow(ALT_WINDOW)
+    case({"window": w})
+    assert w.calls > 0
+
+
+@pytest.mark.parametrize("case", [c for _, c in _DCASES], ids=[n for n, _ in _DCASES])
+def test_every_domainia_consumer_validates_the_window_it_is_given(case):
     with pytest.raises(WindowError, match="partition of unity"):
         case({"window": InadmissibleWindow()})
 
@@ -377,13 +434,19 @@ def test_batched_inverse_is_the_per_row_inverse_and_round_trips(window, Nf, Nt, 
 @pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
 @pytest.mark.parametrize("Nf, Nt, dt", GRIDS)
 def test_atom_spectra_are_the_rfft_of_the_rows_of_W(window, Nf, Nt, dt):
+    """Every active cell from one ``base`` (``base=``), and three cells -- an interior one and
+    one in each edge band -- built from ``window=`` alone (``atom_spectrum``'s own
+    ``base_atom_spectra(window=)`` call)."""
     W = M.build_W(Nf, Nt, dt, window=window)
     base = T.base_atom_spectra(Nf, Nt, dt, window=window)
     for (m, a), G in base.items():
         _close(G, np.fft.rfft(W[m * Nt + a]), RTOL, f"base_atom_spectra[{m}, {a}]")
     for m, n in zip(*np.nonzero(wilson.active_mask(Nf, Nt)), strict=True):
-        _close(T.atom_spectrum(int(m), int(n), Nf, Nt, dt, window=window),
-               np.fft.rfft(W[m * Nt + n]), RTOL_ATOM, f"atom_spectrum({m}, {n})")
+        _close(T.atom_spectrum(int(m), int(n), Nf, Nt, dt, base=base, window=window),
+               np.fft.rfft(W[m * Nt + n]), RTOL_ATOM, f"atom_spectrum({m}, {n}, base=)")
+    for m, n in ((1, 3), (0, 2), (Nf, 2)):
+        _close(T.atom_spectrum(m, n, Nf, Nt, dt, window=window), np.fft.rfft(W[m * Nt + n]),
+               RTOL_ATOM, f"atom_spectrum({m}, {n})")
 
 
 @pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
@@ -523,8 +586,9 @@ def _on_device(out):
 
 
 #: Every grid on NumPy; the JAX lanes on two grids only (a dropped window shows on any grid).
+#: Not GRIDS[1] (16, 8, 0.25): there every test window but ALT_WINDOW samples alike.
 _LANES = ([(*g, "numpy") for g in GRIDS]
-          + [(*g, lane) for g in GRIDS[:2] for lane in ("jax", "jax-jit")])
+          + [(*g, lane) for g in (GRIDS[0], GRIDS[2]) for lane in ("jax", "jax-jit")])
 
 
 @pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)

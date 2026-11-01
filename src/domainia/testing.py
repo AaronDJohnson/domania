@@ -5,6 +5,9 @@ likelihood path).  Every oracle here is ``O(N^2)`` memory or worse: keep ``N`` <
   (``wilson.matrix.active_W``) and ``W_K Sigma W_K^T``.
 * :func:`eq45_dense`: Eq. (45) on a cell set by the direct sum over rfft bins
   (``wilson.evolutionary.eq45_direct``).
+
+These three take ``window=`` (default Meyer: the WDM transform) and compute in the Wilson
+basis of that window.
 * :func:`blocktri_dense`: a ragged block-tridiagonal matrix assembled densely.
 * :func:`hhat`, :func:`eq54_covariance`, :func:`dense_lambda_generic`: the generic
   Eq. (54) covariance of a modulated stationary process on Fourier bins and its WDM
@@ -28,7 +31,7 @@ from numpy.typing import NDArray
 
 from domainia import wilson
 from domainia.wilson.evolutionary import eq45_direct, eq45_plan
-from domainia.wilson.windows import SampledWindow
+from domainia.wilson.windows import MEYER, SampledWindow, Window
 
 from .domains import CellSet
 
@@ -49,24 +52,27 @@ Array = NDArray[np.float64]
 CArray = NDArray[np.complex128]
 
 
-def dense_W(cells: CellSet) -> Array:
+def dense_W(cells: CellSet, *, window: Window = MEYER) -> Array:
     """``(cells.size, N)``: row ``p`` is cell ``p``'s atom sampled in time, so ``W x`` are
-    the cells of ``x`` (``wilson.matrix.active_W`` rows, ``W_a W_a^T = dt I``)."""
+    the cells of ``x`` (``wilson.matrix.active_W`` rows, ``W_a W_a^T = dt I``) in the
+    Wilson basis of ``window``."""
     g = cells.grid
-    return wilson.matrix.active_W(g.Nf, g.Nt, g.dt)[cells.packed_positions()]
+    return wilson.matrix.active_W(g.Nf, g.Nt, g.dt, window=window)[cells.packed_positions()]
 
 
-def wdm_congruence(Sigma: Array, cells: CellSet) -> Array:
-    """``W_K Sigma W_K^T`` for a time-domain covariance ``Sigma (N, N)``."""
-    W = dense_W(cells)
+def wdm_congruence(Sigma: Array, cells: CellSet, *, window: Window = MEYER) -> Array:
+    """``W_K Sigma W_K^T`` for a time-domain covariance ``Sigma (N, N)`` (``W_K`` is
+    :func:`dense_W` with ``window``)."""
+    W = dense_W(cells, window=window)
     return W @ np.asarray(Sigma, dtype=float) @ W.T
 
 
 def eq45_dense(cells: CellSet, Sn: Callable[[Any, Any], Any], *, P: int = 24,
-               t_max: float | None = None) -> Array:
-    """Eq. (45) on ``cells`` by the direct sum, ``Sn(f, t)`` elementwise (``A_n`` inside)."""
+               t_max: float | None = None, window: Window = MEYER) -> Array:
+    """Eq. (45) on ``cells`` by the direct sum, ``Sn(f, t)`` elementwise (``A_n`` inside),
+    with the atoms of ``window``."""
     g = cells.grid
-    plan = eq45_plan(g.Nf, g.Nt, g.dt, cells.keep_mask(), P=P, t_max=t_max)
+    plan = eq45_plan(g.Nf, g.Nt, g.dt, cells.keep_mask(), P=P, t_max=t_max, window=window)
     return eq45_direct(plan, Sn)
 
 

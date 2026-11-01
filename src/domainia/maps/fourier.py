@@ -17,9 +17,9 @@ from typing import Any
 import numpy as np
 from domainia import wilson
 from domainia.wilson.backend import pytree_dataclass
-from domainia.wilson.filter import phi_centered
 from domainia.wilson.grid import carrier_phase
 from domainia.wilson.transform import band_atoms
+from domainia.wilson.windows import Window, sample_window
 
 from ..domains import FourierDomain, WDMDomain
 from .base import _BUILD, LinearMap, _last_axis
@@ -203,11 +203,12 @@ def _geometry(dom: WDMDomain) -> dict:
     return {"bands": bands, "g0": g0, "G": G, "idx": idx, "sel": sel, "Nt": Nt}
 
 
-def _dense_atoms(geo: dict, Nf: int, dt: float) -> np.ndarray:
+def _dense_atoms(geo: dict, Nf: int, dt: float, *, window: Window) -> np.ndarray:
     """``(nb Nt, G)``: row ``b Nt + n`` is the unit-norm atom of cell ``(bands[b], n)`` on the
-    window bins (GB ``Grid.dense_atoms``, matrix.py:222-227)."""
+    window bins (GB ``Grid.dense_atoms``, matrix.py:222-227), in the Wilson basis of
+    ``window``."""
     bands, Nt, G, idx = geo["bands"], geo["Nt"], geo["G"], geo["idx"]
-    atoms = band_atoms(bands, Nf, Nt, dt)
+    atoms = band_atoms(bands, Nf, Nt, dt, window=window)
     U = np.zeros((bands.size * Nt, G), complex)
     for b in range(bands.size):
         U[b * Nt:(b + 1) * Nt, idx[b]] = atoms[b]
@@ -223,9 +224,10 @@ class FourierToWDM(LinearMap):
     itself); the cells read the window bins ``[g0, g0 + G)``, ``g0 = (m_0 - 1) Nt/2``, which
     ``src`` must cover -- or, with ``restrict=True``, ``src`` may be a sub-window of it and
     the atoms are truncated to ``src`` (the GB exact rows on the analysis window,
-    matrix.py:686).  ``C`` holds the unit-norm atoms (GB ``Variant.C``):
-    ``impl="dense"`` evaluates ``Re(z[..., lo:lo+width] @ C.T)`` (GB ``cells``, the golden
-    default); ``impl="fft"`` evaluates ``wilson.forward_bands`` (opt-in, <= 1e-12 relative).
+    matrix.py:686).  ``C`` holds the unit-norm atoms in the Wilson basis of ``dst.window``
+    (GB ``Variant.C``): ``impl="dense"`` evaluates ``Re(z[..., lo:lo+width] @ C.T)`` (GB
+    ``cells``, the golden default); ``impl="fft"`` evaluates ``wilson.forward_bands``
+    (opt-in, <= 1e-12 relative).
     For a record ``z = rfft(x)`` the cells are ``sqrt(N / (2 dt))`` times
     ``TimeToWDM.apply(x)`` on the same cells (no map applies ``WDMDomain.scale`` yet, so
     ``dst.scale`` must be 1: gap G4).
@@ -251,7 +253,7 @@ class FourierToWDM(LinearMap):
         geo = _geometry(self.dst)
         g0, G = geo["g0"], geo["G"]
         k0, n = self.src.k0, self.src.n
-        U = _dense_atoms(geo, g.Nf, g.dt)[geo["sel"]]                 # (P, G), GB V.U
+        U = _dense_atoms(geo, g.Nf, g.dt, window=self.dst.window)[geo["sel"]]  # (P, G), GB V.U
         if k0 <= g0 and g0 + G <= k0 + n:
             lo, width, C = g0 - k0, G, U
         elif self.restrict and g0 <= k0 and k0 + n <= g0 + G:
@@ -277,7 +279,8 @@ class FourierToWDM(LinearMap):
         """The band windows' bins ``[g0, g0 + G)`` of the cells' grid record
         (480 / 876 / 1800 for the GB).  The record is ``dst``'s grid, not ``src``'s: the two
         agree for a built map (the constructor checks it), while a map returned by
-        :meth:`after` reads the bins of the outer record."""
+        :meth:`after` reads the bins of the outer record.  (These are band-window *bins*.
+        The Wilson window of the cells is ``dst.window``.)"""
         geo = _geometry(self.dst)
         g = self.dst.cells.grid
         return FourierDomain(g.N, g.dt, geo["g0"], geo["G"], self.src.units)
@@ -290,7 +293,8 @@ class FourierToWDM(LinearMap):
             return be.xp.real(z[..., self.lo:self.lo + self.width] @ self.C.T)
         g = self.dst.cells.grid
         geo = _geometry(self.dst)
-        w = wilson.transform.forward_bands(z, self.src.k0, geo["bands"], g.Nf, g.Nt, g.dt, be=be)
+        w = wilson.transform.forward_bands(z, self.src.k0, geo["bands"], g.Nf, g.Nt, g.dt, be=be,
+                                           window=self.dst.window)
         return w.reshape(*w.shape[:-2], -1)[..., geo["sel"]]
 
     def adjoint(self, w, be=None):
@@ -335,7 +339,7 @@ class FourierToWDM(LinearMap):
                              "the band window")
         g = self.dst.cells.grid
         geo = _geometry(self.dst)
-        phi = phi_centered(g.Nf, g.Nt, g.dt)
+        phi = sample_window(self.dst.window, g.Nf, g.Nt, g.dt)
         phase = _band_phase(geo["bands"], g.Nt, phi)
         nb, Nt = geo["bands"].size, g.Nt
         A, B = np.asarray(inner.A), np.asarray(inner.B)

@@ -5,9 +5,13 @@
 * :class:`MidpointVariance` (Eq. 39) -- ``0.5 S(f_m, t_n)`` at the band centre
   ``f_m = m dF`` and the cell time ``t_n = n dT``.
 
-Both are pytrees (``domainia.wilson.backend.pytree_dataclass``), but evaluating them calls
-the PSD on the host, so neither is jittable (``jittable = False``): a ``DiagonalCovariance``
-built on one factorises eagerly on every backend.
+``BandAveragedVariance(..., window=)`` averages over that window (default Meyer); the
+midpoint variance is window-free.
+
+Both are pytrees (``domainia.wilson.backend.pytree_dataclass``; the window is static
+metadata), but evaluating them calls the PSD on the host, so neither is jittable
+(``jittable = False``): a ``DiagonalCovariance`` built on one factorises eagerly on every
+backend.
 """
 
 from __future__ import annotations
@@ -19,6 +23,7 @@ import numpy as np
 
 from domainia import wilson
 from domainia.wilson.backend import Backend, pytree_dataclass
+from domainia.wilson.windows import MEYER, Window, require_window
 
 from .domains import CellSet
 from .maps.base import _BUILD, on_backend
@@ -40,21 +45,26 @@ def _require_generic(psd: Any, what: str) -> None:
                         "domainia.spectra.GenericPSD")
 
 
-@pytree_dataclass(data=("t",), meta=("psd", "cells"))
+@pytree_dataclass(data=("t",), meta=("psd", "cells", "window"))
 @dataclass(frozen=True, eq=False)
 class BandAveragedVariance:
-    """Eq. 36: ``0.5 <S(f, t_n)>`` over the window squared around each cell's band."""
+    """Eq. 36: ``0.5 <S(f, t_n)>`` over the window squared around each cell's band.
+
+    ``window`` is the Wilson window of the cells' basis (default :data:`MEYER`).
+    """
 
     jittable: ClassVar[bool] = False
 
     psd: Any
     cells: CellSet
     t: Any = field(default=_BUILD, kw_only=True)
+    window: Window = field(default=MEYER, kw_only=True)
 
     def __post_init__(self) -> None:
         if self.t is not _BUILD:
             return
         _require_generic(self.psd, "band-averaged")
+        require_window(self.window)
         object.__setattr__(self, "t", _cell_arrays(self.cells)[2])
 
     def on(self, be: Backend) -> "BandAveragedVariance":
@@ -64,7 +74,8 @@ class BandAveragedVariance:
     def __call__(self, nu: Any, *, channel: int = 0, be: Backend | None = None) -> Any:
         g = self.cells.grid
         m, n, _ = _cell_arrays(self.cells)
-        full = wilson.noise.evolutionary_band_variance(g.Nf, g.Nt, g.dt, self.psd.bind(nu))
+        full = wilson.noise.evolutionary_band_variance(g.Nf, g.Nt, g.dt, self.psd.bind(nu),
+                                                       window=self.window)
         return full[m, n]
 
 

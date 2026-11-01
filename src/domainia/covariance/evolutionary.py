@@ -28,6 +28,7 @@ import numpy as np
 from domainia.wilson.backend import Backend, get_backend
 from domainia.wilson.evolutionary import eq45_blocks_cheb, eq45_coeffs_interp, eq45_direct, eq45_plan
 from domainia.wilson.grid import packed_cells
+from domainia.wilson.windows import MEYER, Window, require_window
 
 from .base import Covariance
 from .blocktri import BlockTridiagonalCovariance, blocks_to_dense, to_layout
@@ -62,12 +63,15 @@ def keep_mask(cells: Any) -> np.ndarray:
 class _ChebBlocks:
     """``interp``: Chebyshev-in-time blocks on the plan's kept cells."""
 
-    def __init__(self, psd: Any, grid: Any, keep: np.ndarray, P: int, t_max: float | None) -> None:
+    def __init__(self, psd: Any, grid: Any, keep: np.ndarray, P: int, t_max: float | None,
+                 window: Window) -> None:
         self.psd, self.grid, self.keep, self.P, self.t_max = psd, grid, keep, P, t_max
+        self.window = window
 
     def host_constants(self) -> dict[str, Any]:
         g = self.grid
-        return {"plan": eq45_plan(g.Nf, g.Nt, g.dt, self.keep, P=self.P, t_max=self.t_max)}
+        return {"plan": eq45_plan(g.Nf, g.Nt, g.dt, self.keep, P=self.P, t_max=self.t_max,
+                                  window=self.window)}
 
     def evaluate(self, C: Any, nu: Any, be: Backend) -> tuple[list[Any], list[Any]]:
         plan = C["plan"]
@@ -83,12 +87,14 @@ class _ChebBlocks:
 class _DirectMatrix:
     """``direct``: the dense direct sum."""
 
-    def __init__(self, psd: Any, grid: Any, keep: np.ndarray, t_max: float | None) -> None:
-        self.psd, self.grid, self.keep, self.t_max = psd, grid, keep, t_max
+    def __init__(self, psd: Any, grid: Any, keep: np.ndarray, t_max: float | None,
+                 window: Window) -> None:
+        self.psd, self.grid, self.keep, self.t_max, self.window = psd, grid, keep, t_max, window
 
     def host_constants(self) -> dict[str, Any]:
         g = self.grid
-        return {"plan": eq45_plan(g.Nf, g.Nt, g.dt, self.keep, P=2, t_max=self.t_max)}
+        return {"plan": eq45_plan(g.Nf, g.Nt, g.dt, self.keep, P=2, t_max=self.t_max,
+                                  window=self.window)}
 
     def evaluate(self, C: Any, nu: Any, be: Backend) -> Any:
         nu_h = np.asarray(nu)
@@ -127,11 +133,14 @@ class EvolutionaryCovariance(Covariance):
         End of the Chebyshev time domain (default: the cells' grid ``T``).
     P
         Chebyshev order of ``interp`` (24).
+    window
+        The Wilson window of the cells' basis (default :data:`MEYER`).
     """
 
     def __init__(self, psd: Any, cells: Any, *, builder: Builder = "interp", assembly: str = "blocktri",
                  layout: str | None = None, t_max: float | None = None, P: int = 24,
-                 chol_impl: Literal["numpy", "scipy"] = "numpy", symmetrize: bool = True) -> None:
+                 chol_impl: Literal["numpy", "scipy"] = "numpy", symmetrize: bool = True,
+                 window: Window = MEYER) -> None:
         if builder not in BUILDERS:
             raise ValueError(f"unknown builder {builder!r}; expected one of {BUILDERS}")
         if not callable(psd):
@@ -146,13 +155,15 @@ class EvolutionaryCovariance(Covariance):
                              "with assembly='dense'")
         if chol_impl not in ("numpy", "scipy"):
             raise ValueError(f"chol_impl must be 'numpy' or 'scipy'; got {chol_impl!r}")
+        require_window(window)
         self.psd, self.cells, self.builder, self.assembly = psd, cells, builder, assembly
+        self.window = window
         self.n = len(cells.m)
         keep = keep_mask(cells)
         m_all, _ = packed_cells(cells.grid.Nf, cells.grid.Nt)
         sizes = tuple(int(np.sum(keep & (m_all == mm))) for mm in range(cells.grid.Nf + 1))
-        blocks: Any = (_ChebBlocks(psd, cells.grid, keep, P, t_max) if builder == "interp"
-                       else _DirectMatrix(psd, cells.grid, keep, t_max))
+        blocks: Any = (_ChebBlocks(psd, cells.grid, keep, P, t_max, window) if builder == "interp"
+                       else _DirectMatrix(psd, cells.grid, keep, t_max, window))
         self.sizes = sizes
         self.block_evaluator = blocks
         if assembly == "blocktri":

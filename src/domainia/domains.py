@@ -12,7 +12,8 @@ Every domain is a frozen, hashable dataclass, so it can be the static part of a
   order** (``m`` ascending, then ``n``), i.e. a subsequence of
   ``wilson.grid.packed_cells(Nf, Nt)``.
 * :class:`WDMDomain`: a cell set with a constant ``scale`` (the GB cells are
-  ``Re(C z)`` with unit-norm atoms on ``z = rfft / sigma0``; the sinusoid uses 1).
+  ``Re(C z)`` with unit-norm atoms on ``z = rfft / sigma0``; the sinusoid uses 1) and the
+  Wilson ``window`` of its basis (default ``domainia.wilson.MEYER``, the WDM transform).
 * :class:`ChannelAxis`: named channels (``("A", "E")`` for the GB); empty for one
   channel without a channel axis.
 """
@@ -28,6 +29,7 @@ from numpy.typing import NDArray
 
 from domainia import wilson
 from domainia.wilson.grid import packed_cells
+from domainia.wilson.windows import MEYER, Window, require_window
 
 __all__ = [
     "FOURIER_UNITS",
@@ -314,7 +316,12 @@ class CellSet:
 
 @dataclass(frozen=True)
 class WDMDomain:
-    """A cell set and the constant ``scale`` that relates its cells to the WDM coefficients.
+    """A cell set, the constant ``scale`` that relates its cells to the Wilson
+    coefficients, and the Wilson ``window`` of the basis (default :data:`MEYER`: WDM).
+
+    The window is part of the domain's identity (equality and hashing), so two maps or
+    covariances built for different windows never compose silently.  It must be a hashable
+    :class:`~domainia.wilson.Window` instance (``TypeError`` otherwise).
 
     No map applies ``scale`` (gap G4), so ``TimeToWDM``, ``WDMToTime``, ``FourierToWDM``
     and ``Restrict`` refuse ``scale != 1`` (:meth:`require_unit_scale`) rather than treat it
@@ -324,11 +331,19 @@ class WDMDomain:
 
     cells: CellSet
     scale: float = 1.0
+    window: Window = MEYER
 
     def __post_init__(self) -> None:
         if not isinstance(self.cells, CellSet):
             raise TypeError(f"cells must be a CellSet; got {type(self.cells).__name__}")
         object.__setattr__(self, "scale", _positive_float("scale", self.scale))
+        require_window(self.window)
+        try:
+            hash(self.window)
+        except TypeError:
+            raise TypeError(f"window must be hashable (it is part of the domain's identity and "
+                            f"static under jax.jit); got an unhashable "
+                            f"{type(self.window).__name__}") from None
 
     @property
     def size(self) -> int:
