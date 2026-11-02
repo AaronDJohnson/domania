@@ -71,13 +71,15 @@ N = Nf * Nt
 time, freq, wdm = TimeDomain(N, dt), FourierDomain.full(N, dt), WDMDomain.full(Grid(Nf, Nt, dt))
 x = np.random.default_rng(0).standard_normal(N)
 
-w = wilson.forward_time(x, Nf, Nt, dt)        # raw kernel output: ~1e-17 in the inactive cells
+w = wilson.forward_time(x, Nf, Nt, dt)        # raw kernel output: ~1e-16 in the inactive cells
 # transform({"A": w}, wdm, time) raises ValueError: ... inactive cells must be exactly 0 ...
 w[~wilson.active_mask(Nf, Nt)] = 0.0          # zero the inactive cells
 assert np.allclose(transform({"A": w}, wdm, time)["A"], x)
 
-X = dt * np.fft.fft(x)[: N // 2 + 1]          # a full-FFT slice
-X[[0, -1]] = X[[0, -1]].real                  # DC and Nyquist exactly real (odd N: X[0] only)
+# A full-FFT slice: its DC and Nyquist bins can carry ~1e-16 imaginary round-off (not at
+# this power-of-two N = 1024, but typically at N = 240), so make them exactly real.
+X = dt * np.fft.fft(x)[: N // 2 + 1]
+X[[0, -1]] = X[[0, -1]].real                  # odd N: X[0] only
 assert np.allclose(transform({"A": X}, freq, time)["A"], x)
 ```
 
@@ -132,7 +134,9 @@ PYTHONDONTWRITEBYTECODE=1 JAX_PLATFORMS=cpu python -P -m pytest -q
 ```
 
 `import domainia` (any of its modules) never imports JAX. JAX is imported only on use:
-when you build the JAX backend (`domainia.wilson.backend.jax_backend()`, or
-`get_backend(backend="jax")`) to pass as a kernel's, map's or covariance's `be=`, turn on
-float64 with `domainia.wilson.backend.enable_x64()`, or build JAX device constants. A
-kernel given JAX arrays and no `be=` runs on JAX only when JAX is already imported.
+when you build the JAX backend (`domainia.wilson.backend.jax_backend()` or
+`domainia.wilson.backend.get_backend(backend="jax")`) to pass as the `be=` of a kernel, map
+or covariance that takes one, turn on float64 with `domainia.wilson.backend.enable_x64()`,
+or build JAX device constants. The JAX backend needs float64: call `enable_x64()` (or set
+`JAX_ENABLE_X64=true`) first, or it raises `RuntimeError`. A kernel that takes `be=`, given
+JAX arrays and no `be=`, infers the JAX backend, with the same requirement.

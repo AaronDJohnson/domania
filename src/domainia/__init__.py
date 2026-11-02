@@ -2,11 +2,13 @@
 (Wilson / WDM) domains.
 
 Importing ``domainia`` (any of its modules) never imports JAX.  JAX is imported only on use:
-when the JAX backend is built (:func:`domainia.wilson.backend.jax_backend`, or
-``get_backend(backend="jax")``) to pass as a kernel's, map's or covariance's ``be=``, when
-float64 is turned on (:func:`domainia.wilson.backend.enable_x64`), or when JAX device
-constants are built.  A kernel given JAX arrays and no ``be=`` runs on JAX only when JAX is
-already imported.
+when the JAX backend is built (:func:`domainia.wilson.backend.jax_backend` or
+``domainia.wilson.backend.get_backend(backend="jax")``) to pass as the ``be=`` of a kernel,
+map or covariance that takes one, when float64 is turned on
+(:func:`domainia.wilson.backend.enable_x64`), or when JAX device constants are built.  The
+JAX backend needs float64: call ``enable_x64()`` (or set ``JAX_ENABLE_X64=true``) first, or
+it raises ``RuntimeError``.  A kernel that takes ``be=``, given JAX arrays and no ``be=``,
+infers the JAX backend, with the same requirement.
 
 Modules
 -------
