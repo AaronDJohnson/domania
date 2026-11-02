@@ -132,5 +132,7 @@ PYTHONDONTWRITEBYTECODE=1 JAX_PLATFORMS=cpu python -P -m pytest -q
 ```
 
 `import domainia` (any of its modules) never imports JAX. JAX is imported only on use:
-when a JAX backend is asked for (`backend="jax"`, `domainia.wilson.backend.jax_backend()`)
-or JAX device constants are built.
+when you build the JAX backend (`domainia.wilson.backend.jax_backend()`, or
+`get_backend(backend="jax")`) to pass as a kernel's, map's or covariance's `be=`, turn on
+float64 with `domainia.wilson.backend.enable_x64()`, or build JAX device constants. A
+kernel given JAX arrays and no `be=` runs on JAX only when JAX is already imported.

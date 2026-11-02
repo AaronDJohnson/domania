@@ -38,9 +38,9 @@ PSDs are callables ``Sn(f, t)``: elementwise, broadcasting, argument order
 :func:`domainia.wilson.grid.sanitize_psd`.  Cell times are :math:`t_n = n\Delta T`.
 
 Numerics: every NumPy path is an operation-order-preserving transcription of its
-source (wdm_dev ``evolutionary.py``, WT ``wdm_toys/matrix.py``, WG
-``wdmtoysgpu/matrix.py``, GB ``galactic_binary/matrix.py``), so it is
-bit-identical to it; the JAX paths agree to round-off.
+source (wdm_dev ``evolutionary.py``, frozen in ``tests/wilson/oracle/wdm_dev_ev``, and
+the WT, WG and GB toy-model oracles), so it is bit-identical to it; the JAX paths agree
+to round-off.
 """
 
 from __future__ import annotations

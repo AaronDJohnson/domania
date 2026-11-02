@@ -9,7 +9,7 @@ likelihood path).  Every oracle here is ``O(N^2)`` memory or worse: keep ``N`` <
 * :func:`hhat`, :func:`eq54_covariance`, :func:`dense_lambda_generic`: the generic
   Eq. (54) covariance of a modulated stationary process on Fourier bins and its WDM
   form (GB ``wdm_full.hhat_at`` / ``dense_lambda_generic``, in the dense form that
-  GB ``tests/test_wdm_full.py::generic_M`` pins it to).
+  the GB test helper ``generic_M`` pins it to).
 
 :func:`dense_W`, :func:`wdm_congruence` and :func:`eq45_dense` take ``window=`` (default
 Meyer: the WDM transform) and compute in the Wilson basis of that window.
@@ -113,7 +113,7 @@ def eq54_covariance(s_I: Array, s_G_src: Array, h: CArray, *, margin: int) -> CA
     :math:`\kappa = -\mathrm{margin} \ldots G + \mathrm{margin} - 1` (grid units).
 
     ``s_G_src`` has ``G + 2 margin`` entries; ``h`` is :math:`\hat h` at the lags
-    ``-(G + margin) .. G + margin``.  GB ``tests/test_wdm_full.py::generic_M`` verbatim.
+    ``-(G + margin) .. G + margin``.  The GB test helper ``generic_M`` verbatim.
     """
     s_I = np.asarray(s_I, dtype=float)
     G = s_I.size

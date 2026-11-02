@@ -2,10 +2,10 @@
 
 * :func:`bessel_i` -- modified Bessel functions ``I_p(a)``, ``p = 0..P-1``:
   ``scipy.special.ive(p, a) * exp(|a|)`` on NumPy (the WT expression), the
-  40-term power series of ``wdmtoysgpu.jaxlike.bessel_i`` on JAX (relative
+  40-term power series of the WG ``jaxlike.bessel_i`` on JAX (relative
   error <= 1e-13 for ``|a| <= 8``; the sinusoid priors need ``|a| <= 3.2``).
 * :func:`chebyshev_basis` -- ``T_p(u_i)`` on a record's time grid
-  (``wdm_toys.fastcov.cheb_basis``), host NumPy.
+  (WT ``fastcov.cheb_basis``), host NumPy.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ def bessel_i(P: int, a: Any, be: Backend | None = None) -> Any:
 def chebyshev_basis(N: int, P: int) -> NDArray[np.floating]:
     """Chebyshev polynomials ``T_p(u_i)``, ``(P, N)``, ``u_i = 2 (i/N - 1/2)``.
 
-    ``wdm_toys.fastcov.cheb_basis`` verbatim (host constant).
+    WT ``fastcov.cheb_basis`` verbatim (host constant).
 
     Examples
     --------

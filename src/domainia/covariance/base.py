@@ -194,7 +194,7 @@ def factor_constants(F: Any, C: Any, what: str) -> Any:
 @pytree_dataclass(data=("v", "logdet", "ok"), meta=())
 @dataclass(frozen=True, eq=False)
 class DiagFactor:
-    """``C = diag(v)``: WT ``Solver(diag=...)``, GB diagonal models."""
+    """``C = diag(v)``: the factor of a diagonal covariance."""
 
     v: Any
     logdet: Any

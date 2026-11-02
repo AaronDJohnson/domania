@@ -411,7 +411,7 @@ class _JaxBackend(Backend):
         return jax.jit(f, **kw)
 
     def bessel_i(self, P: int, a: Any) -> Any:
-        # Verbatim ``wdmtoysgpu.jaxlike.bessel_i`` (40-term power series).  Every
+        # Verbatim WG ``jaxlike.bessel_i`` (40-term power series).  Every
         # term is positive, so there is no cancellation; 40 terms cover |a| <= 8.
         from jax import lax
 

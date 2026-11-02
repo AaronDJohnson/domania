@@ -45,10 +45,10 @@ class TimeToWDM(LinearMap):
 
     ``apply`` is ``wilson.forward_time`` (1-D) or ``wilson.forward_time_many`` (batched; bitwise
     the same per row), then a gather -- WT ``Grid.forward``/``forward_many`` followed by
-    ``Variant.map``'s ``[keep]`` (matrix.py:191-197, 711-716).  ``adjoint`` is
+    ``Variant.map``'s ``[keep]``.  ``adjoint`` is
     ``W^T`` restricted to the cells, ``dt * W^{-1}`` of the zero-filled grid
     (``W W^T = dt I``), valid on any cell subset.  ``rows`` are the time-domain atoms
-    ``irfft(atom_spectrum)`` (WT ``Grid.atom``, matrix.py:225-232).
+    ``irfft(atom_spectrum)`` (WT ``Grid.atom``).
     """
 
     src: TimeDomain
@@ -105,7 +105,7 @@ class TimeToWDM(LinearMap):
 @dataclass(frozen=True, eq=False)
 class WDMToTime(LinearMap):
     """``W^{-1} = W^T / dt`` on a complete cell set: ``wilson.inverse_time_many`` of the
-    unpacked grid (WT ``Grid.inverse_many``, matrix.py:199-204).  ``adjoint`` is
+    unpacked grid (WT ``Grid.inverse_many``).  ``adjoint`` is
     ``W^{-T} = W / dt``."""
 
     src: WDMDomain
@@ -146,8 +146,8 @@ class WDMToTime(LinearMap):
 
 
 def _keep_bins(N: int, dt: float, fmin: float) -> tuple[int, int]:
-    """``fmin <= f < f_Nyq``, DC and Nyquist dropped (WT ``FourierBand``, band.py:17-26, and
-    ``MatrixWhittle``, matrix.py:883-884): the contiguous kept bins ``(k0, n)``."""
+    """``fmin <= f < f_Nyq``, DC and Nyquist dropped (WT ``FourierBand`` and
+    ``MatrixWhittle``): the contiguous kept bins ``(k0, n)``."""
     f = np.fft.rfftfreq(N, d=dt)
     keep = (f >= max(float(fmin), 0.0)) & (f < 0.5 / dt)
     keep[[0, -1]] = False
@@ -230,7 +230,7 @@ class TimeToFourier(LinearMap):
 @dataclass(frozen=True, eq=False)
 class CropTime(LinearMap):
     """Samples ``[start, start + n)`` (whittle_cut: ``[6*64, 251*64)``, ``N_c = 15680``;
-    WT ``MatrixWhittle``, matrix.py:870)."""
+    WT ``MatrixWhittle``)."""
 
     src: TimeDomain
     start: int
@@ -261,7 +261,7 @@ class CropTime(LinearMap):
 @dataclass(frozen=True, eq=False)
 class ZeroPadTime(LinearMap):
     """``n_extra`` zero samples appended at the end (the sinusoid pad: 16 columns, 1024
-    samples; cyclically equivalent to 8 + 8).  WT ``Variant.extend`` (matrix.py:702-709)."""
+    samples; cyclically equivalent to 8 + 8).  WT ``Variant.extend``."""
 
     src: TimeDomain
     n_extra: int

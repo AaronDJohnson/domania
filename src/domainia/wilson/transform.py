@@ -931,11 +931,10 @@ def base_atom_spectra(Nf: int, Nt: int, dt: float, *,
 
     Every other atom of band ``m`` is a circular shift of one of these by an
     even number of columns (:func:`atom_spectrum`).  ``dt * inverse_many(e)``:
-    :func:`inverse` returns ``rfft(W_a^{-1} e) = rfft(atom) / dt``.  The same
-    arithmetic as ``wdm_toys.matrix.Grid._base_spectra`` and wdm_dev
-    ``PackedGrid._base_spectra``, so with the default window (:data:`domainia.wilson.MEYER`)
-    these spectra and the Eq. 45 constants built from them are bit-identical to the Meyer
-    baseline (pinned by ``tests/wilson/test_meyer_baseline.py``).
+    :func:`inverse` returns ``rfft(W_a^{-1} e) = rfft(atom) / dt``.  With the default
+    window (:data:`domainia.wilson.MEYER`) these spectra and the Eq. 45 constants built from
+    them are bit-identical to the Meyer baseline (pinned by
+    ``tests/wilson/test_meyer_baseline.py``).
 
     Parameters
     ----------
@@ -1037,9 +1036,8 @@ def band_atoms(bands: NDArray[np.integer], Nf: int, Nt: int, dt: float, *,
     """``(nb, Nt, Nt)`` complex unit-norm atoms of ``bands`` on their ``Nt``-bin windows.
 
     Atom ``[b, n, s]`` multiplies the rfft bin ``(m_b - 1) Nt/2 + s`` of a
-    record's spectrum; a cell is ``Re(atoms[b, n] . z[window])``.  Verbatim
-    ``toy_models/galactic_binary/geometry.py::band_atoms`` (L91-103) with
-    ``window``'s samples (Hz normalisation).
+    record's spectrum; a cell is ``Re(atoms[b, n] . z[window])``.  Verbatim GB
+    ``geometry.band_atoms`` with ``window``'s samples (Hz normalisation).
 
     Parameters
     ----------

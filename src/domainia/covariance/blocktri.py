@@ -88,7 +88,7 @@ class BlockTriCovFactor:
 
     The padded layout's :class:`~domainia.linalg.BandLayout` is a constant: it is not stored
     (``bt.band_layout`` is ``None``) and comes from the covariance's constants,
-    ``C["layout"]`` (WG kept ``lay_*`` in ``C``, ``wdmtoysgpu/matrix.py:287``)."""
+    ``C["layout"]`` (WG kept ``lay_*`` in ``C``)."""
 
     bt: Any
     logdet: Any

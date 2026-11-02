@@ -174,8 +174,8 @@ class PushedCovariance:
     Rows follow the oracle order of each map kind: ``"real"`` --
     ``M (Sigma M[idx]^T)``, i.e. ``map.apply(cov.matvec(map.rows(idx)))`` (WT
     ``MatrixWdm._exact_rows``: atoms, then the covariance, then the forward transform);
-    ``"cells"`` -- ``0.5 * Re((C[idx] @ M') @ conj(C).T)`` (GB ``exact_rows_builder``,
-    matrix.py:686-693); ``"analysis"`` -- ``F[idx] Sigma F^H``; ``"complex"`` --
+    ``"cells"`` -- ``0.5 * Re((C[idx] @ M') @ conj(C).T)`` (GB ``exact_rows_builder``);
+    ``"analysis"`` -- ``F[idx] Sigma F^H``; ``"complex"`` --
     ``(A M' A^H)[idx]``.
 
     A covariance that carries a Wilson ``window`` (``EvolutionaryCovariance``, a

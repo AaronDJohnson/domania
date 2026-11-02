@@ -1,11 +1,10 @@
 """Maps out of band-limited Fourier bins: zero padding, cropping, WDM cells (GB, spec §4.2).
 
-Ported from ``toy_models/galactic_binary/matrix.py`` (frozen): ``_geometric``,
-``pad_maps``, ``crop_maps`` verbatim (L270-306), the cell matrices of ``Grid.dense_atoms``
-(L222-227) and ``_cells`` (L320-332, with ``wdm_full.analyse`` L142-145 and
-``wdm_bands._phase`` L89-95), and the data map ``cells`` (L818-820).  The atoms are
-``wilson.transform.band_atoms`` (``geometry.band_atoms`` to rounding; bit-identical until the Hz window of
-v0.12.0, S1 Task C6).
+Ported from the GB toy-model oracle (frozen): ``_geometric``, ``pad_maps``, ``crop_maps``
+verbatim, the cell matrices of ``Grid.dense_atoms`` and ``_cells`` (with
+``wdm_full.analyse`` and ``wdm_bands._phase``), and the data map ``cells``.  The atoms are
+``wilson.transform.band_atoms`` (GB ``geometry.band_atoms`` to rounding; bit-identical
+until the Hz window of v0.12.0, S1 Task C6).
 """
 
 from __future__ import annotations
@@ -28,7 +27,7 @@ __all__ = ["FourierCrop", "FourierToWDM", "FourierZeroPad", "crop_maps", "pad_ma
 
 
 # ---------------------------------------------------------------------------
-# Dirichlet kernels (GB matrix.py:270-306, verbatim)
+# Dirichlet kernels (GB, verbatim)
 # ---------------------------------------------------------------------------
 
 
@@ -90,7 +89,7 @@ class FourierZeroPad(_WidelyLinear):
     """Bins ``dst`` of the record zero-padded from ``src.N`` to ``dst.N`` samples, from the
     bins ``src``: ``z' = scale (A z + B conj z)``, ``scale = sqrt(N / N')`` (kind
     ``"widely"``).  ``A, B`` are :func:`pad_maps`; ``scale`` keeps the padded record's
-    unit-norm cells in the record's cell units (GB ``variant``, matrix.py:373-377)."""
+    unit-norm cells in the record's cell units (GB ``variant``)."""
 
     src: FourierDomain
     dst: FourierDomain
@@ -124,8 +123,8 @@ class FourierZeroPad(_WidelyLinear):
 class FourierCrop(_WidelyLinear):
     """Bins ``dst`` of the record cropped to samples ``[start, start + dst.N)``, from the
     bins ``src``: ``z^c = A z + B conj z`` (:func:`crop_maps`; GB ``whittle_map`` and
-    ``mask_rows``).  ``apply`` is the template call site ``(h @ A.T) + (conj(h) @ B.T)``
-    (matrix.py:897); :meth:`apply_data` the data call site (matrix.py:892)."""
+    ``mask_rows``).  ``apply`` is the oracle's template call site
+    ``(h @ A.T) + (conj(h) @ B.T)``; :meth:`apply_data` its data call site."""
 
     src: FourierDomain
     dst: FourierDomain
@@ -151,7 +150,7 @@ class FourierCrop(_WidelyLinear):
         return (z @ self.A.T) + (be.xp.conj(z) @ self.B.T)
 
     def apply_data(self, z, be=None):
-        """The oracle's DATA call site ``(A @ z.T + B @ conj(z).T).T`` (matrix.py:892): the
+        """The oracle's DATA call site ``(A @ z.T + B @ conj(z).T).T``: the
         same map as :meth:`apply` in the other matmul orientation (<= 2e-15 apart)."""
         be = self._be(z, be)
         z = be.asarray(z)
@@ -205,7 +204,7 @@ def _geometry(dom: WDMDomain) -> dict:
 
 def _dense_atoms(geo: dict, Nf: int, dt: float, *, window: Window) -> np.ndarray:
     """``(nb Nt, G)``: row ``b Nt + n`` is the unit-norm atom of cell ``(bands[b], n)`` on the
-    window bins (GB ``Grid.dense_atoms``, matrix.py:222-227), in the Wilson basis of
+    window bins (GB ``Grid.dense_atoms``), in the Wilson basis of
     ``window``."""
     bands, Nt, G, idx = geo["bands"], geo["Nt"], geo["G"], geo["idx"]
     atoms = band_atoms(bands, Nf, Nt, dt, window=window)
@@ -223,8 +222,8 @@ class FourierToWDM(LinearMap):
     ``src`` is the ``FourierDomain`` the data live on (the GB store, or the band window
     itself); the cells read the window bins ``[g0, g0 + G)``, ``g0 = (m_0 - 1) Nt/2``, which
     ``src`` must cover -- or, with ``restrict=True``, ``src`` may be a sub-window of it and
-    the atoms are truncated to ``src`` (the GB exact rows on the analysis window,
-    matrix.py:686).  ``C`` holds the unit-norm atoms in the Wilson basis of ``dst.window``
+    the atoms are truncated to ``src`` (the GB exact rows on the analysis window).
+    ``C`` holds the unit-norm atoms in the Wilson basis of ``dst.window``
     (GB ``Variant.C``): ``impl="dense"`` evaluates ``Re(z[..., lo:lo+width] @ C.T)`` (GB
     ``cells``, the golden default); ``impl="fft"`` evaluates ``wilson.forward_bands``
     (opt-in, <= 1e-12 relative).
@@ -314,7 +313,7 @@ class FourierToWDM(LinearMap):
         return out
 
     def push_rows(self, Mp, idx, be=None):
-        """``1/2 Re((C[idx] @ M') @ conj(C).T)`` (GB ``exact_rows_builder``, matrix.py:686-693);
+        """``1/2 Re((C[idx] @ M') @ conj(C).T)`` (GB ``exact_rows_builder``);
         ``M'`` is ``(src.n, src.n)``; the ``width`` bins ``C`` reads are sliced out of it."""
         be = be or self._be(Mp, None)
         if Mp.shape != (self.src.n, self.src.n):
@@ -325,7 +324,7 @@ class FourierToWDM(LinearMap):
 
     def after(self, inner: Any) -> "FourierToWDM":
         """The dense cell matrix of ``self . inner`` for a widely linear ``inner``
-        (:class:`FourierZeroPad`, :class:`FourierCrop`) -- GB ``_cells`` (matrix.py:320-332):
+        (:class:`FourierZeroPad`, :class:`FourierCrop`) -- GB ``_cells``:
         ``C = (analyse(A[idx]) + conj(analyse(B[idx]))) * inner.scale``, rows of ``dst``.
 
         The atoms are rebuilt from ``dst``'s geometry, so ``self.src`` must be exactly the

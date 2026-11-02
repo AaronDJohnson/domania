@@ -91,7 +91,7 @@ def _logdet_from_chol(xp: Any, L: Any) -> Any:
 class BandLayout:
     """Band-major positions ``0..n-1`` laid out as ``(nb, B)`` slots with dummies.
 
-    WG ``_BandLayout`` (gpu_sinusoid/wdmtoysgpu/matrix.py:148-180) for a vector whose
+    WG ``_BandLayout`` for a vector whose
     bands are contiguous: ``valid[m, i]`` marks real slots, ``src[m, i]`` is the
     position read into slot ``(m, i)`` (0 for a dummy) and ``back[p]`` the flat slot
     of position ``p``.  Host NumPy constants: pass the layout to ``jit`` as an argument.
@@ -145,7 +145,7 @@ class BandLayout:
 
     def add_identity_dummies(self, diag: Any, *, be: Backend | None = None) -> Any:
         """``diag + diag(1 on dummy slots)`` per band: WG ``_tri_factor``
-        (``diag + vmap(jnp.diag)(where(valid, 0, 1))``, matrix.py:428)."""
+        (``diag + vmap(jnp.diag)(where(valid, 0, 1))``)."""
         be = _be(be, diag, self.valid)
         xp = be.xp
         w = xp.where(be.asarray(self.valid), 0.0, 1.0)
@@ -198,7 +198,7 @@ class BlockTriFactor:
 
 
 def _ragged_factor(diag: Sequence[Any], up: Sequence[Any | None], be: Backend) -> BlockTriFactor:
-    # WT matrix.BlockTri.__init__ (src/wdm_toys/matrix.py:525-541), line for line.
+    # WT BlockTri.__init__, line for line.
     xp = be.xp
     Ls: list[Any] = []
     Xs: list[Any] = []
@@ -219,13 +219,13 @@ def _ragged_factor(diag: Sequence[Any], up: Sequence[Any | None], be: Backend) -
             L = A
         Ls.append(L)
         prev = L
-    # WT BlockTri.logdet (matrix.py:543-544): Python sum of per-block float sums.
+    # WT BlockTri.logdet: Python sum of per-block float sums.
     logdet = 2.0 * sum(float(xp.sum(xp.log(xp.diagonal(L)))) for L in Ls if L.size)
     return BlockTriFactor(tuple(Ls), tuple(Xs), logdet, True, None, "ragged")
 
 
 def _padded_layout_factor(diag: Any, up: Any, band_layout: BandLayout, be: Backend) -> BlockTriFactor:
-    # WG _btri_factor (gpu_sinusoid/wdmtoysgpu/matrix.py:96-109), line for line.
+    # WG _btri_factor, line for line.
     xp = be.xp
     L0, _ = be.cholesky(diag[0], impl="numpy")
     if diag.shape[0] == 1:
@@ -301,7 +301,7 @@ def _factor_arrays(f: BlockTriFactor) -> tuple[Any, ...]:
 
 
 def _ragged_forward(f: BlockTriFactor, B: Any, be: Backend) -> list[Any]:
-    # The forward half of WT BlockTri.solve (matrix.py:550-556).
+    # The forward half of WT BlockTri.solve.
     off = np.concatenate([[0], np.cumsum([L.shape[0] for L in f.Ls])])
     z: list[Any] = []
     for i, L in enumerate(f.Ls):
@@ -348,8 +348,8 @@ def blocktri_solve(f: BlockTriFactor, b: Any, *, band_layout: BandLayout | None 
                    be: Backend | None = None) -> Any:
     """``Lambda^-1 b`` for ``b`` of shape ``(n,)`` or ``(n, k)`` in natural order.
 
-    Ragged: WT ``BlockTri.solve`` (matrix.py:546-563) verbatim.  Padded: WG
-    ``_approx_solve`` (``unpack(_btri_solve(pack(b)))``, matrix.py:605-612); ``band_layout``
+    Ragged: WT ``BlockTri.solve`` verbatim.  Padded: WG
+    ``_approx_solve`` (``unpack(_btri_solve(pack(b)))``); ``band_layout``
     as :func:`blocktri_whiten`.
     """
     if f.layout == "ragged":
@@ -376,7 +376,7 @@ def blocktri_solve(f: BlockTriFactor, b: Any, *, band_layout: BandLayout | None 
 
 def blocktri_whiten_packed(f: BlockTriFactor, b: Any, *, be: Backend | None = None) -> Any:
     """Padded layout only: ``L^-1 b`` for ``b (nb, B, k)`` -- WG ``_btri_forward``
-    (matrix.py:112-123) verbatim; the forward-only quadratic form is ``sum(z * z)``."""
+    verbatim; the forward-only quadratic form is ``sum(z * z)``."""
     if f.layout != "padded":
         raise ValueError("blocktri_whiten_packed needs the padded layout")
     be = _be(be, f.Ls, b)
@@ -397,7 +397,7 @@ def blocktri_whiten_packed(f: BlockTriFactor, b: Any, *, be: Backend | None = No
 
 def blocktri_solve_packed(f: BlockTriFactor, b: Any, *, be: Backend | None = None) -> Any:
     """Padded layout only: ``Lambda^-1 b`` for ``b (nb, B, k)`` -- WG ``_btri_solve``
-    (matrix.py:126-145) verbatim."""
+    verbatim."""
     if f.layout != "padded":
         raise ValueError("blocktri_solve_packed needs the padded layout")
     be = _be(be, f.Ls, b)
@@ -437,7 +437,7 @@ class CBlockFactor:
 
 
 def cblock_factor(M: Any, b: int, *, be: Backend | None = None) -> CBlockFactor:
-    """GB ``fullcache.block_factor`` + ``logdet_of`` (fullcache.py:82-95, 123-125) verbatim;
+    """GB ``fullcache.block_factor`` + ``logdet_of`` verbatim;
     the blocks outside the tridiagonal are not read."""
     be = _be(be, M)
     xp = be.xp
@@ -464,7 +464,7 @@ def cblock_factor(M: Any, b: int, *, be: Backend | None = None) -> CBlockFactor:
 
 
 def cblock_forward(f: CBlockFactor, h: Any, *, be: Backend | None = None) -> Any:
-    """``L^-1 h`` (GB ``fullcache.forward``, block branch, fullcache.py:98-107)."""
+    """``L^-1 h`` (GB ``fullcache.forward``, block branch)."""
     be = _be(be, f.Ls, h)
     Ls, Cs, b = f.Ls, f.Cs, f.b
     nb = Ls.shape[0]
@@ -475,7 +475,7 @@ def cblock_forward(f: CBlockFactor, h: Any, *, be: Backend | None = None) -> Any
 
 
 def cblock_backward(f: CBlockFactor, u: Any, *, be: Backend | None = None) -> Any:
-    """``L^-H u`` (GB ``fullcache.backward``, block branch, fullcache.py:110-120)."""
+    """``L^-H u`` (GB ``fullcache.backward``, block branch)."""
     be = _be(be, f.Ls, u)
     xp = be.xp
     Ls, Cs, b = f.Ls, f.Cs, f.b
@@ -510,11 +510,10 @@ def pcg(apply_A: Callable[[Any], Any], apply_M: Callable[[Any], Any], B: Any, *,
     """Solve ``A x_r = b_r`` for every row of ``B (R, N)`` by preconditioned CG.
 
     One body for both oracles: the WG ``BandFullCovarianceGPU._solve`` frozen-row
-    ``while_loop`` (gpu_sinusoid/wdmtoysgpu/bandcov.py:51-85: rows that converge or fail
-    are frozen, ``p = 0``), whose ``R = 1`` run is the WT early-exit loop
-    (``fastcov.pcg``, fastcov.py:121-143: same alpha/beta order, row dots by
+    ``while_loop`` (rows that converge or fail are frozen, ``p = 0``), whose ``R = 1``
+    run is the WT early-exit loop (``fastcov.pcg``: same alpha/beta order, row dots by
     ``vecdot`` = ``numpy.dot``, norms ``sqrt(vecdot)`` = ``numpy.linalg.norm``).  After the
-    loop the true residual is checked as WT ``BandCovariance.quad`` (bandcov.py:198-201):
+    loop the true residual is checked as WT ``BandCovariance.quad``:
     ``|b - A x| <= true_rtol |b|``, ``true_rtol = max(5 tol, 1e-12)`` by default.
 
     ``apply_A``/``apply_M`` map ``(R, N) -> (R, N)``.  ``on_fail="raise"`` (eager only)
