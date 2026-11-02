@@ -258,6 +258,98 @@ def test_every_method_matches_the_dense_reference(native, target):
     assert t.quadratic_form(y) == pytest.approx(qf, rel=1e-10)
 
 
+class _ChannelCorrelated:
+    """A duck-typed native whose two channels are correlated at every real coordinate ``i``
+    of ``domain``: the stacked covariance has the ``2 x 2`` block ``[[a_i, c_i], [c_i, b_i]]``
+    on ``(r_A[i], r_E[i])`` (the shape of a full channel-by-channel data covariance).  The
+    block is rank 1 at ``rank_one`` (perfectly correlated channels: its range mixes them) and
+    0 at ``dropped``, so the operator is rank-deficient in ways no per-channel covariance
+    can be."""
+
+    channel_names = ("A", "E")
+
+    def __init__(self, domain, rng, *, rank_one=(), dropped=()):
+        self.domain = domain
+        a, b = 0.5 + rng.random(N), 0.5 + rng.random(N)
+        c = 0.8 * np.sqrt(a * b) * rng.uniform(-1.0, 1.0, N)
+        c[list(rank_one)] = np.sqrt(a * b)[list(rank_one)]
+        blocks = np.stack([np.stack([a, c], -1), np.stack([c, b], -1)], -2)   # (N, 2, 2)
+        blocks[list(dropped)] = 0.0
+        self.blocks = blocks
+        w, V = np.linalg.eigh(blocks)
+        self._keep = w > 1e-12 * np.max(w, axis=-1, keepdims=True)
+        self._w, self._V = np.where(self._keep, w, 1.0), V
+        self.degrees_of_freedom = int(self._keep.sum())
+
+    def stacked(self):
+        """The covariance on the stacked coordinates ``(r_A, r_E)``, ``(2N, 2N)``."""
+        B = self.blocks
+        return np.block([[np.diag(B[:, 0, 0]), np.diag(B[:, 0, 1])],
+                         [np.diag(B[:, 1, 0]), np.diag(B[:, 1, 1])]])
+
+    def _z(self, values):
+        return np.stack([_pack(self.domain, values[k]) for k in self.channel_names], -1)
+
+    def _out(self, Z):
+        return {k: _unpack(self.domain, Z[:, i]) for i, k in enumerate(self.channel_names)}
+
+    def _spectral(self, values, f):
+        coef = np.einsum("nij,ni->nj", self._V, self._z(values))           # V^T z per coordinate
+        return self._out(np.einsum("nij,nj->ni", self._V, np.where(self._keep, f(self._w), 0.0) * coef))
+
+    def apply(self, values):
+        return self._out(np.einsum("nij,nj->ni", self.blocks, self._z(values)))
+
+    def solve(self, values):
+        return self._spectral(values, lambda w: 1.0 / w)
+
+    def project(self, values):
+        return self._spectral(values, np.ones_like)
+
+    def quadratic_form(self, values):
+        coef = np.einsum("nij,ni->nj", self._V, self._z(values))
+        return float(np.sum(np.where(self._keep, coef**2 / self._w, 0.0)))
+
+    def log_determinant(self):
+        return float(np.sum(np.log(self._w[self._keep])))
+
+
+_crng = np.random.default_rng(45)
+CORRELATED = {
+    "full-rank": _ChannelCorrelated(FOURIER, _crng),
+    "rank-deficient": _ChannelCorrelated(FOURIER, _crng, rank_one=(3, 17, 64, N - 2), dropped=(0, 40)),
+}
+
+
+@pytest.mark.parametrize("target", ["time", "wdm", "wdm-alt"])
+@pytest.mark.parametrize("native", CORRELATED)
+def test_an_operator_that_correlates_its_channels_matches_the_stacked_dense_reference(native, target):
+    """The Operator contract is on the stacked real coordinates of all channels, which may be
+    correlated at each point.  In the target the stacked covariance is
+    ``(I_2 kron S) C (I_2 kron S)^T``; every method is checked against it, so a translation
+    that handled the channels one at a time (dropping the cross-channel blocks, or the
+    channel-mixing range of the rank-1 blocks) fails."""
+    op, d = CORRELATED[native], TARGETS[target]
+    t = translate_operator(op, d)
+    S2 = np.kron(np.eye(2), _maps(d)[0] @ _maps(FOURIER)[1])
+    C = S2 @ op.stacked() @ S2.T
+    assert np.max(np.abs(C[:N, N:])) > 0.1 * np.max(np.abs(C))         # the channels are correlated
+    w, V = np.linalg.eigh(0.5 * (C + C.T))
+    keep = w > 1e-9 * w.max()
+    w, V = w[keep], V[:, keep]
+    assert keep.sum() == op.degrees_of_freedom == (2 * N if native == "full-rank" else 2 * N - 8)
+    y = _y(d)
+    r = np.concatenate([_pack(d, y["A"]), _pack(d, y["E"])])
+    want = {"apply": C @ r, "solve": V @ ((V.T @ r) / w), "project": V @ (V.T @ r)}
+    for name, v in want.items():
+        out = getattr(t, name)(y)
+        got = np.concatenate([_pack(d, out["A"]), _pack(d, out["E"])])
+        np.testing.assert_allclose(got, v, rtol=0, atol=1e-10 * np.max(np.abs(v)), err_msg=name)
+    assert t.degrees_of_freedom == keep.sum()
+    assert t.log_determinant() == pytest.approx(float(np.sum(np.log(w))), rel=1e-10, abs=1e-9)
+    assert t.quadratic_form(y) == pytest.approx(float(r @ want["solve"]), rel=1e-10)
+
+
 def test_a_time_operator_seen_in_wdm_is_the_dense_congruence():
     op = NATIVES["time"]
     t = translate_operator(op, WDM)

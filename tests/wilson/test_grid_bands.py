@@ -32,9 +32,29 @@ from domainia.wilson.transform import (
     inverse_bands,
 )
 
-GB_DIR = Path(__file__).resolve().parents[4] / "toy_models" / "galactic_binary"
+#: The GB toy tree under $DOMAINIA_ORACLE_ROOT.
+GB_SUBDIR = "toy_models/galactic_binary"
 #: (Nf, Nt, dt): small grids plus the three GB analysis grids (N // NT, NT, 5 s).
 ATOM_GRIDS = [(4, 8, 1.0), (16, 32, 0.5), (6570, 240, 5.0), (7200, 438, 5.0), (7008, 900, 5.0)]
+
+
+#: The out-of-repo oracle trees live under the directory this variable names; unset, or
+#: without the expected subdirectory, the tests that need them skip.
+ORACLE_ROOT_ENV = "DOMAINIA_ORACLE_ROOT"
+
+
+def _oracle_paths(*subpaths: str) -> list[Path]:
+    """``$DOMAINIA_ORACLE_ROOT/<subpath>`` for each ``subpath``; skips the test unless the
+    variable is set and every path exists."""
+    root = os.environ.get(ORACLE_ROOT_ENV)
+    if not root:
+        pytest.skip(f"{ORACLE_ROOT_ENV} is not set: point it at the directory holding "
+                    + " and ".join(subpaths))
+    paths = [Path(root).expanduser().resolve() / s for s in subpaths]
+    missing = [s for s, p in zip(subpaths, paths, strict=True) if not p.exists()]
+    if missing:
+        pytest.skip(f"{ORACLE_ROOT_ENV}={root} has no " + " and no ".join(missing))
+    return paths
 
 
 def test_grid_is_frozen_positional_and_unpacks():
@@ -170,12 +190,11 @@ def test_atoms_are_the_rows_of_the_transform():
 
 def _gb_reference(tmp_path: Path, grids) -> dict:
     """GB phi and atoms computed by the frozen GB code, from a temporary copy."""
-    if not GB_DIR.is_dir():
-        pytest.skip(f"GB toy tree not present: {GB_DIR}")
+    (gb_dir,) = _oracle_paths(GB_SUBDIR)
     copy = tmp_path / "gb"
     copy.mkdir()
     for name in ("config.py", "wdm_atoms.py", "geometry.py"):
-        shutil.copyfile(GB_DIR / name, copy / name)
+        shutil.copyfile(gb_dir / name, copy / name)
     out = tmp_path / "gb_ref.npz"
     code = (
         "import sys, numpy as np\n"

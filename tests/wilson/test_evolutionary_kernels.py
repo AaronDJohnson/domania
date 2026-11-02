@@ -30,11 +30,29 @@ NF, NT, DT = 8, 16, 0.5
 N = NF * NT
 T_REC = N * DT
 F_NYQ = 0.5 / DT
-WORKSPACE = Path(__file__).resolve().parents[4]
-LINEAGE_A = [WORKSPACE / "toy_models" / "vendor" / "wdm" / "src",
-             WORKSPACE / "wdm_paper_2" / "toy_models" / "src"]
+#: The lineage-A source trees under $DOMAINIA_ORACLE_ROOT (vendored wdm first).
+LINEAGE_A = ("toy_models/vendor/wdm/src", "wdm_paper_2/toy_models/src")
 #: max|got - ref| over max|ref| against the omega-era sources (float64).
 ORACLE_RTOL = 1e-14
+
+
+#: The out-of-repo oracle trees live under the directory this variable names; unset, or
+#: without the expected subdirectory, the tests that need them skip.
+ORACLE_ROOT_ENV = "DOMAINIA_ORACLE_ROOT"
+
+
+def _oracle_paths(*subpaths: str) -> list[Path]:
+    """``$DOMAINIA_ORACLE_ROOT/<subpath>`` for each ``subpath``; skips the test unless the
+    variable is set and every path exists."""
+    root = os.environ.get(ORACLE_ROOT_ENV)
+    if not root:
+        pytest.skip(f"{ORACLE_ROOT_ENV} is not set: point it at the directory holding "
+                    + " and ".join(subpaths))
+    paths = [Path(root).expanduser().resolve() / s for s in subpaths]
+    missing = [s for s, p in zip(subpaths, paths, strict=True) if not p.exists()]
+    if missing:
+        pytest.skip(f"{ORACLE_ROOT_ENV}={root} has no " + " and no ".join(missing))
+    return paths
 
 
 def _gap(got, ref, scale=None):
@@ -214,12 +232,11 @@ def test_bessel_blocks_are_the_wt_toy_to_rounding(tmp_path):
     TriCovariance.blocks == eq45_blocks_cheb(eq45_coeffs_bessel) to rounding (bit
     for bit up to v0.11.0; lineage A runs the omega-normalised window), on the data
     grid (r = 1) and on a padded grid (t_max = T', r = T'/T_obs)."""
-    if not all(p.is_dir() for p in LINEAGE_A):
-        pytest.skip("lineage-A trees not present")
+    lineage_a = _oracle_paths(*LINEAGE_A)
     out = tmp_path / "wt_blocks.npz"
     code = (
         "import numpy as np, wdm\n"
-        f"assert wdm.__file__.startswith({str(LINEAGE_A[0])!r}), wdm.__file__\n"
+        f"assert wdm.__file__.startswith({str(lineage_a[0])!r}), wdm.__file__\n"
         "from wdm_toys.config import ToyConfig\n"
         "from wdm_toys import matrix as M\n"
         "cfg = ToyConfig(Nf=8, Nt=16, dt=0.5, f_min=0.2)\n"
@@ -233,7 +250,7 @@ def test_bessel_blocks_are_the_wt_toy_to_rounding(tmp_path):
         f"np.savez({str(out)!r}, **res)\n"
     )
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1",
-               PYTHONPATH=os.pathsep.join(str(p) for p in LINEAGE_A))
+               PYTHONPATH=os.pathsep.join(str(p) for p in lineage_a))
     subprocess.run([sys.executable, "-P", "-c", code], env=env, cwd=str(tmp_path), check=True)
     ref = np.load(out)
     T_obs = N * DT
@@ -468,9 +485,7 @@ def test_wdm_dev_ev_oracle_is_the_seed_with_imports_rewritten():
     oracle = Path(__file__).resolve().parent / "oracle" / "wdm_dev_ev" / "evolutionary.py"
     assert hashlib.sha256(oracle.read_bytes()).hexdigest() == (
         "679ef3cfb37d388fe704e0c87386b36c76c888dfb06e96abd85723de9cc0af88")
-    seed = WORKSPACE / "wdm_dev" / "src" / "wdm" / "evolutionary.py"
-    if not seed.is_file():
-        pytest.skip(f"seed not present: {seed}")
+    (seed,) = _oracle_paths("wdm_dev/src/wdm/evolutionary.py")
     assert hashlib.sha256(seed.read_bytes()).hexdigest() == (
         "3a8140452e83269b46bc2f70382e76c229358134648a71a7c1faa9f5209e3cde")
     rewritten = re.sub(r"^( *)from \.(filter|grid|transform) import",

@@ -45,6 +45,10 @@ assert np.allclose(transform(w8, wdm8, time)["A"], x["A"])
 ```
 
 The WDM layout holds the `N = Nf * Nt` active cells; the inactive edge cells are 0.
+`transform` uses this dense `(Nf + 1, Nt)` layout, while `domainia.data.WDMCells` and the
+maps and covariances on `WDMDomain.full(grid)` use the packed `(N,)` layout (the active cells
+in band order); convert with `domainia.wilson.pack(w, Nf, Nt)` and
+`domainia.wilson.unpack(y, Nf, Nt)`.
 Coordinates scale as `exp(log_coordinate_scale(domain))` relative to the time
 samples: 1 for time, `sqrt(dt)` for WDM (any window), `dt * sqrt(N)` for Fourier (in the
 real coordinates `Re X_0`, `sqrt(2) Re/Im X_k`, `Re X_{N/2}`).
@@ -93,16 +97,17 @@ An `Operator` lives on one full-record domain and acts on `{channel: array}` dic
 translating to the native domain returns the native operator itself.
 
 `Operator` is a `runtime_checkable` `Protocol`, so it is duck-typed: any object with these
-members is one, with no base class. Channel by channel, its methods act on the domain's real
-coordinates `r`: the time samples, the active WDM cells, or for Fourier `Re X_0`,
-`sqrt(2) Re/Im X_k` on the interior bins and `Re X_{N/2}` (even `N`). With `C` symmetric
-positive semi-definite, `apply` is `C r`, `project` the orthogonal projector onto the range
-of `C`, `solve` the Moore–Penrose pseudo-inverse `C^+ r`; `quadratic_form` (`r^T C^+ r`),
-`log_determinant` (the log pseudo-determinant) and `degrees_of_freedom` (the rank) are
-summed over channels. The dicts that `apply`, `solve` and `project` return must meet
-`transform`'s exact input rules, or `TranslatedOperator` raises an error that names the
-native method. The full contract is the `domainia.translate.Operator` docstring, and
-`domainia.testing.PointwiseOperator` is a minimal reference implementation:
+members is one, with no base class. Its methods act on the stacked real coordinates `r` of
+all channels; each channel's real coordinates are the time samples, the active WDM cells,
+or for Fourier `Re X_0`, `sqrt(2) Re/Im X_k` on the interior bins and `Re X_{N/2}` (even
+`N`). `C` is symmetric positive semi-definite on that stacked vector, and channels may be
+correlated at each point. `apply` is `C r`, `project` the orthogonal projector onto the
+range of `C` and `solve` the Moore–Penrose pseudo-inverse `C^+ r`; `quadratic_form`
+(`r^T C^+ r`), `log_determinant` (the log pseudo-determinant) and `degrees_of_freedom` (the
+rank) are totals over the stacked vector. The dicts that `apply`, `solve` and `project`
+return must meet `transform`'s exact input rules, or `TranslatedOperator` raises an error
+that names the native method. The full contract is the `domainia.translate.Operator`
+docstring, and `domainia.testing.PointwiseOperator` is a minimal reference implementation:
 
 ```python
 import numpy as np
@@ -132,6 +137,10 @@ mismatches. `TypeError` means the wrong kind of object.
 pip install -e ".[test]"          # add ",jax" for the JAX backend
 PYTHONDONTWRITEBYTECODE=1 JAX_PLATFORMS=cpu python -P -m pytest -q
 ```
+
+Three oracle tests compare against source trees outside this repository; they skip unless
+`DOMAINIA_ORACLE_ROOT` names the directory that holds them (the skip message lists the
+subdirectories each one expects).
 
 `import domainia` (any of its modules) never imports JAX. JAX is imported only on use:
 when you build the JAX backend (`domainia.wilson.backend.jax_backend()` or

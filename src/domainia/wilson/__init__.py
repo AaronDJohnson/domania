@@ -34,6 +34,8 @@ Grid helpers:
 * :func:`n_samples`, :func:`band_frequencies`, :func:`time_pixel_centers`
 * :func:`delta_F`, :func:`delta_T`
 * :func:`active_mask`, :func:`count_active`
+* :func:`pack`, :func:`unpack` -- dense ``(Nf+1, Nt)`` <-> packed ``(N,)`` active cells
+  in band order
 
 Noise variance grids:
 
@@ -116,7 +118,9 @@ from .grid import (
     delta_F,
     delta_T,
     n_samples,
+    pack,
     time_pixel_centers,
+    unpack,
     validate_dt,
     validate_finite,
     validate_grid,
@@ -185,6 +189,7 @@ __all__ = [
     # Grid
     "n_samples",
     "noise",
+    "pack",
     # Filter
     "phi_centered",
     "phi_fft_order",
@@ -194,6 +199,7 @@ __all__ = [
     "special",
     "stationary",
     "time_pixel_centers",
+    "unpack",
     "validate_dt",
     "validate_finite",
     "validate_grid",

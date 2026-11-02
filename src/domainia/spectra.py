@@ -47,11 +47,11 @@ class TabulatedSpectrum:
         if lo < d.k0 or hi > d.k0 + d.n:
             raise ValueError(f"bins [{lo}, {hi}) are outside the tabulated [{d.k0}, {d.k0 + d.n})")
 
-    def on(self, window: FourierDomain) -> np.ndarray:
-        """``(C, window.n)``: the values on ``window``'s bins; raises outside the table."""
-        self._check(window.N, window.dt, window.k0, window.k0 + window.n)
-        lo = window.k0 - self.domain.k0
-        return self.values[:, lo:lo + window.n]
+    def on(self, domain: FourierDomain) -> np.ndarray:
+        """``(C, domain.n)``: the values on ``domain``'s bins; raises outside the table."""
+        self._check(domain.N, domain.dt, domain.k0, domain.k0 + domain.n)
+        lo = domain.k0 - self.domain.k0
+        return self.values[:, lo:lo + domain.n]
 
     def at(self, bins: Any) -> np.ndarray:
         """``(C, *bins.shape)``: the values at absolute bins; raises outside the table.

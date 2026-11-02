@@ -331,7 +331,7 @@ class WDMDomain:
     covariances built for different windows never compose silently.  It must be a hashable
     :class:`~domainia.wilson.Window` instance (``TypeError`` otherwise).
 
-    No map applies ``scale`` (gap G4), so ``TimeToWDM``, ``WDMToTime``, ``FourierToWDM``
+    No map applies ``scale``, so ``TimeToWDM``, ``WDMToTime``, ``FourierToWDM``
     and ``Restrict`` refuse ``scale != 1`` (:meth:`require_unit_scale`) rather than treat it
     as 1 silently.  ``Identity`` accepts a scaled domain (it has nothing to apply): a caller
     that passes one through ``Identity`` must handle ``scale`` itself.
@@ -367,7 +367,7 @@ class WDMDomain:
         """Raise ``ValueError`` unless ``scale == 1.0``: ``user`` (a map) does not apply it."""
         if self.scale != 1.0:
             raise ValueError(f"WDMDomain.scale = {self.scale!r} is not honoured by {user}: no map "
-                             "applies a cell scale yet (gap G4), only scale = 1.0 is implemented")
+                             "applies a cell scale, so only scale = 1.0 is supported")
 
 
 @dataclass(frozen=True)

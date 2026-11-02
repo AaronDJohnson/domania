@@ -34,7 +34,8 @@ def test_the_public_names():
     assert all(hasattr(wilson, name) for name in wilson.__all__)
     assert all(hasattr(translate, name) for name in translate.__all__)
     assert {"MEYER", "Meyer", "RampWindow", "SampledWindow", "Window", "WindowError", "windows",
-            "require_window", "sample_window"} <= set(wilson.__all__)
+            "require_window", "sample_window", "pack", "unpack"} <= set(wilson.__all__)
+    assert wilson.pack is wilson.grid.pack and wilson.unpack is wilson.grid.unpack
     assert domainia.MEYER is wilson.MEYER and domainia.Grid is wilson.Grid
 
 

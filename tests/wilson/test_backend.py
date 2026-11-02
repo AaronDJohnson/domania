@@ -288,6 +288,37 @@ def test_jax_entry_points_raise_when_x64_is_off(flag):
                    "raised forward_time(jnp array)"], out
 
 
+# Without JAX the JAX entry points raise a ModuleNotFoundError that names the extra (runs in
+# both lanes: the subprocess hides jax itself, as a machine without it would).
+_NO_JAX = (
+    "import importlib.abc, sys\n"
+    "class _NoJax(importlib.abc.MetaPathFinder):\n"
+    "    def find_spec(self, name, path=None, target=None):\n"
+    "        if name.split('.')[0] in ('jax', 'jaxlib'):\n"
+    "            raise ModuleNotFoundError(f'No module named {name!r}', name=name)\n"
+    "        return None\n"
+    "sys.meta_path.insert(0, _NoJax())\n"
+    "from domainia.wilson.backend import enable_x64, get_backend, jax_backend\n"
+    "cases = {'jax_backend()': jax_backend, 'enable_x64()': enable_x64,\n"
+    "         'get_backend(backend=jax)': lambda: get_backend(backend='jax')}\n"
+    "for name, call in cases.items():\n"
+    "    try:\n"
+    "        call()\n"
+    "    except ModuleNotFoundError as err:\n"
+    "        cause = err.__cause__\n"
+    "        assert err.name == 'jax' and isinstance(cause, ModuleNotFoundError), (name, err.name)\n"
+    "        print(name, cause.name, '|', err)\n"
+    "    else:\n"
+    "        print('RETURNED', name)\n"
+)
+
+
+def test_the_jax_entry_points_name_the_extra_when_jax_is_missing():
+    msg = "| the JAX backend requires JAX: pip install 'domainia[jax]' (No module named 'jax')"
+    assert _run(_NO_JAX).splitlines() == [f"jax_backend() jax {msg}", f"enable_x64() jax {msg}",
+                                          f"get_backend(backend=jax) jax {msg}"]
+
+
 def _has_jax() -> bool:
     try:
         import jax  # noqa: F401

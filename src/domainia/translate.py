@@ -254,18 +254,20 @@ class Operator(Protocol):
     """A covariance on a full-record domain, acting on ``{channel: array}`` dicts in that
     domain's layout.
 
-    The methods mean, channel by channel, in the domain's real coordinates (module
-    docstring): ``C`` is symmetric positive semi-definite, its range is the retained
-    subspace, and ``r`` are the real coordinates of the argument.
+    The methods act on the stacked real coordinates of all channels: ``r`` stacks every
+    channel's real coordinates in the domain (module docstring), and ``C`` is a symmetric
+    positive semi-definite covariance on that stacked vector, whose range is the retained
+    subspace.  Channels may be correlated at each point (``C`` need not be block-diagonal
+    over channels); scalar results are totals over the stacked vector.
 
     * ``apply``: ``C r``.
     * ``project``: the orthogonal projector onto the retained subspace, applied to ``r``.
     * ``solve``: ``C^+ r`` with ``C^+`` the Moore-Penrose inverse: the inverse on the retained
       subspace, zero on the excluded directions.
-    * ``quadratic_form``: ``r^T C^+ r``, summed over channels.
+    * ``quadratic_form``: ``r^T C^+ r``.
     * ``log_determinant``: the log pseudo-determinant (the sum of the logs of the non-zero
-      eigenvalues of ``C``), summed over channels.
-    * ``degrees_of_freedom``: the rank of ``C`` (the retained dimension), summed over channels.
+      eigenvalues of ``C``).
+    * ``degrees_of_freedom``: the rank of ``C`` (the retained dimension).
 
     A full-rank operator has the identity as ``project`` and the inverse as ``solve``.  The
     retained subspace need not be a set of coordinates: a time gap seen in WDM is spread over

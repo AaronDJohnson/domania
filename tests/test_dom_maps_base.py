@@ -144,10 +144,10 @@ def test_maps_are_frozen_dataclasses():
         R.pos = None  # type: ignore[misc]
 
 
-def test_push_without_matvec_is_a_type_error_naming_gap_g9():
-    """Spec section 4.2's WDM -> time translation (W^T Lambda W / dt^2) needs a fixed-noise-state
-    ``matvec`` that no cell covariance has (gap G9): a clear TypeError, not a bare
-    AttributeError, from ``rows`` and ``matvec`` of a real or analysis push."""
+def test_push_without_matvec_is_a_type_error_naming_translate_operator():
+    """Spec section 4.2's WDM -> time push (W^T Lambda W / dt^2) needs a fixed-noise-state
+    ``matvec`` that no cell covariance has: a clear TypeError, not a bare AttributeError,
+    from ``rows`` and ``matvec`` of a real or analysis push, naming the operator route."""
     from domainia.covariance import DiagonalCovariance
     from domainia.maps import TimeToFourier, WDMToTime
 
@@ -155,7 +155,8 @@ def test_push_without_matvec_is_a_type_error_naming_gap_g9():
     time = TimeDomain(GRID.N, GRID.dt)
     cov = DiagonalCovariance(np.ones(GRID.N), GRID.N)
     P = WDMToTime(full, time).push(cov)
-    msg = r"DiagonalCovariance has no matvec: .*\(gap G9: WDM->time translation not implemented\)"
+    msg = (r"DiagonalCovariance has no matvec: .*domainia\.translate\.Operator.*"
+           r"domainia\.translate\.translate_operator")
     with pytest.raises(TypeError, match=msg):
         P.rows([0])
     with pytest.raises(TypeError, match=msg):
@@ -166,8 +167,25 @@ def test_push_without_matvec_is_a_type_error_naming_gap_g9():
         TimeToFourier(time).push(cov).rows([0])
 
 
+def test_a_push_needs_a_linear_map_and_a_covariance():
+    """``PushedCovariance`` refuses, at construction, a map that is not a ``LinearMap`` and a
+    covariance with neither ``matvec`` nor ``dense``."""
+    time = TimeDomain(GRID.N, GRID.dt)
+    S = DenseCov(np.eye(GRID.N))
+    with pytest.raises(TypeError, match="LinearMap"):
+        PushedCovariance(object(), S)
+    with pytest.raises(TypeError, match="LinearMap"):
+        PushedCovariance(time, S)
+    for cov in (np.eye(GRID.N), None, time):
+        with pytest.raises(TypeError, match=r"matvec.*dense"):
+            Identity(time).push(cov)
+        with pytest.raises(TypeError, match=r"matvec.*dense"):
+            PushedCovariance(Identity(time), cov)
+    assert Identity(time).push(S).cov is S                       # either method is enough
+
+
 def test_a_scaled_wdm_domain_is_refused_by_every_map():
-    """``WDMDomain.scale`` is applied by no map (gap G4): a scale other than 1 is refused at
+    """``WDMDomain.scale`` is applied by no map: a scale other than 1 is refused at
     construction instead of being silently treated as 1.  The domain itself (a label) and
     the identity on it stay valid."""
     from domainia.maps import FourierToWDM, TimeToWDM, WDMToTime

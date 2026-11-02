@@ -30,6 +30,7 @@ from domainia.wilson.evolutionary import eq45_blocks_cheb, eq45_coeffs_interp, e
 from domainia.wilson.grid import packed_cells
 from domainia.wilson.windows import MEYER, Window, require_window
 
+from ..domains import CellSet
 from .base import Covariance
 from .blocktri import BlockTridiagonalCovariance, blocks_to_dense, to_layout
 from .dense import DenseCovariance
@@ -144,8 +145,11 @@ class EvolutionaryCovariance(Covariance):
         if builder not in BUILDERS:
             raise ValueError(f"unknown builder {builder!r}; expected one of {BUILDERS}")
         if not callable(psd):
-            raise ValueError(f"builder {builder!r} needs a callable PSD psd(f, t, nu); "
-                             f"{type(psd).__name__} is not callable")
+            raise TypeError(f"builder {builder!r} needs a callable PSD psd(f, t, nu); "
+                            f"{type(psd).__name__} is not callable")
+        if not isinstance(cells, CellSet):
+            raise TypeError(f"cells must be a CellSet, got {type(cells).__name__}; for a "
+                            "WDMDomain pass domain.cells")
         if assembly not in ("blocktri", "dense"):
             raise ValueError(f"assembly must be 'blocktri' or 'dense'; got {assembly!r}")
         if builder == "direct" and assembly != "dense":

@@ -467,7 +467,8 @@ def jax_backend() -> Backend:
 
     Raises ``RuntimeError`` when ``jax_enable_x64`` is off: domainia.wilson needs float64,
     and with x64 off JAX would silently compute every kernel in float32
-    (``forward_time``: relative error ~2e-7, no warning).
+    (``forward_time``: relative error ~2e-7, no warning).  Without JAX it raises
+    ``ModuleNotFoundError`` naming the ``domainia[jax]`` extra.
     """
     require_x64()
     be = _make_jax_backend()
@@ -507,13 +508,27 @@ def get_backend(*arrays: Any, backend: str | Backend | None = None) -> Backend:
     return NUMPY
 
 
+def _import_jax() -> ModuleType:
+    """``import jax``; without JAX, a ``ModuleNotFoundError`` that names the
+    ``domainia[jax]`` extra (any other import failure propagates unchanged)."""
+    try:
+        import jax
+    except ModuleNotFoundError as err:
+        if (err.name or "").split(".")[0] not in ("jax", "jaxlib"):
+            raise
+        raise ModuleNotFoundError(f"the JAX backend requires JAX: pip install 'domainia[jax]' "
+                                  f"({err})", name=err.name) from err
+    return jax
+
+
 def require_x64() -> None:
     """Raise ``RuntimeError`` unless ``jax_enable_x64`` is on.
 
     Called by :func:`jax_backend` (hence by every domainia.wilson JAX path); callers that
     build JAX constants without going through domainia.wilson should call it themselves.
+    Without JAX it raises ``ModuleNotFoundError`` naming the ``domainia[jax]`` extra.
     """
-    import jax
+    jax = _import_jax()
 
     if not jax.config.read("jax_enable_x64"):
         raise RuntimeError(
@@ -524,9 +539,9 @@ def require_x64() -> None:
 
 
 def enable_x64() -> None:
-    """Turn on ``jax_enable_x64``.  Explicit; never called on import."""
-    import jax
-
+    """Turn on ``jax_enable_x64``.  Explicit; never called on import.  Without JAX it raises
+    ``ModuleNotFoundError`` naming the ``domainia[jax]`` extra."""
+    jax = _import_jax()
     jax.config.update("jax_enable_x64", True)
     _flush_pytrees()
 

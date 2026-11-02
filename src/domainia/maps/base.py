@@ -25,8 +25,10 @@ kind        apply                       push(cov) (``PushedCovariance``)
 ==========  ==========================  ================================================
 
 A covariance without ``matvec`` -- every covariance on WDM cells -- cannot be pushed through
-a real or analysis map: ``PushedCovariance.rows``/``matvec`` raise a ``TypeError`` naming
-gap G9 (spec section 4.2's WDM -> time ``W^T Lambda W / dt^2`` is not implemented).
+a real or analysis map: ``PushedCovariance.rows``/``matvec`` raise a ``TypeError`` (spec
+section 4.2's WDM -> time push ``W^T Lambda W / dt^2`` is not available).  A full-record WDM
+covariance wrapped as a :class:`domainia.translate.Operator` is seen from time through
+:func:`domainia.translate.translate_operator` instead.
 """
 
 from __future__ import annotations
@@ -180,15 +182,27 @@ class PushedCovariance:
 
     A covariance that carries a Wilson ``window`` (``EvolutionaryCovariance``, a
     ``DiagonalCovariance`` over a ``BandAveragedVariance``, a ``PushedCovariance`` onto WDM
-    cells) lives in that window's basis: on a map whose ``src`` is a ``WDMDomain`` with another
-    window it raises ``ValueError``.
+    cells) lives on WDM cells in that window's basis: on a map whose ``src`` is not a
+    ``WDMDomain``, or is one with another window, it raises ``ValueError``.  A ``map`` that is
+    not a :class:`LinearMap`, or a ``cov`` with neither ``matvec`` (:class:`SupportsMatvec`)
+    nor ``dense`` (:class:`SupportsDense`), raises ``TypeError``.
     """
 
     map: LinearMap
     cov: Any
 
     def __post_init__(self) -> None:
+        if not isinstance(self.map, LinearMap):
+            raise TypeError(f"PushedCovariance needs a LinearMap, got {type(self.map).__name__}")
+        if not (callable(getattr(self.cov, "matvec", None))
+                or callable(getattr(self.cov, "dense", None))):
+            raise TypeError(f"cannot push a {type(self.cov).__name__}: a covariance needs a matvec "
+                            "(SupportsMatvec) or a dense (SupportsDense) method")
         src, window = getattr(self.map, "src", None), getattr(self.cov, "window", None)
+        if isinstance(window, Window) and not isinstance(src, WDMDomain):
+            raise ValueError(f"the covariance lives on WDM cells (window {window.name}) but the "
+                             f"map's source domain is a {type(src).__name__}: push it through a "
+                             "map from a WDMDomain")
         if isinstance(src, WDMDomain) and isinstance(window, Window) and window != src.window:
             raise ValueError(f"the covariance is built for the window {window.name} but the map's "
                              f"source domain uses {src.window.name}: push within one basis")
@@ -205,15 +219,17 @@ class PushedCovariance:
         return self.map.shape[0]
 
     def _matvec(self) -> Any:
-        """``cov.matvec``, or a TypeError naming gap G9: a covariance on WDM cells
-        (``DiagonalCovariance``, ``EvolutionaryCovariance``, ...) has no fixed-noise-state ``matvec``,
-        so spec section 4.2's WDM -> time translation ``W^T Lambda W / dt^2`` is not available."""
+        """``cov.matvec``, or a TypeError: a covariance on WDM cells (``DiagonalCovariance``,
+        ``EvolutionaryCovariance``, ...) has no fixed-noise-state ``matvec``, so spec section
+        4.2's WDM -> time push ``W^T Lambda W / dt^2`` is not available; the error names the
+        :func:`domainia.translate.translate_operator` route."""
         fn = getattr(self.cov, "matvec", None)
         if fn is None:
             raise TypeError(f"{type(self.cov).__name__} has no matvec: a push through a "
                             f"{self.map.kind!r} map needs a fixed-noise-state SupportsMatvec "
-                            "(X -> X Sigma) "
-                            "(gap G9: WDM->time translation not implemented)")
+                            "(X -> X Sigma), so the WDM -> time push is not available; wrap a "
+                            "full-record WDM covariance as a domainia.translate.Operator and see "
+                            "it from time with domainia.translate.translate_operator")
         return fn
 
     def rows(self, idx: Any, be: Backend | None = None) -> Any:
@@ -254,7 +270,7 @@ class PushedCovariance:
 @dataclass(frozen=True, eq=False)
 class Identity(LinearMap):
     """The identity on ``src`` (the sinusoid pad model's samples, spec §4.8).  A scaled
-    ``WDMDomain`` passes through unchanged (nothing to apply, gap G4): the caller handles
+    ``WDMDomain`` passes through unchanged (nothing to apply): the caller handles
     ``scale``."""
 
     src: Any

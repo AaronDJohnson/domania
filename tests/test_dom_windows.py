@@ -272,6 +272,28 @@ def test_a_map_refuses_a_covariance_built_for_another_window():
     assert Identity(TIME).push(DenseCov(np.eye(N))).size == N
 
 
+def test_a_covariance_on_wdm_cells_is_refused_by_a_map_from_another_domain():
+    """A covariance that carries a Wilson window lives on WDM cells: a map whose source is a
+    time or Fourier domain refuses it at ``push`` (ValueError), so ``TimeToWDM(...).push(ev)``
+    fails at construction, not with a shape error later."""
+    psd, _ = _stationary_psd()
+    meyer = WDMDomain(CELLS)
+    rec = FourierDomain(N, DT, 0, N // 2 + 1, "rfft")
+    ev = EvolutionaryCovariance(psd, CELLS)
+    dg = DiagonalCovariance(BandAveragedVariance(psd, CELLS), CELLS.size)
+    pushed = TimeToWDM(TIME, meyer).push(DenseCov(np.eye(N)))
+    for cov in (ev, dg, pushed):
+        assert cov.window is MEYER
+        for m in (TimeToWDM(TIME, meyer), Identity(TIME),
+                  FourierToWDM(rec, WDMDomain(CellSet.bands(GRID, (2, 3)))),
+                  Compose(WDMToTime(meyer, TIME), TimeToWDM(TIME, meyer))):    # src TIME
+            with pytest.raises(ValueError, match=r"lives on WDM cells.*WDMDomain"):
+                m.push(cov)
+            with pytest.raises(ValueError, match=r"lives on WDM cells.*WDMDomain"):
+                PushedCovariance(m, cov)
+    assert WDMToTime(meyer, TIME).push(ev).cov is ev               # a WDM source is fine
+
+
 def test_a_pushed_covariance_lives_in_its_destination_window():
     """A covariance pushed onto WDM cells is in the basis of the map's ``dst.window``: a second
     push through a map of another window is refused, through one of the same window it is the

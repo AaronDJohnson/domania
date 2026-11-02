@@ -9,7 +9,7 @@ import pytest
 from domainia import wilson
 from domainia.covariance import EvolutionaryCovariance, keep_mask
 from domainia.covariance.blocktri import blocks_to_dense, to_layout
-from domainia.domains import CellSet
+from domainia.domains import CellSet, WDMDomain
 from domainia.spectra import GenericPSD
 from domainia.wilson.backend import NUMPY
 from domainia.wilson.evolutionary import eq45_blocks_cheb, eq45_coeffs_interp, eq45_plan
@@ -83,7 +83,7 @@ def test_arguments_are_checked():
     cells = _cells()
     with pytest.raises(ValueError, match="unknown builder"):
         EvolutionaryCovariance(PSD, cells, builder="bessel")
-    with pytest.raises(ValueError, match="callable"):
+    with pytest.raises(TypeError, match="callable"):
         EvolutionaryCovariance(object(), cells)
     with pytest.raises(ValueError, match="assembly"):
         EvolutionaryCovariance(PSD, cells, assembly="banded")
@@ -92,6 +92,14 @@ def test_arguments_are_checked():
     with pytest.raises(ValueError, match="pair mid-times"):                # raised lazily, by the plan
         EvolutionaryCovariance(PSD, cells, t_max=0.5 * T_REC).blocks(NU)
     assert not EvolutionaryCovariance(PSD, cells).jittable
+
+
+@pytest.mark.parametrize("wrong", ["domain", "grid"])
+def test_cells_must_be_a_cell_set(wrong):
+    cells = _cells()
+    arg = WDMDomain(cells) if wrong == "domain" else cells.grid
+    with pytest.raises(TypeError, match=r"cells must be a CellSet.*domain\.cells"):
+        EvolutionaryCovariance(PSD, arg)
 
 
 def test_keep_mask_selects_the_cells_in_band_order():

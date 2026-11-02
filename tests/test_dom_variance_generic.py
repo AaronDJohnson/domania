@@ -8,7 +8,7 @@ import pytest
 
 from domainia import wilson
 from domainia.covariance import DiagonalCovariance
-from domainia.domains import CellSet
+from domainia.domains import CellSet, WDMDomain
 from domainia.spectra import GenericPSD
 from domainia.variance import BandAveragedVariance, MidpointVariance
 from domainia.wilson.matrix import build_C_wdm_active
@@ -67,6 +67,14 @@ def test_cut_cells_are_the_full_vector_restricted(cls):
 def test_only_generic_psds_are_accepted(cls):
     with pytest.raises(TypeError, match="GenericPSD"):
         cls(object(), CELLS)
+
+
+@pytest.mark.parametrize("cls", [BandAveragedVariance, MidpointVariance])
+@pytest.mark.parametrize("wrong", ["domain", "grid"])
+def test_cells_must_be_a_cell_set(cls, wrong):
+    arg = WDMDomain(CELLS) if wrong == "domain" else GRID
+    with pytest.raises(TypeError, match=r"cells must be a CellSet.*domain\.cells"):
+        cls(PSD, arg)
 
 
 def test_diagonal_covariance_of_a_variance_carries_its_cells_and_factors():

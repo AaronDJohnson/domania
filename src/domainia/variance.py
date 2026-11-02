@@ -45,6 +45,12 @@ def _require_generic(psd: Any, what: str) -> None:
                         "domainia.spectra.GenericPSD")
 
 
+def _require_cells(cells: Any) -> None:
+    if not isinstance(cells, CellSet):
+        raise TypeError(f"cells must be a CellSet, got {type(cells).__name__}; for a "
+                        "WDMDomain pass domain.cells")
+
+
 @pytree_dataclass(data=("t",), meta=("psd", "cells", "window"))
 @dataclass(frozen=True, eq=False)
 class BandAveragedVariance:
@@ -64,6 +70,7 @@ class BandAveragedVariance:
         if self.t is not _BUILD:
             return
         _require_generic(self.psd, "band-averaged")
+        _require_cells(self.cells)
         require_window(self.window)
         object.__setattr__(self, "t", _cell_arrays(self.cells)[2])
 
@@ -94,6 +101,7 @@ class MidpointVariance:
         if self.t is not _BUILD:
             return
         _require_generic(self.psd, "midpoint")
+        _require_cells(self.cells)
         object.__setattr__(self, "t", _cell_arrays(self.cells)[2])
 
     def on(self, be: Backend) -> "MidpointVariance":

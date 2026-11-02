@@ -228,8 +228,8 @@ class FourierToWDM(LinearMap):
     ``cells``, the golden default); ``impl="fft"`` evaluates ``wilson.forward_bands``
     (opt-in, <= 1e-12 relative).
     For a record ``z = rfft(x)`` the cells are ``sqrt(N / (2 dt))`` times
-    ``TimeToWDM.apply(x)`` on the same cells (no map applies ``WDMDomain.scale`` yet, so
-    ``dst.scale`` must be 1: gap G4).
+    ``TimeToWDM.apply(x)`` on the same cells (no map applies ``WDMDomain.scale``, so
+    ``dst.scale`` must be 1).
     """
 
     src: FourierDomain
