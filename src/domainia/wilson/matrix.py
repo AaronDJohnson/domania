@@ -82,8 +82,8 @@ def build_W(
     Row $\\alpha = (m, n)$ is the basis function $g_{mn}$ sampled in time, so
     $W$ is *defined* by "column $k_0$ is the WDM transform of a delta at sample
     $k_0$".  It is *built* from the lattice's shift-covariance instead, which
-    is several times faster and agrees with the definition to 4e-16 (pinned for
-    every test window by
+    is several times faster and agrees with the definition to ~4e-16 (pinned to
+    1e-13 for every test window by
     ``tests/wilson/test_window_threading.py::test_build_W_is_the_impulse_response``,
     and for Meyer by ``tests/wilson/vendored/test_matrix.py::test_W_matches_FFT_transform``).
 

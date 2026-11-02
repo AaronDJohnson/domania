@@ -151,9 +151,10 @@ __all__ = [
 #   * ``workers=8`` bought 1.00-1.23x for the same reason.
 #
 # The cost was real: scipy is not bit-identical to numpy (~3.7e-16 relative,
-# same algorithm family, different rounding), and ``src/wdm/summary.md`` claims
-# byte-for-byte stability of the coefficients across every change. Trading a
-# verifiable property for measurement noise is a bad deal.
+# same algorithm family, different rounding), and the coefficients are kept
+# byte-for-byte stable across every change (the Meyer outputs are pinned bit for
+# bit by ``tests/wilson/test_meyer_baseline.py``). Trading a verifiable property
+# for measurement noise is a bad deal.
 #
 # Worth revisiting only if the parity assembly is ever vectorised further, at
 # which point the FFT share of the runtime rises and the arithmetic changes.
@@ -920,7 +921,7 @@ def inverse_time(
 
 
 # ---------------------------------------------------------------------------
-# Atoms and band-limited analysis -- wdm-paper 1.0
+# Atoms and band-limited analysis
 # ---------------------------------------------------------------------------
 
 

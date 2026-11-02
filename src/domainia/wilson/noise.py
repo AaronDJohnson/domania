@@ -205,7 +205,6 @@ def band_averaged_variance(
        mean $\\bigl(\\sum \\hat\\phi^2/S_n\\bigr)^{-1}\\sum\\hat\\phi^2$,
        which is not the pixel variance and was measurably *less*
        accurate than :func:`whittle_variance` in every interior band.
-       See ``src/wdm/summary.md``.
 
     Parameters
     ----------
@@ -339,7 +338,7 @@ def colored_noise(
 ) -> CArray:
     """Generate one realization of stationary noise with PSD $S_n(f)$.
 
-    Public since wdm-paper 1.0 (it was the vendored private
+    Public (it was the vendored private
     ``_generate_colored_noise``; same draws, same order: interior real parts,
     interior imaginary parts, DC, Nyquist).  $O(N\\log N)$, NumPy only.
 
@@ -354,8 +353,7 @@ def colored_noise(
        Before 2026-07-27 the DC and Nyquist draws were divided by
        $\\sqrt 2$, giving them half the correct power.  That biased
        :func:`empirical_variance` low at the two edge bands -- exactly
-       where an analytic cross-check is hardest.  See
-       ``src/wdm/summary.md``.
+       where an analytic cross-check is hardest.
 
     Raises
     ------

@@ -307,6 +307,21 @@ def test_covariance_windows_are_read_only_and_declared_on_the_base():
     assert DiagonalCovariance(lambda nu, be: np.ones(3), 3).window is None
 
 
+def test_a_diagonal_covariance_reports_the_window_of_a_plain_callable_variance():
+    """The window is read from the variance as given, not from the evaluator that wraps it: a
+    plain ``fn(nu, be)`` carrying a ``.window`` reports it; a non-``Window`` one reports ``None``."""
+    def fn(nu, be):
+        return np.ones(3)
+
+    fn.window = ALT_WINDOW
+    dg = DiagonalCovariance(fn, 3)
+    assert dg.window is ALT_WINDOW
+    with pytest.raises(AttributeError):
+        dg.window = MEYER
+    fn.window = "meyer"
+    assert DiagonalCovariance(fn, 3).window is None
+
+
 def test_a_channel_stack_reports_its_channels_common_window():
     psd, _ = _stationary_psd()
     ev_alt = EvolutionaryCovariance(psd, CELLS, window=ALT_WINDOW)

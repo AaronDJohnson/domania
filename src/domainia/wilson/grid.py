@@ -465,7 +465,7 @@ def time_pixel_centers(Nf: int, Nt: int, dt: float) -> Array:
        inverse transform, the offset was exactly $-0.5\\,\\Delta T$ at every
        grid tested. The consumer inside the package is
        :func:`domainia.wilson.noise.evolutionary_variance`, which sampled a time-varying
-       PSD half a pixel off. See ``src/wdm/summary.md``.
+       PSD half a pixel off.
 
     Examples
     --------
@@ -591,7 +591,7 @@ def count_active(Nf: int, Nt: int) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Packed (band-order) cell vectors -- wdm-paper 1.0
+# Packed (band-order) cell vectors
 # ---------------------------------------------------------------------------
 #
 # The N active cells of an (Nf+1, Nt) grid, listed in BAND order: DC with even

@@ -330,8 +330,9 @@ def test_a_native_output_off_the_canonical_form_is_refused_not_repaired():
     assert any(np.any(v[inactive] != 0.0) for v in raw.apply(_y(WDM)).values())   # not vacuous
     with pytest.raises(ValueError, match=r"inactive WDM cell .* must be exactly 0") as info:
         translate_operator(raw, TIME).apply(X)
-    assert str(info.value).startswith("_KernelRoundTrip.apply returned a dict off transform's canonical "
-                                      "form (see domainia.translate.Operator): channel 'A': inactive WDM cell")
+    assert str(info.value).startswith("_KernelRoundTrip.apply returned a dict that breaks the Operator "
+                                      "output contract (see domainia.translate.Operator): channel 'A': "
+                                      "inactive WDM cell")
     assert isinstance(info.value.__cause__, ValueError)
     _close(translate_operator(_Canonicalised(WDM, variances), TIME).apply(X),
            translate_operator(NATIVES["wdm"], TIME).apply(X))
@@ -371,6 +372,31 @@ def test_a_native_output_with_other_channels_or_no_mapping_is_blamed_on_the_nati
         translate_operator(_Stub(TIME, lambda v: list(v.values())), WDM).project(y)
 
 
+#: The prefix of every refusal of a native output that ``transform`` refuses.
+CONTRACT = "returned a dict that breaks the Operator output contract (see domainia.translate.Operator): "
+
+
+@pytest.mark.parametrize("method, out, error, why", [
+    ("apply", lambda v: {k: np.ma.MaskedArray(a) for k, a in v.items()}, TypeError,
+     "channel 'A': masked arrays are refused"),
+    ("solve", lambda v: {k: a.astype(object) for k, a in v.items()}, TypeError,
+     "channel 'A': values must be numeric; got dtype object"),
+    ("project", lambda v: {k: a[:-1] for k, a in v.items()}, ValueError,
+     f"channel 'A': shape ({N - 1},), but this TimeDomain needs shape ({N},)"),
+    ("apply", lambda v: {k: np.where(np.arange(N) == 3, np.nan, a) for k, a in v.items()}, ValueError,
+     f"channel 'A': 1 of {N} entries are not finite (1 nan, 0 inf); first at index 3."),
+], ids=["masked", "object-dtype", "shape", "nan"])
+def test_every_transform_refusal_of_a_native_output_is_blamed_on_the_native(method, out, error, why):
+    """``transform``'s ``TypeError`` refusals (a masked array, non-numeric values) are wrapped
+    like its ``ValueError`` ones (shape, non-finite, canonical form): the native method is
+    named, the error type kept and the refusal chained."""
+    with pytest.raises(error) as info:
+        getattr(translate_operator(_Stub(TIME, out), WDM), method)(_y(WDM))
+    assert type(info.value) is error and type(info.value.__cause__) is error
+    assert str(info.value).startswith(f"_Stub.{method} {CONTRACT}{why}")
+    assert str(info.value) == f"_Stub.{method} {CONTRACT}{info.value.__cause__}"
+
+
 def test_refusals():
     op = NATIVES["time"]
     t = translate_operator(op, WDM)
@@ -382,20 +408,26 @@ def test_refusals():
         TranslatedOperator(t, FOURIER)
     with pytest.raises(TypeError, match="^target must be a full-record domain"):
         TranslatedOperator(op, "wdm")
-    with pytest.raises(ValueError, match="^native and target time domains start at different t0"):
+    with pytest.raises(ValueError, match=r"^native\.domain and target time domains start at different t0"):
         TranslatedOperator(op, TimeDomain(N, DT, t0=2.0))
-    with pytest.raises(ValueError, match="^native and target describe different records: N="):
+    with pytest.raises(ValueError, match=r"^native\.domain and target describe different records: N="):
         translate_operator(op, FourierDomain.full(N + 2, DT))
     with pytest.raises(ValueError, match="^source and target describe different records: N="):
         transform(X, TIME, FourierDomain.full(N + 2, DT))                # transform keeps its roles
-    with pytest.raises(ValueError, match="^native and target time domains start at different t0"):
+    with pytest.raises(ValueError, match=r"^native\.domain and target time domains start at different t0"):
         translate_operator(op, TimeDomain(N, DT, t0=2.0))
     with pytest.raises(ValueError, match="^target: translate handles only WDMDomain.full"):
         translate_operator(op, PARTIAL)
     on_partial = _Stub(PARTIAL)                                  # PointwiseOperator itself refuses one
     assert isinstance(on_partial, Operator)
-    with pytest.raises(ValueError, match="^native: translate handles only WDMDomain.full"):
+    with pytest.raises(ValueError, match=r"^native\.domain: translate handles only WDMDomain.full"):
         translate_operator(on_partial, PARTIAL)                  # before the same-domain shortcut
+    on_str = _Stub("wdm")                                        # a bad native domain is named as such
+    assert isinstance(on_str, Operator)
+    for build in (translate_operator, TranslatedOperator):
+        with pytest.raises(TypeError, match=r"^native\.domain must be a full-record domain \(TimeDomain, "
+                                            r"FourierDomain\.full or WDMDomain\.full\); got str$"):
+            build(on_str, WDM)
     with pytest.raises(ValueError, match="the operator has channels"):     # not the native's own check
         t.apply({"A": _y(WDM)["A"]})
     with pytest.raises(TypeError, match="mapping"):

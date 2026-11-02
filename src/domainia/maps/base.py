@@ -8,7 +8,8 @@ to the device (spec §3.3, the host-constant rule §0.4).
 
 Every constructor builds its constants in host NumPy float64 when they are not given
 (the ``_BUILD`` sentinel); ``jax.tree_util`` rebuilds a map from its leaves without
-recomputing anything.
+recomputing anything.  ``dataclasses.replace`` of a map's domain keeps the constants built
+for the old domain; build a new map instead.
 
 Map kinds (what ``apply`` takes and returns; ``adjoint`` is the adjoint for the real
 inner product, ``<z, z'> = Re sum conj(z) z'`` on complex vectors):

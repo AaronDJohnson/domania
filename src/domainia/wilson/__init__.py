@@ -1,7 +1,9 @@
-"""Wilson--Daubechies--Meyer time-frequency transform.
+"""``domainia.wilson``: Wilson-basis kernels on the half-shifted lattice.  With the
+default window :data:`MEYER` they are the WDM transform.  Every kernel that samples
+the window takes ``window=`` (:mod:`domainia.wilson.windows`).
 
-A Wilson-basis time-frequency tiling with a Meyer scaling-function
-window.  Despite the historical name, this is **not** a wavelet
+The WDM transform is a Wilson-basis time-frequency tiling with a Meyer
+scaling-function window.  Despite the historical name, it is **not** a wavelet
 transform: the frequency grid is uniform (not dyadic) and the basis
 functions are Wilson-basis trigonometric atoms on a half-shifted
 lattice.  The acronym stands for *Wilson--Daubechies--Meyer*, the

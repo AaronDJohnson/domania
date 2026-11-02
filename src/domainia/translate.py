@@ -313,9 +313,12 @@ class TranslatedOperator:
     * ``quadratic_form(x)`` = native.quadratic_form(to_native(x))
     * ``log_determinant()`` = native.log_determinant() + 2 * degrees_of_freedom * Delta
 
-    ``to_target`` is :func:`transform`, so a native output off the canonical form is refused
-    (:class:`Operator`), with a ``ValueError`` that names the native method; so is a native
-    output with other channels than the operator's.
+    ``to_target`` is :func:`transform`, so a native output that breaks the output contract
+    (:class:`Operator`) is refused with ``transform``'s error type, naming the native method
+    and quoting ``transform``'s refusal: ``ValueError`` off the canonical form, for a wrong
+    shape or non-finite values, ``TypeError`` for a masked array or non-numeric values.  A
+    native output with other channels than the operator's raises ``ValueError``, and one that
+    is not a mapping ``TypeError``, likewise naming the native method.
     """
 
     native: Operator
@@ -325,7 +328,7 @@ class TranslatedOperator:
         if isinstance(self.native, TranslatedOperator) or not isinstance(self.native, Operator):
             raise TypeError(f"native must be a native domainia.translate.Operator (translate_operator "
                             f"re-targets a TranslatedOperator); got {type(self.native).__name__}")
-        _check_pair(self.native.domain, self.target, roles=("native", "target"))
+        _check_pair(self.native.domain, self.target, roles=("native.domain", "target"))
 
     @property
     def domain(self) -> Domain:
@@ -362,9 +365,9 @@ class TranslatedOperator:
                              f"{self.channel_names}")
         try:
             out = transform(values, self.native.domain, self.target)
-        except ValueError as err:
-            raise ValueError(f"{who} returned a dict off transform's canonical form (see "
-                             f"domainia.translate.Operator): {err}") from err
+        except (TypeError, ValueError) as err:
+            raise type(err)(f"{who} returned a dict that breaks the Operator output contract "
+                            f"(see domainia.translate.Operator): {err}") from err
         return out if factor == 1.0 else {k: v * factor for k, v in out.items()}
 
     def apply(self, values: Mapping[str, Any]) -> dict[str, np.ndarray]:
@@ -392,7 +395,7 @@ def translate_operator(op: Operator, target: Domain) -> Operator:
     if not isinstance(op, Operator):
         raise TypeError(f"op must implement domainia.translate.Operator; got {type(op).__name__}")
     native = op.native if isinstance(op, TranslatedOperator) else op
-    _check_pair(native.domain, target, roles=("native", "target"))
+    _check_pair(native.domain, target, roles=("native.domain", "target"))
     if target == native.domain:
         return native
     if isinstance(op, TranslatedOperator) and target == op.target:

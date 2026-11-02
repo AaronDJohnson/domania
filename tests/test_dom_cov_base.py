@@ -2,7 +2,7 @@
 
 * Every factor is the dense Gaussian: solve, whiten, the three quadratic-form orders,
   log-determinant -- on both backends.
-* ``ok`` is False (the likelihood's -inf) on a covariance that is not positive definite.
+* ``ok`` is False (a caller's -inf) on a covariance that is not positive definite.
 * Under JAX the constants reach the compiled factorisation as an argument.
 * The ``domainia.variance`` classes are host-only: a ``DiagonalCovariance`` on one is not
   jittable and factorises eagerly on JAX.

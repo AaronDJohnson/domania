@@ -23,8 +23,8 @@ $(-1)^{(m+1)(n+n')}$ and Wilson parity factor $C^*_{mn}\\,C_{m'n'}$.
 Total cost: $\\mathcal O((N_f+1)\\,N_t\\,\\log N_t + N_f\\,N_t^2)$,
 versus $\\mathcal O(N^3)$ for the dense $W\\,C_{\\rm time}\\,W^T$.
 
-Scope (wdm-paper 1.0)
----------------------
+Scope
+-----
 The interior-only tier of the vendored package (``build_lambda_blocks``,
 ``build_lambda_blocks_packed``, ``unpack_diag_block``, ``assemble_lambda``)
 is not carried: it drops the edge bands, an approximation the paper never
@@ -838,7 +838,7 @@ def apply_lambda_from_psd(
         Input WDM coefficient array.  Inactive (parity-killed) edge entries
         are ignored on read -- :func:`domainia.wilson.transform.inverse` masks them -- so
         junk there does not affect the result (measured deviation exactly
-        0.0).  This was not always so; see ``src/wdm/summary.md``.
+        0.0).  This was not always so.
     Sn_rfft : ndarray, float, shape (N//2 + 1,)
         One-sided PSD evaluated on the ``rfftfreq(N, dt)`` grid.  Last, like
         every other PSD argument in the package.  ``inf`` samples are zero

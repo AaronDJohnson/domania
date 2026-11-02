@@ -27,7 +27,7 @@ Exact flavor (cost $O(N \\log N_t)$):
 
 Which cells the diagonal forms sum
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-``cells="active"`` (default since wdm-paper 1.0) sums every active cell, DC
+``cells="active"`` (the default) sums every active cell, DC
 and Nyquist included, as the manuscripts do; inactive edge pixels are never
 cells and never enter a sum or a positivity check.  ``cells="interior"`` sums
 the interior bands $m = 1 \\ldots N_f-1$ only -- the vendored behaviour,
@@ -265,7 +265,7 @@ def whittle(w_a: Array, w_b: Array, var: Array, Nf: int, *, cells: Cells = "acti
     $2\\sum w_a w_b / S_n(f_m)$.  Cost $O(N)$.
 
     Sums every active cell, DC and Nyquist included (``cells="active"``, the
-    default since wdm-paper 1.0), or the interior bands $m = 1, \\ldots, N_f-1$
+    default), or the interior bands $m = 1, \\ldots, N_f-1$
     only (``cells="interior"``, the vendored convention).
 
     Parameters
@@ -998,7 +998,7 @@ def loglike_gaussian(
        rfft bins only.  That mixed the frequency-domain variance into a
        WDM-basis determinant and used roughly half the required number
        of terms, which biased any PSD amplitude inferred by maximising
-       this likelihood by a factor of two.  See ``src/wdm/summary.md``.
+       this likelihood by a factor of two.
 
     Parameters
     ----------

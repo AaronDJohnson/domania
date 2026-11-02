@@ -1,6 +1,6 @@
 """The dual-backend shim: one implementation per kernel, NumPy or JAX underneath.
 
-Every kernel in ``domainia.wilson`` (and later ``domainia``) is written once against a
+Every kernel in ``domainia.wilson`` is written once against a
 :class:`Backend` and never branches on the backend's name for arithmetic.  The
 backend supplies the array namespace (``xp``), the FFT namespace used by the
 transforms (``fft``: ``numpy.fft`` / ``jax.numpy.fft``), a pinned FFT
