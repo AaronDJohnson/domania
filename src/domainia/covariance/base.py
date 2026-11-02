@@ -289,7 +289,8 @@ class Covariance:
     threads_key: bool = False
     #: The Wilson basis of the WDM cells this covariance lives on, or ``None`` if it is not on
     #: WDM cells or the basis is unknown.  Subclasses that know it override this with a
-    #: read-only property; ``PushedCovariance`` refuses a WDM source domain with another window.
+    #: read-only property; ``PushedCovariance`` refuses a WDM source domain with another window,
+    #: and any non-WDM source domain for a covariance that carries a window.
     window: Window | None = None
 
     @property
