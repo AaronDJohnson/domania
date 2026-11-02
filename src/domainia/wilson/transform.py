@@ -934,8 +934,8 @@ def base_atom_spectra(Nf: int, Nt: int, dt: float, *,
     :func:`inverse` returns ``rfft(W_a^{-1} e) = rfft(atom) / dt``.  The same
     arithmetic as ``wdm_toys.matrix.Grid._base_spectra`` and wdm_dev
     ``PackedGrid._base_spectra``, so with the default window (:data:`domainia.wilson.MEYER`)
-    the Eq. 45 constants built from it are bit-identical to the ones that produced the
-    paper's references.
+    these spectra and the Eq. 45 constants built from them are bit-identical to the Meyer
+    baseline (pinned by ``tests/wilson/test_meyer_baseline.py``).
 
     Parameters
     ----------

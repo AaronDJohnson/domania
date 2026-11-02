@@ -14,7 +14,7 @@ __all__ = ["DiagonalCovariance"]
 
 
 class DiagonalCovariance(Covariance):
-    """``C = diag(v(nu))`` -- WT ``Solver(diag=...)``, GB ``band``/``mid`` models.
+    """``C = diag(v(nu))``: a per-cell variance as a covariance.
 
     ``variance`` is an :class:`~domainia.covariance.base.Evaluator` (``host_constants()``,
     ``evaluate(C, nu, be) -> (n,)``), a ``domainia.variance`` pytree

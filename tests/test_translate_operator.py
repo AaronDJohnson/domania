@@ -397,6 +397,29 @@ def test_every_transform_refusal_of_a_native_output_is_blamed_on_the_native(meth
     assert str(info.value) == f"_Stub.{method} {CONTRACT}{info.value.__cause__}"
 
 
+@pytest.mark.jax
+def test_a_traced_native_output_is_refused_with_a_plain_type_error_naming_the_native(jax_be):
+    """A native that closes over a ``jax.jit``-traced value returns tracers.  ``transform``
+    refuses them with JAX's ``TracerArrayConversionError`` (a ``TypeError`` whose constructor
+    takes a tracer, not a message); the refusal is re-raised as a plain ``TypeError`` that names
+    the native method, with the JAX error as its cause."""
+    import jax
+    import jax.numpy as jnp
+
+    y = _y(WDM)
+
+    @jax.jit
+    def f(s):
+        scaled = _Stub(TIME, lambda v: {k: s * jnp.asarray(a) for k, a in v.items()})
+        return translate_operator(scaled, WDM).apply(y)["A"]
+
+    with pytest.raises(TypeError) as info:
+        f(2.0)
+    assert type(info.value) is TypeError
+    assert str(info.value).startswith(f"_Stub.apply {CONTRACT}")
+    assert isinstance(info.value.__cause__, jax.errors.TracerArrayConversionError)
+
+
 def test_refusals():
     op = NATIVES["time"]
     t = translate_operator(op, WDM)

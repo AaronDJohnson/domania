@@ -1,11 +1,10 @@
 """Maps out of the time domain: WDM cells, retained Fourier bins, crops and zero padding.
 
-Every evaluator here is the WT oracle's library call (``wdm_paper_2/toy_models/src/
-wdm_toys/matrix.py``: ``Grid.forward``/``forward_many``/``inverse_many``/``atom``,
-``Variant.extend``, ``MatrixWhittle``; ``band.py``: ``FourierBand``), so the NumPy path is
-bitwise: ``TimeToWDM.apply(d) == forward_time(d, window=dst.window)[mask][keep]``.  The
-Wilson window is the ``WDMDomain``'s (``dst.window`` of ``TimeToWDM``, ``src.window`` of
-``WDMToTime``).
+Every evaluator here is the library call the WT oracle made (``Grid.forward``/
+``forward_many``/``inverse_many``/``atom``, ``Variant.extend``, ``MatrixWhittle``,
+``FourierBand``), so the NumPy path is bitwise:
+``TimeToWDM.apply(d) == forward_time(d, window=dst.window)[mask][keep]``.  The Wilson window
+is the ``WDMDomain``'s (``dst.window`` of ``TimeToWDM``, ``src.window`` of ``WDMToTime``).
 """
 
 from __future__ import annotations
@@ -167,11 +166,10 @@ class TimeToFourier(LinearMap):
     Nyquist dropped (kind ``"analysis"``).
 
     ``apply`` returns the complex bins exactly as the oracle computes them
-    (``np.fft.rfft(r)[keep]``, WT likelihood.py:245 and matrix.py:894), because the
-    Whittle density's ``2/N |R|^2`` order is bitwise only on them.  Their real orthonormal
-    coordinates are ``sqrt(2/N) (Re R_k, -Im R_k)``, bin by bin -- the
-    ``FourierBand.discarded_spectra`` convention (band.py:30-41) -- with rows
-    :meth:`orthonormal_rows`.  ``dst`` has ``units="rfft"``.
+    (``np.fft.rfft(r)[keep]``), because the Whittle density's ``2/N |R|^2`` order is
+    bitwise only on them.  Their real orthonormal coordinates are
+    ``sqrt(2/N) (Re R_k, -Im R_k)``, bin by bin, with rows :meth:`orthonormal_rows`.
+    ``dst`` has ``units="rfft"``.
     """
 
     src: TimeDomain

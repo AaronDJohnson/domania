@@ -838,7 +838,7 @@ def apply_lambda_from_psd(
         Input WDM coefficient array.  Inactive (parity-killed) edge entries
         are ignored on read -- :func:`domainia.wilson.transform.inverse` masks them -- so
         junk there does not affect the result (measured deviation exactly
-        0.0).  This was not always so.
+        0.0).
     Sn_rfft : ndarray, float, shape (N//2 + 1,)
         One-sided PSD evaluated on the ``rfftfreq(N, dt)`` grid.  Last, like
         every other PSD argument in the package.  ``inf`` samples are zero

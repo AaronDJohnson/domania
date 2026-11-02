@@ -90,6 +90,8 @@ Windows (in :mod:`domainia.wilson.windows`):
 * :class:`Window` (the protocol), :class:`Meyer`, :class:`RampWindow`,
   :class:`SampledWindow`, :data:`MEYER` (the WDM transform's window, ``Meyer(4)``),
   :class:`WindowError`
+* :func:`sample_window` (the kernels' single entry point: validated, read-only samples of
+  any :class:`Window`, a window of your own included), :func:`require_window`
 """
 
 from __future__ import annotations
@@ -137,7 +139,16 @@ from .transform import (
     inverse_time,
     inverse_time_many,
 )
-from .windows import MEYER, Meyer, RampWindow, SampledWindow, Window, WindowError
+from .windows import (
+    MEYER,
+    Meyer,
+    RampWindow,
+    SampledWindow,
+    Window,
+    WindowError,
+    require_window,
+    sample_window,
+)
 
 __all__ = [
     "MEYER",
@@ -177,6 +188,9 @@ __all__ = [
     # Filter
     "phi_centered",
     "phi_fft_order",
+    # Windows
+    "require_window",
+    "sample_window",
     "special",
     "stationary",
     "time_pixel_centers",

@@ -1,9 +1,10 @@
 r"""Stateless WDM II kernels for evolutionary (nonstationary) noise.
 
 Everything here is a pure function of ``(grid, spectrum, arrays)``.  Anything with
-state, a factorisation or a density (the wdm_dev ``PackedGrid``, ``BlockTri``,
-``Solver``, ``Schur``, ``PaddedMarginal``, ``marginal_lnlike``, ``FourierBand``,
-``Variant``) lives in ``domainia``.
+state or a factorisation lives outside :mod:`domainia.wilson`: the covariances of
+:mod:`domainia.covariance` (``EvolutionaryCovariance`` builds the Eq. 45 blocks from these
+kernels), the factors of :mod:`domainia.linalg` (``BlockTriFactor``) and the maps of
+:mod:`domainia.maps`.
 
 * Time masks: :func:`energy_fraction`, :func:`apply_time_mask`
   (:math:`M = W\chi W^{\mathsf T}/\delta t`).

@@ -12,10 +12,10 @@ A Wilson basis on the half-shifted lattice is orthonormal when its window
    (the Hz normalisation of :func:`domainia.wilson.filter.phi_centered`).
 
 The WDM transform is the Wilson basis with the Meyer window, :data:`MEYER`.  Every
-kernel takes ``window=`` and samples it through :func:`sample_window`.  Built-in
-windows validate each ``(window, Nf, Nt, dt)`` once, cache the read-only samples in a
-bounded LRU, and raise :class:`WindowError` (naming the condition, the window and the
-worst bin) when a condition fails.
+kernel that samples the window takes ``window=`` and samples it through
+:func:`sample_window`.  Built-in windows validate each ``(window, Nf, Nt, dt)`` once,
+cache the read-only samples in a bounded LRU, and raise :class:`WindowError` (naming the
+condition, the window and the worst bin) when a condition fails.
 
 Examples
 --------

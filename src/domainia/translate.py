@@ -314,9 +314,10 @@ class TranslatedOperator:
     * ``log_determinant()`` = native.log_determinant() + 2 * degrees_of_freedom * Delta
 
     ``to_target`` is :func:`transform`, so a native output that breaks the output contract
-    (:class:`Operator`) is refused with ``transform``'s error type, naming the native method
-    and quoting ``transform``'s refusal: ``ValueError`` off the canonical form, for a wrong
-    shape or non-finite values, ``TypeError`` for a masked array or non-numeric values.  A
+    (:class:`Operator`) is refused with a plain ``ValueError`` or ``TypeError`` (as
+    ``transform`` refused it), naming the native method, quoting ``transform``'s refusal and
+    chaining it as the cause: ``ValueError`` off the canonical form, for a wrong shape or
+    non-finite values, ``TypeError`` for a masked array, non-numeric values or JAX tracers.  A
     native output with other channels than the operator's raises ``ValueError``, and one that
     is not a mapping ``TypeError``, likewise naming the native method.
     """
@@ -366,8 +367,11 @@ class TranslatedOperator:
         try:
             out = transform(values, self.native.domain, self.target)
         except (TypeError, ValueError) as err:
-            raise type(err)(f"{who} returned a dict that breaks the Operator output contract "
-                            f"(see domainia.translate.Operator): {err}") from err
+            # The plain type: a subclass may not take a message (JAX's TracerArrayConversionError
+            # takes the tracer).
+            kind = TypeError if isinstance(err, TypeError) else ValueError
+            raise kind(f"{who} returned a dict that breaks the Operator output contract "
+                       f"(see domainia.translate.Operator): {err}") from err
         return out if factor == 1.0 else {k: v * factor for k, v in out.items()}
 
     def apply(self, values: Mapping[str, Any]) -> dict[str, np.ndarray]:

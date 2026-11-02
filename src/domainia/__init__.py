@@ -1,14 +1,17 @@
 """domainia: data, linear maps and covariance across the time, Fourier and time-frequency
 (Wilson / WDM) domains.
 
-Importing ``domainia`` never imports JAX: the JAX backend is reached only through
-:mod:`domainia.wilson.backend`.
+Importing ``domainia`` (any of its modules) never imports JAX.  JAX is imported only on use:
+when a JAX backend is asked for (``backend="jax"``,
+:func:`domainia.wilson.backend.jax_backend`, ``enable_x64``) or JAX device constants are
+built.
 
 Modules
 -------
 * :mod:`domainia.wilson`: the Wilson-basis kernels.  The WDM transform is the Wilson basis
-  with the Meyer window (:data:`MEYER`); every kernel takes ``window=`` (any admissible
-  :class:`Window`: ``Meyer(d)``, ``RampWindow``, ``SampledWindow``).
+  with the Meyer window (:data:`MEYER`); every kernel that samples the window takes
+  ``window=`` (any admissible :class:`Window`: ``Meyer(d)``, ``RampWindow``,
+  ``SampledWindow``).
 * :mod:`domainia.translate`: ``transform`` (``{channel: array}`` dicts) and
   ``translate_operator`` (lazy covariance change of basis) between the full-record
   ``TimeDomain``, ``FourierDomain.full`` and ``WDMDomain.full``.
