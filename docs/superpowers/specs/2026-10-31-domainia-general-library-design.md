@@ -226,7 +226,7 @@ def transform(channel_data: Mapping[str, ndarray], source, target) -> dict[str, 
   wrong shape for `source`, non-finite values, `N` disagreeing between source and
   target, a non-zero inactive WDM entry, or a DC bin (or, for even `N`, a Nyquist bin)
   with non-zero imaginary part. The endpoint rule is exact, matching enchilada's
-  `block_state.check_rfft_endpoints`. domainia's own outputs make the endpoints exactly
+  `block_state.check_rfft_endpoints`. `transform`'s outputs make the endpoints exactly
   real, so its round trips always pass. A non-dict or non-domain argument raises
   `TypeError`.
 * `WDMDomain.full` uses `wilson.Grid`, which already requires positive even `Nf` and
