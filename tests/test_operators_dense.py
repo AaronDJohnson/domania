@@ -76,7 +76,7 @@ def test_every_method_matches_the_dense_reference(name, rank):
     assert op.log_determinant() == pytest.approx(float(np.sum(np.log(w))), rel=1e-10, abs=1e-9)
 
 
-@pytest.mark.parametrize("target", ["time", "fourier", "wdm"])
+@pytest.mark.parametrize("target", ["time", "fourier", "wdm-alt"])
 def test_a_reversed_channel_dict_meets_the_same_blocks(target):
     """The rows follow ``channel_names``, not the dict's order: on the operator and on a
     translation of it (whose ``transform`` keeps the caller's order)."""
@@ -163,3 +163,33 @@ def test_the_matrix_is_validated():
         op.solve([y["A"]])
     with pytest.raises(TypeError, match="Operator"):
         operator_matrix(C)
+
+
+def test_a_float32_rank_deficient_matrix_uses_float32_eps():
+    n = N
+    B = _rng.standard_normal((n, n // 2)).astype(np.float32)
+    C = B @ B.T
+    C = ((C + C.T) / 2).astype(np.float32)                           # exactly symmetric
+    assert DenseOperator(C, TIME, ("A",)).degrees_of_freedom == n // 2
+
+
+def test_operator_matrix_refuses_a_str_channel_names():
+    class Fake:
+        domain = TIME
+        channel_names = "AE"
+
+        degrees_of_freedom = 0
+
+        def apply(self, values):
+            return values
+
+        solve = project = apply
+
+        def quadratic_form(self, values):
+            return 0.0
+
+        def log_determinant(self):
+            return 0.0
+
+    with pytest.raises(TypeError, match="channel_names must be a tuple"):
+        operator_matrix(Fake())

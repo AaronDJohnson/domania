@@ -75,6 +75,8 @@ class DenseOperator:
         if isinstance(self.matrix, np.ma.MaskedArray):
             raise TypeError("matrix: masked arrays are refused (numpy.asarray drops the mask)")
         C = np.asarray(self.matrix)
+        eps = float(np.finfo(C.dtype).eps) if C.dtype.kind == "f" and C.dtype.itemsize < 8 \
+            else float(np.finfo(np.float64).eps)
         if C.dtype.kind not in "iuf":
             raise TypeError(f"matrix must be a real numeric array; got dtype {C.dtype}")
         if C.shape != (n, n):
@@ -97,7 +99,7 @@ class DenseOperator:
         S = 0.5 * (C + C.T)
         w, V = np.linalg.eigh(S)
         top = float(np.max(np.abs(w)))
-        tol = top * n * float(np.finfo(np.float64).eps) if rtol is None else rtol * top
+        tol = top * n * eps if rtol is None else rtol * top
         if w[0] < -tol:
             raise ValueError(f"matrix is not positive semi-definite: its smallest eigenvalue "
                              f"{float(w[0])!r} is below -tol = {-tol!r}")
@@ -156,7 +158,7 @@ def operator_matrix(op: Operator) -> np.ndarray:
     """
     if not isinstance(op, Operator):
         raise TypeError(f"op must implement domainia.translate.Operator; got {type(op).__name__}")
-    names = _channel_names(tuple(op.channel_names))
+    names = _channel_names(op.channel_names)
     N, _ = _record(op.domain, "op.domain")
     K = len(names)
     out = np.empty((K * N, K * N))
