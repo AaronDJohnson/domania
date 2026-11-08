@@ -27,8 +27,10 @@ from domainia.wilson.transform import (
     atom_spectrum,
     band_atoms,
     base_atom_spectra,
+    forward,
     forward_bands,
     forward_time,
+    inverse,
     inverse_bands,
 )
 
@@ -230,7 +232,8 @@ def test_forward_bands_is_the_dense_atom_analysis(grid, backend, rng):
     n_bins = (bands[-1] + 1) * (Nt // 2) - k0 + 5
     z = rng.standard_normal((2, n_bins)) + 1j * rng.standard_normal((2, n_bins))
     atoms = band_atoms(bands, Nf, Nt, dt)
-    dense = np.stack([
+    # Wilson units: the unit-norm atoms times sqrt(2 dt / N) (band_atoms' docstring)
+    dense = np.sqrt(2.0 * dt / (Nf * Nt)) * np.stack([
         np.real(np.einsum("ns,...s->...n", atoms[b],
                           z[..., (m - 1) * (Nt // 2) - k0 + np.arange(Nt)]))
         for b, m in enumerate(bands)], axis=-2)
@@ -239,28 +242,53 @@ def test_forward_bands_is_the_dense_atom_analysis(grid, backend, rng):
     assert np.max(np.abs(got - dense)) <= 1e-12 * np.max(np.abs(dense))
 
 
-@pytest.mark.parametrize("grid", [(8, 16, 0.5), (16, 32, 1.0), (8, 16, 2.0)])
-def test_forward_bands_is_the_transform_times_sqrt_N_over_2dt(grid, rng):
-    """On a whole record (z = rfft(x)) the unit-norm-atom cells of the interior
-    bands are the WDM coefficients times sqrt(N / (2 dt)) -- the GB comment's
-    "orthonormal coefficient times sqrt(N/2)" (orthonormal = w / sqrt(dt))."""
+#: The Meyer baseline's grids and dt (tests/wilson/meyer_cases.py GRIDS x DTS).
+BASELINE_GRIDS = [(Nf, Nt, dt) for Nf, Nt in ((8, 16), (16, 32), (32, 8)) for dt in (1.0, 0.25)]
+
+
+@pytest.mark.parametrize("grid", BASELINE_GRIDS)
+def test_forward_bands_is_the_transform_on_the_bands(grid, rng):
+    """On a whole record (z = rfft(x)) the cells of any interior bands are the Wilson
+    coefficients forward(z)[bands] (spec section 1.3: Wilson units)."""
     Nf, Nt, dt = grid
     N = Nf * Nt
     x = rng.standard_normal(N)
-    w = forward_time(x, Nf, Nt, dt)
-    cells = forward_bands(np.fft.rfft(x), 0, np.arange(1, Nf), Nf, Nt, dt)
-    scale = np.sqrt(N / (2.0 * dt))
-    assert np.max(np.abs(cells - scale * w[1:Nf])) <= 1e-12 * np.max(np.abs(cells))
+    z = np.fft.rfft(x)
+    for bands in (np.arange(1, Nf), np.array([1, Nf // 2, Nf - 1])):
+        cells = forward_bands(z, 0, bands, Nf, Nt, dt)
+        want = forward(z, Nf, Nt, dt)[bands]
+        assert np.max(np.abs(cells - want)) <= 1e-12 * np.max(np.abs(want))
+        np.testing.assert_allclose(want, forward_time(x, Nf, Nt, dt)[bands], rtol=0,
+                                   atol=1e-13 * np.max(np.abs(want)))
+
+
+@pytest.mark.parametrize("grid", BASELINE_GRIDS)
+def test_inverse_bands_is_the_inverse_on_its_bins(grid, rng):
+    """inverse_bands(w) is inverse(w_full) on the bins [k0, k0 + n_bins), w_full the dense grid
+    holding w on the bands and 0 elsewhere."""
+    Nf, Nt, dt = grid
+    N = Nf * Nt
+    for bands, k0, n_bins in ((np.arange(1, Nf), 0, N // 2 + 1),                 # every bin
+                              (np.arange(2, Nf - 1), Nt // 2 - 1, N // 2 - Nt // 2)):  # a sub-range
+        w = rng.standard_normal((bands.size, Nt))
+        w_full = np.zeros((Nf + 1, Nt))
+        w_full[bands] = w
+        want = inverse(w_full, Nf, Nt, dt)
+        got = inverse_bands(w, k0, n_bins, bands, Nf, Nt, dt)
+        assert np.max(np.abs(got - want[k0:k0 + n_bins])) <= 1e-12 * np.max(np.abs(want))
 
 
 def test_inverse_bands_is_the_adjoint(backend, rng):
+    """sum(forward_bands(z) w) = (2 dt / N) Re<z, inverse_bands(w)>: inverse_bands is
+    N / (2 dt) times the adjoint (spec section 1.3)."""
     Nf, Nt, dt = 16, 32, 0.5
+    N = Nf * Nt
     bands = np.array([3, 4, 5, 6])
     k0, n_bins = 20, 120
     z = rng.standard_normal(n_bins) + 1j * rng.standard_normal(n_bins)
     w = rng.standard_normal((bands.size, Nt))
     lhs = np.sum(np.asarray(forward_bands(backend.asarray(z), k0, bands, Nf, Nt, dt)) * w)
-    rhs = np.real(np.sum(np.conj(z) * np.asarray(
+    rhs = (2.0 * dt / N) * np.real(np.sum(np.conj(z) * np.asarray(
         inverse_bands(backend.asarray(w), k0, n_bins, bands, Nf, Nt, dt))))
     assert np.isclose(lhs, rhs, rtol=1e-12, atol=0)
     with pytest.raises(ValueError, match="do not cover"):

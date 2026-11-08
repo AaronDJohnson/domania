@@ -455,23 +455,23 @@ def test_atom_spectra_are_the_rfft_of_the_rows_of_W(window, Nf, Nt, dt):
 @pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
 @pytest.mark.parametrize("Nf, Nt, dt", GRIDS)
 def test_forward_bands_matches_its_atoms_and_forward(window, Nf, Nt, dt):
-    """``forward_bands`` (one IFFT per band) == ``Re(band_atoms @ z[window])`` (dense) ==
-    ``forward(z)[bands] / sqrt(2 dt / N)`` (the unit-norm-atom scale)."""
+    """``forward_bands`` (one IFFT per band) == ``sqrt(2 dt / N) Re(band_atoms @ z[window])``
+    (dense, unit-norm atoms) == ``forward(z)[bands]`` (Wilson coefficients)."""
     N = Nf * Nt
     bands = np.arange(1, Nf)
     z = np.fft.rfft(np.random.default_rng(N + Nf + 1).standard_normal(N))
     fb = T.forward_bands(z, 0, bands, Nf, Nt, dt, window=window)
     ell = (bands[:, None] - 1) * (Nt // 2) + np.arange(Nt)[None, :]
     atoms = T.band_atoms(bands, Nf, Nt, dt, window=window)
-    _close(fb, np.real(np.einsum("bns,bs->bn", atoms, z[ell])), RTOL, "Re(band_atoms @ z)")
-    _close(fb, wilson.forward(z, Nf, Nt, dt, window=window)[bands] / np.sqrt(2.0 * dt / N), RTOL,
-           "forward(z)[bands] / sqrt(2 dt / N)")
+    _close(fb, np.sqrt(2.0 * dt / N) * np.real(np.einsum("bns,bs->bn", atoms, z[ell])), RTOL,
+           "sqrt(2 dt / N) Re(band_atoms @ z)")
+    _close(fb, wilson.forward(z, Nf, Nt, dt, window=window)[bands], RTOL, "forward(z)[bands]")
 
 
 @pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
 @pytest.mark.parametrize("Nf, Nt, dt", GRIDS)
 def test_inverse_bands_is_the_adjoint_of_forward_bands(window, Nf, Nt, dt):
-    """``<forward_bands(z), w> == Re <z, inverse_bands(w)>``, to rounding of the
+    """``<forward_bands(z), w> == (2 dt / N) Re <z, inverse_bands(w)>``, to rounding of the
     Cauchy--Schwarz bound ``|forward_bands(z)| |w|``."""
     N = Nf * Nt
     n_bins = N // 2 + 1
@@ -482,7 +482,7 @@ def test_inverse_bands_is_the_adjoint_of_forward_bands(window, Nf, Nt, dt):
     fz = T.forward_bands(z, 0, bands, Nf, Nt, dt, window=window)
     lhs = float(np.sum(fz * w))
     back = T.inverse_bands(w, 0, n_bins, bands, Nf, Nt, dt, window=window)
-    rhs = float(np.real(np.vdot(z, back)))
+    rhs = (2.0 * dt / N) * float(np.real(np.vdot(z, back)))
     assert abs(lhs - rhs) <= RTOL * float(np.linalg.norm(fz) * np.linalg.norm(w))
 
 

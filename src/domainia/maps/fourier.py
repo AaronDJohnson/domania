@@ -216,22 +216,29 @@ def _dense_atoms(geo: dict, Nf: int, dt: float, *, window: Window) -> np.ndarray
     return U
 
 
+def _kappa(src: FourierDomain, g: wilson.Grid) -> float:
+    """``src.rfft_scale * sqrt(2 dt / N)`` (``N``, ``dt`` of the cells' grid): the unit-norm-atom
+    analysis of bins in ``src``'s units, times this, is the Wilson coefficients."""
+    return src.rfft_scale * float(np.sqrt(2.0 * g.dt / g.N))
+
+
 @pytree_dataclass(data=("C",), meta=("src", "dst", "impl", "lo", "width", "restrict"))
 @dataclass(frozen=True, eq=False)
 class FourierToWDM(LinearMap):
-    """Cells of interior bands from band-limited bins: ``cells = Re(C z)`` (kind ``"cells"``).
+    """Wilson coefficients of interior-band cells from band-limited bins: ``cells = Re(C z)``
+    (kind ``"cells"``).
 
     ``src`` is the ``FourierDomain`` the data live on (the GB store, or the band window
     itself); the cells read the window bins ``[g0, g0 + G)``, ``g0 = (m_0 - 1) Nt/2``, which
     ``src`` must cover -- or, with ``restrict=True``, ``src`` may be a sub-window of it and
     the atoms are truncated to ``src`` (the GB exact rows on the analysis window).
-    ``C`` holds the unit-norm atoms in the Wilson basis of ``dst.window``
-    (GB ``Variant.C``): ``impl="dense"`` evaluates ``Re(z[..., lo:lo+width] @ C.T)`` (GB
-    ``cells``, the golden default); ``impl="fft"`` evaluates ``wilson.forward_bands``
-    (opt-in, <= 1e-12 relative).
-    For a record ``z = rfft(x)`` the cells are ``sqrt(N / (2 dt))`` times
-    ``TimeToWDM.apply(x)`` on the same cells (no map applies ``WDMDomain.scale``, so
-    ``dst.scale`` must be 1).
+    ``C = kappa U``: ``U`` holds the unit-norm atoms in the Wilson basis of ``dst.window``
+    (GB ``Variant.C``), and ``kappa = src.rfft_scale * sqrt(2 dt / N)`` (``N``, ``dt`` of the
+    cells' grid) turns bins in ``src.units`` into Wilson coefficients.  ``impl="dense"``
+    evaluates ``Re(z[..., lo:lo+width] @ C.T)`` (GB ``cells``, the golden default);
+    ``impl="fft"`` evaluates ``src.rfft_scale * wilson.forward_bands`` (opt-in, <= 1e-12
+    relative).  For a record ``x`` and its bins ``z`` in ``src.units``, the cells equal
+    ``TimeToWDM.apply(x)`` on the same cells.
     """
 
     src: FourierDomain
@@ -255,12 +262,13 @@ class FourierToWDM(LinearMap):
         g0, G = geo["g0"], geo["G"]
         k0, n = self.src.k0, self.src.n
         U = _dense_atoms(geo, g.Nf, g.dt, window=self.dst.window)[geo["sel"]]  # (P, G), GB V.U
+        kappa = _kappa(self.src, g)
         if k0 <= g0 and g0 + G <= k0 + n:
-            lo, width, C = g0 - k0, G, U
+            lo, width, C = g0 - k0, G, kappa * U
         elif self.restrict and g0 <= k0 and k0 + n <= g0 + G:
             if self.impl != "dense":
                 raise ValueError("restrict=True truncates the atoms: impl='dense' only")
-            lo, width, C = 0, n, U[:, k0 - g0:k0 - g0 + n]
+            lo, width, C = 0, n, kappa * U[:, k0 - g0:k0 - g0 + n]
         else:
             raise ValueError(f"the bins [{k0}, {k0 + n}) do not cover the band windows "
                              f"[{g0}, {g0 + G}) (pass restrict=True for a sub-window)")
@@ -297,7 +305,7 @@ class FourierToWDM(LinearMap):
         geo = _geometry(self.dst)
         w = wilson.transform.forward_bands(z, self.src.k0, geo["bands"], g.Nf, g.Nt, g.dt, be=be,
                                            window=self.dst.window)
-        return w.reshape(*w.shape[:-2], -1)[..., geo["sel"]]
+        return self.src.rfft_scale * w.reshape(*w.shape[:-2], -1)[..., geo["sel"]]
 
     def adjoint(self, w, be=None):
         """``C^H w`` on ``src`` (complex), the real-inner-product adjoint."""
@@ -317,7 +325,9 @@ class FourierToWDM(LinearMap):
 
     def push_rows(self, Mp, idx, be=None):
         """``1/2 Re((C[idx] @ M') @ conj(C).T)`` (GB ``exact_rows_builder``);
-        ``M'`` is ``(src.n, src.n)``; the ``width`` bins ``C`` reads are sliced out of it."""
+        ``M'`` is ``(src.n, src.n)``, the bins' covariance in ``src.units``; the ``width`` bins
+        ``C`` reads are sliced out of it.  ``C`` carries ``kappa``, so the push carries
+        ``kappa^2``."""
         be = be or self._be(Mp, None)
         if Mp.shape != (self.src.n, self.src.n):
             raise ValueError(f"M' must be ({self.src.n}, {self.src.n}) on src's bins; got {Mp.shape}")
@@ -328,7 +338,8 @@ class FourierToWDM(LinearMap):
     def after(self, inner: Any) -> "FourierToWDM":
         """The dense cell matrix of ``self . inner`` for a widely linear ``inner``
         (:class:`FourierZeroPad`, :class:`FourierCrop`) -- GB ``_cells``:
-        ``C = (analyse(A[idx]) + conj(analyse(B[idx]))) * inner.scale``, rows of ``dst``.
+        ``C = kappa * inner.scale * (analyse(A[idx]) + conj(analyse(B[idx])))``, rows of
+        ``dst``, with ``self``'s ``kappa``.
 
         The atoms are rebuilt from ``dst``'s geometry, so ``self.src`` must be exactly the
         band window :attr:`window` of the cells' grid record: a ``restrict=True`` map
@@ -347,5 +358,5 @@ class FourierToWDM(LinearMap):
         A, B = np.asarray(inner.A), np.asarray(inner.B)
         C = _analyse(phase, phi, A[geo["idx"]]).reshape(nb * Nt, -1)
         C = C + np.conj(_analyse(phase, phi, B[geo["idx"]]).reshape(nb * Nt, -1))
-        C = C * inner.scale
+        C = (_kappa(self.src, g) * inner.scale) * C
         return FourierToWDM(inner.src, self.dst, "dense", lo=0, width=inner.src.n, C=C[geo["sel"]])

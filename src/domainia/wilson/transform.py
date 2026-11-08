@@ -1036,7 +1036,10 @@ def band_atoms(bands: NDArray[np.integer], Nf: int, Nt: int, dt: float, *,
     """``(nb, Nt, Nt)`` complex unit-norm atoms of ``bands`` on their ``Nt``-bin windows.
 
     Atom ``[b, n, s]`` multiplies the rfft bin ``(m_b - 1) Nt/2 + s`` of a
-    record's spectrum; a cell is ``Re(atoms[b, n] . z[window])``.  Verbatim GB
+    record's spectrum.  The atoms are unit-norm (the spectrum of a basis function, not a
+    coefficient): for rfft bins ``z = numpy.fft.rfft(x)`` of an ``N = Nf Nt``-sample record,
+    ``sqrt(2 dt / N) * Re(atoms[b, n] . z[window])`` is the Wilson coefficient
+    ``forward(z)[m_b, n]``, which :func:`forward_bands` returns.  Verbatim GB
     ``geometry.band_atoms`` with ``window``'s samples (Hz normalisation).
 
     Parameters
@@ -1089,14 +1092,15 @@ def _band_windows(bands: NDArray[np.integer], k0: int, n_bins: int, Nt: int) -> 
 
 def forward_bands(z: CArray, k0: int, bands: NDArray[np.integer], Nf: int, Nt: int,
                   dt: float, *, be: Backend | None = None, window: Window = MEYER) -> Array:
-    """WDM cells of ``bands`` from band-limited rfft bins: ``(..., n) -> (..., nb, Nt)``.
+    """Wilson coefficients of ``bands`` from band-limited rfft bins: ``(..., n) -> (..., nb, Nt)``.
 
-    ``z[..., j]`` is the (unit-free) rfft bin ``k0 + j``.  Cell ``(b, n)`` is
-    ``Re(band_atoms[b, n] . z[window_b])`` -- the unit-norm-atom convention of
-    the GB toy -- computed with one length-``Nt`` IFFT per band (GB
-    ``wdm_full.analyse``): ``Re(phase * ifft(phi * z[window]))``.  It agrees
-    with the dense ``Re(band_atoms @ z)`` to ~1e-15 (not bitwise).  Interior
-    bands only.  Cost ``O(nb Nt log Nt)`` against ``O(nb Nt^2)`` dense.
+    ``z[..., j]`` is the rfft bin ``k0 + j`` in ``numpy.fft.rfft`` units (no ``dt``).  On a
+    whole record, ``z = rfft(x)``, the result is ``forward(z)[bands]`` (<= 1e-12 relative).
+    Cell ``(b, n)`` is ``sqrt(2 dt / N) Re(band_atoms[b, n] . z[window_b])``, ``N = Nf Nt``,
+    computed with one length-``Nt`` IFFT per band (GB ``wdm_full.analyse``):
+    ``sqrt(2 dt / N) Re(phase * ifft(phi * z[window]))``.  It agrees with the dense
+    ``sqrt(2 dt / N) Re(band_atoms @ z)`` to ~1e-15 (not bitwise).  Interior bands only.
+    Cost ``O(nb Nt log Nt)`` against ``O(nb Nt^2)`` dense.
     A non-finite ``z`` is rejected (as in :func:`forward`): one ``nan`` bin
     would otherwise make every cell of each band whose window covers it
     ``nan``, without a warning.
@@ -1104,7 +1108,8 @@ def forward_bands(z: CArray, k0: int, bands: NDArray[np.integer], Nf: int, Nt: i
     Parameters
     ----------
     z : ndarray, complex, shape (..., n)
-        Unit-free rfft bins ``k0 .. k0+n-1`` of a record; they must cover every band window.
+        rfft bins ``k0 .. k0+n-1`` of a record (``numpy.fft.rfft`` units); they must cover
+        every band window.
     k0 : int
         Absolute rfft bin of ``z[..., 0]``.
     bands : array_like of int
@@ -1127,23 +1132,25 @@ def forward_bands(z: CArray, k0: int, bands: NDArray[np.integer], Nf: int, Nt: i
     phi = sample_window(window, Nf, Nt, dt)
     phase = _band_phase(bands, Nt, phi)
     Y = be.fft.ifft(phi * z[..., ell], axis=-1)
-    return be.xp.real(phase * Y)
+    # Wilson units: the unit-norm-atom cells times sqrt(2 dt / N) (band_atoms' docstring).
+    return be.xp.real(phase * Y) * np.sqrt(2.0 * dt / n_samples(Nf, Nt))
 
 
 def inverse_bands(w: Array, k0: int, n_bins: int, bands: NDArray[np.integer], Nf: int,
                   Nt: int, dt: float, *, be: Backend | None = None,
                   window: Window = MEYER) -> CArray:
-    """The adjoint of :func:`forward_bands`: ``(..., nb, Nt) -> (..., n_bins)`` complex.
+    """rfft bins from the Wilson coefficients of ``bands``: ``(..., nb, Nt) -> (..., n_bins)``.
 
-    For the real inner products ``<w, w'> = sum w w'`` and
-    ``<z, z'> = Re sum conj(z) z'``,
-    ``<forward_bands(z), w> == <z, inverse_bands(w)>`` exactly in exact
-    arithmetic: bin ``k0 + j`` receives
-    ``sum_n w[b, n] conj(atom[b, n, s])`` from every band window covering it
-    (``phi * fft(conj(phase) * w) / Nt``, scattered band by band).  It is the
-    map that pushes cell-space vectors back onto bins (GB congruences); it is
-    not a left inverse of :func:`forward_bands`.  ``w`` must be real and
-    finite (as in :func:`inverse`).
+    It is ``inverse(w_full)[k0:k0 + n_bins]`` (<= 1e-12 relative), ``w_full`` the
+    ``(Nf + 1, Nt)`` grid holding ``w`` on ``bands`` and zeros elsewhere: bin ``k0 + j``
+    receives ``sqrt(N / (2 dt)) sum_n w[b, n] conj(atom[b, n, s])`` from every band window
+    covering it (``sqrt(N / (2 dt)) phi * fft(conj(phase) * w) / Nt``, scattered band by
+    band).  It is ``N / (2 dt)`` times the adjoint of :func:`forward_bands`: for the real
+    inner products ``<w, w'> = sum w w'`` and ``<z, z'> = Re sum conj(z) z'``,
+    ``<forward_bands(z), w> == (2 dt / N) <z, inverse_bands(w)>`` in exact arithmetic.
+    ``inverse_bands(forward_bands(z))`` is ``z`` on the covered bins only when ``z``'s
+    Wilson coefficients vanish outside ``bands``.  ``w`` must be real and finite (as in
+    :func:`inverse`).
 
     Parameters
     ----------
@@ -1183,4 +1190,5 @@ def inverse_bands(w: Array, k0: int, n_bins: int, bands: NDArray[np.integer], Nf
     out = be.xp.zeros((*w.shape[:-2], n_bins), dtype=complex)
     for b in range(bands.size):
         out = be.add_at(out, (..., ell[b]), V[..., b, :], copy=False)
-    return out
+    # rfft units: N / (2 dt) times the adjoint of forward_bands' sqrt(2 dt / N).
+    return out * np.sqrt(n_samples(Nf, Nt) / (2.0 * dt))

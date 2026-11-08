@@ -129,7 +129,7 @@ def test_fourier_cells_use_the_domain_window():
     dom = WDMDomain(cells, window=ALT_WINDOW)
     rec = FourierDomain(N, DT, 0, N // 2 + 1, "rfft")
     got = FourierToWDM(rec, dom).apply(np.fft.rfft(X))
-    want = np.sqrt(N / (2 * DT)) * TimeToWDM(TIME, dom).apply(X)
+    want = TimeToWDM(TIME, dom).apply(X)
     np.testing.assert_allclose(got, want, rtol=0, atol=1e-12 * np.max(np.abs(got)))
     fft = FourierToWDM(rec, dom, "fft").apply(np.fft.rfft(X))
     assert np.max(np.abs(fft - got)) <= 1e-12 * np.max(np.abs(got))
@@ -151,7 +151,7 @@ def test_after_a_crop_uses_the_domain_window():
     assert M.dst == dom
     got = M.apply(Z)
     _close(got, Compose(W, crop).apply(Z))
-    _close(got, np.sqrt(g.N / (2 * g.dt)) * TimeToWDM(TimeDomain(g.N, g.dt), dom).apply(xr[16:144]))
+    _close(got, TimeToWDM(TimeDomain(g.N, g.dt), dom).apply(xr[16:144]))
     meyer = FourierToWDM(W.src, WDMDomain(dom.cells))
     assert not np.allclose(got, meyer.after(crop).apply(Z))
 
@@ -159,9 +159,9 @@ def test_after_a_crop_uses_the_domain_window():
 def test_fourier_adjoint_rows_and_push_use_the_domain_window():
     """On an ALT_WINDOW domain: ``adjoint`` is the real-inner-product adjoint of ``apply``
     (``<z, z'> = Re sum conj(z) z'``, the maps module convention); ``rows`` are
-    ``sqrt(2 / (N dt)) conj(rfft(g_p))`` for the time atoms ``g_p`` of ``active_W`` (so that
-    ``Re(rows @ rfft(x)) = sqrt(N / (2 dt)) W x``); and the push of a circulant time
-    covariance's bin covariance ``M' = F Sigma F^H`` is ``(N / (2 dt)) W Sigma W^T``."""
+    ``(2 / N) conj(rfft(g_p))`` for the time atoms ``g_p`` of ``active_W`` (so that
+    ``Re(rows @ rfft(x)) = W x``); and the push of a circulant time covariance's bin
+    covariance ``M' = F Sigma F^H`` is ``W Sigma W^T``."""
     cells = CellSet.bands(GRID, (2, 3))
     dom = WDMDomain(cells, window=ALT_WINDOW)
     rec = FourierDomain(N, DT, 0, N // 2 + 1, "rfft")
@@ -172,7 +172,7 @@ def test_fourier_adjoint_rows_and_push_use_the_domain_window():
     assert float(np.dot(F.apply(z), w)) == pytest.approx(float(np.real(np.vdot(z, F.adjoint(w)))),
                                                          rel=1e-12)
     W = testing.dense_W(cells, window=ALT_WINDOW)
-    R = np.sqrt(2.0 / (N * DT)) * np.conj(np.fft.rfft(W, axis=-1))
+    R = (2.0 / N) * np.conj(np.fft.rfft(W, axis=-1))
     idx = [0, 3, cells.size // 2, cells.size - 1]
     _close(F.rows(idx), R[idx])
     _close(F.adjoint(w), w @ np.conj(R))
@@ -182,7 +182,7 @@ def test_fourier_adjoint_rows_and_push_use_the_domain_window():
     Fm = np.fft.rfft(np.eye(N), axis=0)                                     # rfft(x) = Fm x
     Mp = Fm @ Sigma @ Fm.conj().T
     got = F.push(DenseCov(Mp)).dense()
-    _close(got, (N / (2 * DT)) * W @ Sigma @ W.T)
+    _close(got, W @ Sigma @ W.T)
     assert not np.allclose(got, FourierToWDM(rec, WDMDomain(cells)).push(DenseCov(Mp)).dense())
 
 

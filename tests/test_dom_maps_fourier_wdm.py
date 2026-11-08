@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 from dom_db_inputs import DenseCov, jax_or_skip, synthetic_record
@@ -14,6 +16,7 @@ NF, NT, DT = 16, 32, 0.25
 N = NF * NT
 GRID = wilson.Grid(NF, NT, DT)
 BANDS = (3, 4, 5)
+SIGMA0 = 2.5
 
 #: The after() cases (7211bd5 test_dom_maps_cells::test_adjoint_and_the_record_scale): the
 #: interior bands of an (8, 16) grid at dt = 0.5, and the same bands padded by 4 columns.
@@ -28,6 +31,16 @@ def _record() -> FourierDomain:
 
 def _cells() -> CellSet:
     return CellSet.bands(GRID, BANDS)
+
+
+def _units_record(units: str) -> FourierDomain:
+    """The whole record's bins in ``units`` (``sigma0 = SIGMA0`` for ``"sigma0"``)."""
+    return FourierDomain(N, DT, 0, N // 2 + 1, units, sigma0=SIGMA0 if units == "sigma0" else None)
+
+
+def _in_units(R: np.ndarray, units: str) -> np.ndarray:
+    """``z`` in ``units`` from ``R = numpy.fft.rfft(x)`` (spec section 1.1's table)."""
+    return {"rfft": R, "dt_rfft": DT * R, "sigma0": R / SIGMA0}[units]
 
 
 def _crop_case(rng):
@@ -56,11 +69,34 @@ def _pad_case(rng):
     return Wp, FourierZeroPad(store, win), np.fft.rfft(x)[1:64], x
 
 
-def test_cells_are_the_record_scale_times_the_time_cells():
+@pytest.mark.parametrize("impl", ["dense", "fft"])
+@pytest.mark.parametrize("units", ["rfft", "dt_rfft", "sigma0"])
+def test_cells_are_the_time_cells_in_every_unit(units, impl):
+    """Spec section 1.4: the cells are the Wilson coefficients of the record, whatever units
+    the bins are in."""
     x = synthetic_record(N, 3)
-    got = FourierToWDM(_record(), WDMDomain(_cells())).apply(np.fft.rfft(x))
+    got = FourierToWDM(_units_record(units), WDMDomain(_cells()), impl).apply(
+        _in_units(np.fft.rfft(x), units))
     want = TimeToWDM(TimeDomain(N, DT), WDMDomain(_cells())).apply(x)
-    np.testing.assert_allclose(got, np.sqrt(N / (2 * DT)) * want, rtol=0, atol=1e-12 * np.max(np.abs(got)))
+    assert np.max(np.abs(got - want)) <= 1e-12 * np.max(np.abs(want))
+
+
+@pytest.mark.parametrize("units", ["rfft", "dt_rfft", "sigma0"])
+def test_the_cell_matrix_is_kappa_times_the_atoms(units):
+    """``C = kappa U``, ``kappa = src.rfft_scale sqrt(2 dt / N)``, ``U`` the unit-norm atoms
+    on the band windows; ``restrict=True`` truncates them to ``src``."""
+    src = _units_record(units)
+    full = FourierToWDM(src, WDMDomain(_cells()))
+    win = full.window
+    atoms = wilson.transform.band_atoms(np.array(BANDS), NF, NT, DT)
+    U = np.zeros((len(BANDS) * NT, win.n), complex)
+    for b in range(len(BANDS)):
+        U[b * NT:(b + 1) * NT, (NT // 2) * b + np.arange(NT)] = atoms[b]
+    kappa = src.rfft_scale * np.sqrt(2 * DT / N)
+    assert np.max(np.abs(full.C - kappa * U)) <= 1e-15 * kappa * np.max(np.abs(U))
+    inner = replace(win, k0=win.k0 + 2, n=win.n - 4)
+    m = FourierToWDM(inner, WDMDomain(_cells()), restrict=True)
+    assert np.max(np.abs(m.C - kappa * U[:, 2:win.n - 2])) <= 1e-15 * kappa * np.max(np.abs(U))
 
 
 def test_fft_impl_matches_dense():
@@ -121,14 +157,17 @@ def test_adjoint_is_the_real_inner_product_adjoint():
     assert lhs == pytest.approx(rhs, rel=1e-12)
 
 
-def test_push_of_white_record_bins_is_the_identity():
-    """For ``z = rfft(x)`` of unit white noise ``E[z z^H] = N I`` on the interior bins, and the
-    cells ``sqrt(N / (2 dt)) W x`` have covariance ``(N / (2 dt)) dt I = (N / 2) I``: the push
-    ``1/2 Re(C M' C^H)`` takes ``M' = 2 I`` to ``I``."""
-    m = FourierToWDM(_record(), WDMDomain(_cells()))
-    P = m.push(DenseCov(2 * np.eye(m.src.n))).dense()
-    assert P.shape == (_cells().size, _cells().size)
-    assert np.max(np.abs(P - np.eye(_cells().size))) <= 1e-12
+@pytest.mark.parametrize("bands", [tuple(range(1, NF)), tuple(range(2, NF - 1))])
+def test_push_of_white_record_bins_is_the_white_cell_covariance(bands):
+    """For ``z = rfft(x)`` of white noise of variance ``sigma2``, ``E[z z^H] = N sigma2 I`` on the
+    bins, and the cells ``W x`` have covariance ``W sigma2 I W^T = sigma2 dt I``: the push
+    ``1/2 Re(C M' C^H)`` takes ``M' = N sigma2 I`` to ``sigma2 dt I`` (spec section 1.4)."""
+    sigma2 = 1.7
+    cells = CellSet.bands(GRID, bands)
+    m = FourierToWDM(_record(), WDMDomain(cells))
+    P = m.push(DenseCov(N * sigma2 * np.eye(m.src.n))).dense()
+    assert P.shape == (cells.size, cells.size)
+    assert np.max(np.abs(P - sigma2 * DT * np.eye(cells.size))) <= 1e-13 * sigma2 * DT
 
 
 def test_after_a_crop_is_the_composition_and_the_cropped_transform():
@@ -138,7 +177,7 @@ def test_after_a_crop_is_the_composition_and_the_cropped_transform():
     # 160-sample record it is the WDM transform of the cropped samples [16, 144)
     got = W.after(crop).apply(Z)
     assert np.max(np.abs(got - Compose(W, crop).apply(Z))) <= 1e-12 * np.max(np.abs(got))
-    ref = np.sqrt(AG.N / (2 * AG.dt)) * TimeToWDM(TimeDomain(AG.N, AG.dt), ACELLS).apply(xr[16:144])
+    ref = TimeToWDM(TimeDomain(AG.N, AG.dt), ACELLS).apply(xr[16:144])
     assert np.max(np.abs(got - ref)) <= 1e-12 * np.max(np.abs(ref))
     # a composite's src is the outer record, not the band window: it cannot be chained
     crop2 = FourierCrop(FourierDomain(192, AG.dt, 0, 97, "rfft"), crop.src, 8)
@@ -154,15 +193,15 @@ def test_after_a_crop_is_the_composition_and_the_cropped_transform():
 
 def test_after_a_zero_pad_is_the_padded_record_transform():
     """With no DC or Nyquist bin in the store, ``A z + B conj z`` is the zero-padded record's
-    rfft, and ``FourierZeroPad.scale = sqrt(N / N')`` keeps the cells in the store record's
-    units: ``W.after(zp)`` is ``sqrt(N / (2 dt))`` times the padded record's WDM cells."""
+    rfft, and ``W.after(zp)`` is the padded record's Wilson coefficients times
+    ``FourierZeroPad.scale = sqrt(N / N')`` (spec section 1.5 removes that scale)."""
     Wp, zp, z, x = _pad_case(np.random.default_rng(1))
     M = Wp.after(zp)
     assert M.src == zp.src and M.window == Wp.window == Wp.src
     got = M.apply(z)
     assert np.max(np.abs(got - Compose(Wp, zp).apply(z))) <= 1e-12 * np.max(np.abs(got))
     xpad = np.concatenate([x, np.zeros(PAD_GRID.N - AG.N)])
-    ref = np.sqrt(AG.N / (2 * AG.dt)) * TimeToWDM(TimeDomain(PAD_GRID.N, AG.dt), Wp.dst).apply(xpad)
+    ref = np.sqrt(AG.N / PAD_GRID.N) * TimeToWDM(TimeDomain(PAD_GRID.N, AG.dt), Wp.dst).apply(xpad)
     assert np.max(np.abs(got - ref)) <= 1e-12 * np.max(np.abs(ref))
 
 
