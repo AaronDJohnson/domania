@@ -25,7 +25,7 @@ def test_time_domain():
 
 
 def test_fourier_domain():
-    d = FourierDomain(64, 0.5, 3, 10, "sigma0")
+    d = FourierDomain(64, 0.5, 3, 10, "sigma0", sigma0=2.0)
     assert np.array_equal(d.bins(), np.arange(3, 13))
     assert np.array_equal(d.frequencies(), np.arange(3, 13) / 32.0)
     assert d.size == 10
@@ -34,6 +34,35 @@ def test_fourier_domain():
         FourierDomain(64, 0.5, 24, 10, "rfft")
     with pytest.raises(ValueError, match="units"):
         FourierDomain(64, 0.5, 0, 10, "hz")
+
+
+def test_fourier_units_carry_sigma0_and_the_rfft_scale():
+    """``rfft_scale`` is ``u`` with ``numpy.fft.rfft(x) = u z`` (spec section 1.1), and
+    ``sigma0`` is part of the domain's identity."""
+    assert FourierDomain(64, 0.5, 0, 33, "sigma0", sigma0=2.0).rfft_scale == 2.0
+    assert FourierDomain(64, 0.5, 0, 33, "rfft").rfft_scale == 1.0
+    assert FourierDomain(64, 0.5, 0, 33, "dt_rfft").rfft_scale == 1 / 0.5
+    assert FourierDomain.full(64, 0.5).rfft_scale == 1 / 0.5
+    x = np.random.default_rng(0).standard_normal(64)
+    R = np.fft.rfft(x)
+    for units, z, kw in (("rfft", R, {}), ("dt_rfft", 0.5 * R, {}),
+                         ("sigma0", R / 2.0, {"sigma0": 2.0})):
+        d = FourierDomain(64, 0.5, 0, 33, units, **kw)
+        np.testing.assert_allclose(d.rfft_scale * z, R, rtol=1e-15, atol=0)
+    for bad in (None, 0.0, -1.0, np.inf, np.nan):
+        with pytest.raises(ValueError, match="sigma0"):
+            FourierDomain(64, 0.5, 0, 33, "sigma0", sigma0=bad)
+    for units in ("rfft", "dt_rfft"):
+        with pytest.raises(ValueError, match="sigma0"):
+            FourierDomain(64, 0.5, 0, 33, units, sigma0=2.0)
+    with pytest.raises(TypeError):
+        FourierDomain(64, 0.5, 0, 33, "sigma0", 2.0)                    # sigma0 is keyword-only
+    a = FourierDomain(64, 0.5, 0, 33, "sigma0", sigma0=2)
+    assert type(a.sigma0) is float and a.sigma0 == 2.0
+    b = FourierDomain(64, 0.5, 0, 33, "sigma0", sigma0=2.0)
+    assert a == b and hash(a) == hash(b)
+    assert a != FourierDomain(64, 0.5, 0, 33, "sigma0", sigma0=3.0)
+    assert FourierDomain(64, 0.5, 0, 33, "rfft").sigma0 is None
 
 
 def test_all_active_is_the_packed_order():

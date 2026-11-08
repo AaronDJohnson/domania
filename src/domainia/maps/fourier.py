@@ -10,7 +10,7 @@ until the Hz window of v0.12.0, S1 Task C6).
 from __future__ import annotations
 
 import operator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import numpy as np
@@ -21,7 +21,7 @@ from domainia.wilson.transform import band_atoms
 from domainia.wilson.windows import Window, sample_window
 
 from ..domains import FourierDomain, WDMDomain
-from .base import _BUILD, LinearMap, _last_axis
+from .base import _BUILD, LinearMap, _last_axis, _require_same_units
 
 __all__ = ["FourierCrop", "FourierToWDM", "FourierZeroPad", "crop_maps", "pad_maps"]
 
@@ -100,8 +100,9 @@ class FourierZeroPad(_WidelyLinear):
     def __post_init__(self) -> None:
         if self.A is _BUILD:
             s, d = self.src, self.dst
-            if d.N <= s.N or d.dt != s.dt or d.units != s.units:
-                raise ValueError("FourierZeroPad needs a longer record on the same dt and units")
+            _require_same_units("FourierZeroPad", s, d)
+            if d.N <= s.N or d.dt != s.dt:
+                raise ValueError("FourierZeroPad needs a longer record on the same dt")
             A, B = pad_maps(s.N, d.N, d.k0 + np.arange(d.n), s.k0 + np.arange(s.n))
             object.__setattr__(self, "A", A)
             object.__setattr__(self, "B", B)
@@ -138,7 +139,8 @@ class FourierCrop(_WidelyLinear):
         object.__setattr__(self, "start", operator.index(self.start))
         if self.A is _BUILD:
             s, d = self.src, self.dst
-            if not (0 <= self.start and self.start + d.N <= s.N) or d.dt != s.dt or d.units != s.units:
+            _require_same_units("FourierCrop", s, d)
+            if not (0 <= self.start and self.start + d.N <= s.N) or d.dt != s.dt:
                 raise ValueError("FourierCrop needs [start, start + dst.N) inside the record")
             A, B = crop_maps(s.N, self.start, d.N, d.k0 + np.arange(d.n), s.k0 + np.arange(s.n))
             object.__setattr__(self, "A", A)
@@ -278,11 +280,12 @@ class FourierToWDM(LinearMap):
         """The band windows' bins ``[g0, g0 + G)`` of the cells' grid record
         (480 / 876 / 1800 for the GB).  The record is ``dst``'s grid, not ``src``'s: the two
         agree for a built map (the constructor checks it), while a map returned by
-        :meth:`after` reads the bins of the outer record.  (These are band-window *bins*.
+        :meth:`after` reads the bins of the outer record.  It is ``dataclasses.replace`` of
+        ``src``, so ``units`` and ``sigma0`` are ``src``'s.  (These are band-window *bins*.
         The Wilson window of the cells is ``dst.window``.)"""
         geo = _geometry(self.dst)
         g = self.dst.cells.grid
-        return FourierDomain(g.N, g.dt, geo["g0"], geo["G"], self.src.units)
+        return replace(self.src, N=g.N, dt=g.dt, k0=geo["g0"], n=geo["G"])
 
     def apply(self, z, be=None):
         be = self._be(z, be)

@@ -24,6 +24,10 @@ class TabulatedSpectrum:
 
     ``values`` is a read-only float64 copy (the caller's array is never aliased), as
     D-A's ``CellSet`` keeps its indices.
+
+    :meth:`on` and :meth:`at` are unit-blind: they read the record (``N``, ``dt``) and the bin
+    range, never ``units`` or ``sigma0``, because a PSD does not depend on the data's Fourier
+    normalisation.
     """
 
     domain: FourierDomain
@@ -48,7 +52,8 @@ class TabulatedSpectrum:
             raise ValueError(f"bins [{lo}, {hi}) are outside the tabulated [{d.k0}, {d.k0 + d.n})")
 
     def on(self, domain: FourierDomain) -> np.ndarray:
-        """``(C, domain.n)``: the values on ``domain``'s bins; raises outside the table."""
+        """``(C, domain.n)``: the values on ``domain``'s bins; raises outside the table.
+        ``domain.units`` and ``domain.sigma0`` are not read (a PSD has no Fourier units)."""
         self._check(domain.N, domain.dt, domain.k0, domain.k0 + domain.n)
         lo = domain.k0 - self.domain.k0
         return self.values[:, lo:lo + domain.n]

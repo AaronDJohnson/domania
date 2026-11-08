@@ -73,6 +73,15 @@ def _last_axis(x: Any, n: int, what: str) -> None:
         raise ValueError(f"{what}: last axis must have length {n}; got shape {np.shape(x)}")
 
 
+def _require_same_units(what: str, src: FourierDomain, dst: FourierDomain) -> None:
+    """Refuse a map between bins in different units: ``(units, sigma0)`` must match, because
+    no map rescales silently."""
+    if (src.units, src.sigma0) != (dst.units, dst.sigma0):
+        raise ValueError(f"{what} keeps the units: src has units={src.units!r}, "
+                         f"sigma0={src.sigma0!r} but dst has units={dst.units!r}, "
+                         f"sigma0={dst.sigma0!r}")
+
+
 def domain_size(dom: Any) -> int:
     """Length of a vector on ``dom``: samples, bins (complex) or cells."""
     if isinstance(dom, TimeDomain):
@@ -400,10 +409,10 @@ class BinSelect(LinearMap):
     def __post_init__(self) -> None:
         if isinstance(self.dst, tuple):
             k0, n = (int(v) for v in self.dst)
-            object.__setattr__(self, "dst", FourierDomain(self.src.N, self.src.dt, k0, n,
-                                                          self.src.units))
+            object.__setattr__(self, "dst", dataclasses.replace(self.src, k0=k0, n=n))
         d, s = self.dst, self.src
-        if (d.N, d.dt, d.units) != (s.N, s.dt, s.units) or d.k0 < s.k0 or d.k0 + d.n > s.k0 + s.n:
+        _require_same_units("BinSelect", s, d)
+        if (d.N, d.dt) != (s.N, s.dt) or d.k0 < s.k0 or d.k0 + d.n > s.k0 + s.n:
             raise ValueError(f"bins [{d.k0}, {d.k0 + d.n}) are not inside [{s.k0}, {s.k0 + s.n})")
 
     @property

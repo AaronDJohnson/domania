@@ -6,8 +6,9 @@ Every domain is a frozen, hashable dataclass, so it can be the static part of a
 * :class:`TimeDomain`: ``N`` samples at spacing ``dt`` from ``t0`` (``t_j = t0 + j dt``).
 * :class:`FourierDomain`: the absolute rfft bins ``[k0, k0 + n)`` of an ``N``-sample
   record, in one of three unit conventions (``"rfft"``: ``numpy.fft.rfft(x)``;
-  ``"dt_rfft"``: ``dt * rfft(x)``; ``"sigma0"``: ``rfft(x) / sigma0``, the GB
-  normalisation).  ``.full(...)``: the full-record domain of :mod:`domainia.translate`.
+  ``"dt_rfft"``: ``dt * rfft(x)``; ``"sigma0"``: ``rfft(x) / sigma0``, with the constant
+  ``sigma0`` stored on the domain).  ``rfft_scale`` is ``u`` with ``rfft(x) = u z``.
+  ``.full(...)``: the full-record domain of :mod:`domainia.translate`.
 * :class:`CellSet`: a set of active WDM cells of one ``wilson.Grid``, always in **band
   order** (``m`` ascending, then ``n``), i.e. a subsequence of
   ``wilson.grid.packed_cells(Nf, Nt)``.
@@ -22,7 +23,7 @@ Every domain is a frozen, hashable dataclass, so it can be the static part of a
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 import numpy as np
@@ -90,13 +91,21 @@ class TimeDomain:
 
 @dataclass(frozen=True)
 class FourierDomain:
-    """The absolute rfft bins ``[k0, k0 + n)`` of an ``N``-sample record at spacing ``dt``."""
+    """The absolute rfft bins ``[k0, k0 + n)`` of an ``N``-sample record at spacing ``dt``.
+
+    A value ``z`` on the domain has the declared ``units``: ``"rfft"`` (``numpy.fft.rfft(x)``),
+    ``"dt_rfft"`` (``dt * rfft(x)``) or ``"sigma0"`` (``rfft(x) / sigma0``).  ``sigma0`` is
+    keyword-only, required (positive and finite) with ``units="sigma0"`` and ``None``
+    otherwise (``ValueError``); it is part of equality and the hash.  Derive one domain from
+    another with ``dataclasses.replace`` so that ``units`` and ``sigma0`` travel with it.
+    """
 
     N: int
     dt: float
     k0: int
     n: int
     units: Literal["rfft", "dt_rfft", "sigma0"]
+    sigma0: float | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
         N = _int("N", self.N, minimum=1)
@@ -106,6 +115,14 @@ class FourierDomain:
             raise ValueError(f"bins [{k0}, {k0 + n}) exceed the {N // 2 + 1} rfft bins of N={N}")
         if self.units not in FOURIER_UNITS:
             raise ValueError(f"units must be one of {FOURIER_UNITS}; got {self.units!r}")
+        if self.units == "sigma0":
+            if self.sigma0 is None:
+                raise ValueError("units='sigma0' needs sigma0, the constant with "
+                                 "rfft(x) = sigma0 * z")
+            object.__setattr__(self, "sigma0", _positive_float("sigma0", self.sigma0))
+        elif self.sigma0 is not None:
+            raise ValueError(f"sigma0 is set only with units='sigma0'; got sigma0={self.sigma0!r} "
+                             f"with units={self.units!r}")
         object.__setattr__(self, "N", N)
         object.__setattr__(self, "k0", k0)
         object.__setattr__(self, "n", n)
@@ -121,6 +138,16 @@ class FourierDomain:
     @property
     def size(self) -> int:
         return self.n
+
+    @property
+    def rfft_scale(self) -> float:
+        """``u`` with ``numpy.fft.rfft(x) = u * z`` for the bins ``z`` of this domain: ``1.0``
+        (``"rfft"``), ``1 / dt`` (``"dt_rfft"``) or ``sigma0`` (``"sigma0"``)."""
+        if self.units == "rfft":
+            return 1.0
+        if self.units == "dt_rfft":
+            return 1.0 / self.dt
+        return self.sigma0  # type: ignore[return-value]
 
     def bins(self) -> IntArray:
         """The absolute rfft bin indices ``k0 + arange(n)``."""

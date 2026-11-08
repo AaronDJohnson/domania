@@ -89,6 +89,16 @@ def test_band_window_bins_feed_the_same_cells():
     np.testing.assert_array_equal(sub.apply(z[win.k0:win.k0 + win.n]), full.apply(z))
 
 
+def test_the_band_window_keeps_the_units_and_sigma0():
+    """``window`` is ``dataclasses.replace`` of ``src``: the bins of the cells' grid record in
+    ``src``'s units, ``sigma0`` included."""
+    src = FourierDomain(N, DT, 0, N // 2 + 1, "sigma0", sigma0=2.5)
+    win = FourierToWDM(src, WDMDomain(_cells())).window
+    assert (win.N, win.dt, win.units, win.sigma0) == (N, DT, "sigma0", 2.5)
+    assert win.k0 > 0 and win.k0 + win.n < N // 2 + 1
+    assert FourierToWDM(win, WDMDomain(_cells())).window == win
+
+
 def test_restrict_truncates_the_atoms_to_a_sub_window():
     full = FourierToWDM(_record(), WDMDomain(_cells()))
     win = full.window

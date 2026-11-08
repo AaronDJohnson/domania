@@ -109,9 +109,14 @@ def test_compose_refuses_mismatched_domains_and_identity_is_neutral():
 
 
 def test_binselect_windows_and_complex_push():
-    store = FourierDomain(4096, 5.0, 100, 60, "sigma0")
+    store = FourierDomain(4096, 5.0, 100, 60, "sigma0", sigma0=3.0)
     S = BinSelect(store, (110, 30))
-    assert S.dst == FourierDomain(4096, 5.0, 110, 30, "sigma0") and S.kind == "complex"
+    assert S.dst == FourierDomain(4096, 5.0, 110, 30, "sigma0", sigma0=3.0) and S.kind == "complex"
+    assert BinSelect(store, S.dst).dst == S.dst
+    for other in (FourierDomain(4096, 5.0, 110, 30, "sigma0", sigma0=4.0),
+                  FourierDomain(4096, 5.0, 110, 30, "rfft")):
+        with pytest.raises(ValueError, match="sigma0"):
+            BinSelect(store, other)
     rng = np.random.default_rng(3)
     z = rng.standard_normal((2, 60)) + 1j * rng.standard_normal((2, 60))
     assert np.array_equal(S.apply(z), z[:, 10:40])

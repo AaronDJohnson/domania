@@ -74,6 +74,19 @@ def test_functions_are_the_oracle_kernels():
     assert np.array_equal(Ac, A2[:, :20]) and np.array_equal(Bc, B2[:, :20])
 
 
+def test_pad_and_crop_keep_the_units_and_sigma0():
+    """No map rescales silently: ``dst`` must have ``src``'s ``(units, sigma0)``."""
+    src = FourierDomain(NS, 1.0, 20, 41, "sigma0", sigma0=2.0)
+    for units, kw in (("rfft", {}), ("sigma0", {"sigma0": 3.0})):
+        with pytest.raises(ValueError, match="sigma0"):
+            FourierZeroPad(src, FourierDomain(320, 1.0, 5, 80, units, **kw))
+        with pytest.raises(ValueError, match="sigma0"):
+            FourierCrop(src, FourierDomain(200, 1.0, 10, 70, units, **kw), 24)
+    pad = FourierZeroPad(src, FourierDomain(320, 1.0, 5, 80, "sigma0", sigma0=2.0))
+    crop = FourierCrop(src, FourierDomain(200, 1.0, 10, 70, "sigma0", sigma0=2.0), 24)
+    assert pad.dst.sigma0 == crop.dst.sigma0 == 2.0
+
+
 @pytest.mark.parametrize("cls", ["pad", "crop"])
 def test_widely_linear_adjoint_and_no_push(cls):
     rng = np.random.default_rng(2)
