@@ -7,9 +7,12 @@ argument, never close over it, and call :meth:`LinearMap.on` once to move its co
 to the device (spec §3.3, the host-constant rule §0.4).
 
 Every constructor builds its constants in host NumPy float64 when they are not given
-(the ``_BUILD`` sentinel); ``jax.tree_util`` rebuilds a map from its leaves without
-recomputing anything.  ``dataclasses.replace`` of a map's domain keeps the constants built
-for the old domain; build a new map instead.
+(the ``_BUILD`` sentinel), and records the fields they derive from in ``built_for`` (static
+meta, left out of the ``repr``).  ``jax.tree_util`` rebuilds a map from its leaves without
+recomputing anything.  Constants given to a constructor (``dataclasses.replace``, ``on``,
+``tree_unflatten``) must come with a ``built_for`` equal to the map's own fields:
+``dataclasses.replace(map, dst=...)`` raises ``ValueError`` instead of reusing constants
+built for the old domain.
 
 Map kinds (what ``apply`` takes and returns; ``adjoint`` is the adjoint for the real
 inner product, ``<z, z'> = Re sum conj(z) z'`` on complex vectors):
@@ -65,6 +68,24 @@ class _Build:
 
 
 _BUILD: Any = _Build()
+
+
+def _built_for(m: Any, key: tuple, *, given: bool) -> None:
+    """The ``built_for`` guard of a map whose constants derive from the fields ``key``.
+
+    Constants about to be built (``given`` false) record ``key``.  Constants given to the
+    constructor -- by ``dataclasses.replace``, :meth:`LinearMap.on`, ``jax.tree_util``
+    unflatten or an internal caller -- must come with the ``built_for`` of the map they were
+    built for, and it must equal ``key``; ``ValueError`` otherwise.  It reads static fields
+    only, so it also runs under ``jax.jit``."""
+    if not given:
+        object.__setattr__(m, "built_for", key)
+    elif m.built_for is None:
+        raise ValueError(f"{type(m).__name__}: constants given without built_for: construct the "
+                         "map from its fields")
+    elif m.built_for != key:
+        raise ValueError(f"{type(m).__name__}: constants built for another src/dst: construct a "
+                         "new map")
 
 
 def _last_axis(x: Any, n: int, what: str) -> None:
@@ -353,7 +374,7 @@ class Compose(LinearMap):
         return PushedCovariance(self, cov)
 
 
-@pytree_dataclass(data=("pos",), meta=("src", "dst"))
+@pytree_dataclass(data=("pos",), meta=("src", "dst", "built_for"))
 @dataclass(frozen=True, eq=False)
 class Restrict(LinearMap):
     """The cells ``dst.cells`` (a subset, in its own order) of a vector on ``src.cells``.
@@ -361,11 +382,14 @@ class Restrict(LinearMap):
     ``src`` and ``dst`` must share the grid and the Wilson window (``ValueError`` naming both
     windows otherwise): a restriction never changes the basis.  These checks read the domains
     only, so they run on every construction, ``pos`` given or not (``on``, ``tree_unflatten``,
-    ``dataclasses.replace``); only the subset positions ``pos`` are built once."""
+    ``dataclasses.replace``); only the subset positions ``pos`` are built once.  The
+    ``built_for`` guard runs after these checks, so a window or grid mismatch keeps its
+    message."""
 
     src: WDMDomain
     dst: WDMDomain
     pos: Any = field(default=_BUILD, kw_only=True)
+    built_for: Any = field(default=None, kw_only=True, repr=False)
 
     def __post_init__(self) -> None:
         if self.src.window != self.dst.window:
@@ -374,6 +398,7 @@ class Restrict(LinearMap):
         if self.src.cells.grid != self.dst.cells.grid:
             raise ValueError(f"dst is not a subset of src: its cells live on another grid "
                              f"({self.dst.cells.grid} vs {self.src.cells.grid})")
+        _built_for(self, (self.src, self.dst), given=self.pos is not _BUILD)
         if self.pos is _BUILD:
             where = {c: i for i, c in enumerate(zip(self.src.cells.m, self.src.cells.n))}
             missing = [c for c in zip(self.dst.cells.m, self.dst.cells.n) if c not in where]

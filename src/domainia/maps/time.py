@@ -19,7 +19,7 @@ from domainia.wilson.backend import pytree_dataclass
 from domainia.wilson.transform import atom_spectrum, base_atom_spectra
 
 from ..domains import FourierDomain, TimeDomain, WDMDomain
-from .base import _BUILD, LinearMap, _last_axis
+from .base import _BUILD, LinearMap, _built_for, _last_axis
 
 __all__ = ["CropTime", "TimeToFourier", "TimeToWDM", "WDMToTime", "ZeroPadTime"]
 
@@ -38,7 +38,7 @@ def _flat(x: Any, N: int) -> tuple[Any, tuple[int, ...]]:
     return x.reshape(-1, N), x.shape[:-1]
 
 
-@pytree_dataclass(data=("m_idx", "n_idx"), meta=("src", "dst"))
+@pytree_dataclass(data=("m_idx", "n_idx"), meta=("src", "dst", "built_for"))
 @dataclass(frozen=True, eq=False)
 class TimeToWDM(LinearMap):
     """``x -> (W x)[cells]``: the WDM transform of a record, cells in ``dst``'s order.
@@ -55,8 +55,10 @@ class TimeToWDM(LinearMap):
     dst: WDMDomain
     m_idx: Any = field(default=_BUILD, kw_only=True)
     n_idx: Any = field(default=_BUILD, kw_only=True)
+    built_for: Any = field(default=None, kw_only=True, repr=False)
 
     def __post_init__(self) -> None:
+        _built_for(self, (self.src, self.dst), given=self.m_idx is not _BUILD)
         if self.m_idx is _BUILD:
             _check_grid(self.src, self.dst)
             object.__setattr__(self, "m_idx", np.asarray(self.dst.cells.m, dtype=np.int64))
@@ -100,7 +102,7 @@ class TimeToWDM(LinearMap):
                                                     base=base), n=g.N) for p in idx])
 
 
-@pytree_dataclass(data=("m_idx", "n_idx"), meta=("src", "dst"))
+@pytree_dataclass(data=("m_idx", "n_idx"), meta=("src", "dst", "built_for"))
 @dataclass(frozen=True, eq=False)
 class WDMToTime(LinearMap):
     """``W^{-1} = W^T / dt`` on a complete cell set: ``wilson.inverse_time_many`` of the
@@ -111,8 +113,10 @@ class WDMToTime(LinearMap):
     dst: TimeDomain
     m_idx: Any = field(default=_BUILD, kw_only=True)
     n_idx: Any = field(default=_BUILD, kw_only=True)
+    built_for: Any = field(default=None, kw_only=True, repr=False)
 
     def __post_init__(self) -> None:
+        _built_for(self, (self.src, self.dst), given=self.m_idx is not _BUILD)
         if self.m_idx is _BUILD:
             g = _check_grid(self.dst, self.src)
             m, n = wilson.grid.packed_cells(g.Nf, g.Nt)
@@ -139,7 +143,8 @@ class WDMToTime(LinearMap):
 
     def adjoint(self, x, be=None):
         be = self._be(x, be)
-        fwd = TimeToWDM(self.dst, self.src, m_idx=self.m_idx, n_idx=self.n_idx)
+        fwd = TimeToWDM(self.dst, self.src, m_idx=self.m_idx, n_idx=self.n_idx,
+                        built_for=(self.dst, self.src))
         return fwd.apply(x, be) / self.grid.dt
 
 
@@ -157,7 +162,7 @@ def _keep_bins(N: int, dt: float, fmin: float) -> tuple[int, int]:
     return int(k[0]), int(k.size)
 
 
-@pytree_dataclass(data=(), meta=("src", "dst", "fmin"))
+@pytree_dataclass(data=(), meta=("src", "dst", "fmin", "built_for"))
 @dataclass(frozen=True, eq=False)
 class TimeToFourier(LinearMap):
     """``x -> rfft(x)[keep]``: the retained complex bins, ``fmin <= f < f_Nyq`` with DC and
@@ -173,10 +178,12 @@ class TimeToFourier(LinearMap):
     src: TimeDomain
     fmin: float = 0.0
     dst: Any = field(default=_BUILD, kw_only=True)
+    built_for: Any = field(default=None, kw_only=True, repr=False)
 
     kind = "analysis"
 
     def __post_init__(self) -> None:
+        _built_for(self, (self.src, self.fmin), given=self.dst is not _BUILD)
         if self.dst is _BUILD:
             k0, n = _keep_bins(self.src.N, self.src.dt, self.fmin)
             object.__setattr__(self, "dst", FourierDomain(self.src.N, self.src.dt, k0, n, "rfft"))

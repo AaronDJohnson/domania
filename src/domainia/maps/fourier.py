@@ -22,7 +22,7 @@ from domainia.wilson.transform import band_atoms
 from domainia.wilson.windows import Window, sample_window
 
 from ..domains import FourierDomain, WDMDomain
-from .base import _BUILD, LinearMap, _last_axis, _require_same_units
+from .base import _BUILD, LinearMap, _built_for, _last_axis, _require_same_units
 
 __all__ = ["FourierCrop", "FourierToWDM", "FourierZeroPad", "crop_maps", "pad_maps"]
 
@@ -99,7 +99,7 @@ class _WidelyLinear(LinearMap):
                         "complex row matrix; use its .A and .B")
 
 
-@pytree_dataclass(data=("A", "B"), meta=("src", "dst"))
+@pytree_dataclass(data=("A", "B"), meta=("src", "dst", "built_for"))
 @dataclass(frozen=True, eq=False)
 class FourierZeroPad(_WidelyLinear):
     """Bins ``dst`` of the record zero-padded from ``src.N`` to ``dst.N`` samples, from the
@@ -111,8 +111,10 @@ class FourierZeroPad(_WidelyLinear):
     dst: FourierDomain
     A: Any = field(default=_BUILD, kw_only=True)
     B: Any = field(default=_BUILD, kw_only=True)
+    built_for: Any = field(default=None, kw_only=True, repr=False)
 
     def __post_init__(self) -> None:
+        _built_for(self, (self.src, self.dst), given=self.A is not _BUILD)
         if self.A is _BUILD:
             s, d = self.src, self.dst
             _require_same_units("FourierZeroPad", s, d)
@@ -133,7 +135,7 @@ class FourierZeroPad(_WidelyLinear):
         return (y @ be.xp.conj(self.A)) + (be.xp.conj(y) @ self.B)
 
 
-@pytree_dataclass(data=("A", "B"), meta=("src", "dst", "start"))
+@pytree_dataclass(data=("A", "B"), meta=("src", "dst", "start", "built_for"))
 @dataclass(frozen=True, eq=False)
 class FourierCrop(_WidelyLinear):
     """Bins ``dst`` of the record cropped to samples ``[start, start + dst.N)``, from the
@@ -147,9 +149,11 @@ class FourierCrop(_WidelyLinear):
     start: int = 0
     A: Any = field(default=_BUILD, kw_only=True)
     B: Any = field(default=_BUILD, kw_only=True)
+    built_for: Any = field(default=None, kw_only=True, repr=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "start", operator.index(self.start))
+        _built_for(self, (self.src, self.dst, self.start), given=self.A is not _BUILD)
         if self.A is _BUILD:
             s, d = self.src, self.dst
             _require_same_units("FourierCrop", s, d)
@@ -235,7 +239,8 @@ def _kappa(src: FourierDomain, g: wilson.Grid) -> float:
     return src.rfft_scale * float(np.sqrt(2.0 * g.dt / g.N))
 
 
-@pytree_dataclass(data=("C",), meta=("src", "dst", "impl", "lo", "width", "restrict"))
+@pytree_dataclass(data=("C",), meta=("src", "dst", "impl", "lo", "width", "restrict",
+                                     "built_for"))
 @dataclass(frozen=True, eq=False)
 class FourierToWDM(LinearMap):
     """Wilson coefficients of interior-band cells from band-limited bins: ``cells = Re(C z)``
@@ -261,8 +266,11 @@ class FourierToWDM(LinearMap):
     lo: int = field(default=_BUILD, kw_only=True)
     width: int = field(default=_BUILD, kw_only=True)
     C: Any = field(default=_BUILD, kw_only=True)
+    built_for: Any = field(default=None, kw_only=True, repr=False)
 
     def __post_init__(self) -> None:
+        _built_for(self, (self.src, self.dst, self.impl, self.restrict),
+                   given=self.C is not _BUILD)
         if self.C is not _BUILD:
             return
         if self.impl not in ("dense", "fft"):
@@ -372,4 +380,5 @@ class FourierToWDM(LinearMap):
         C = _analyse(phase, phi, A[geo["idx"]]).reshape(nb * Nt, -1)
         C = C + np.conj(_analyse(phase, phi, B[geo["idx"]]).reshape(nb * Nt, -1))
         C = _kappa(self.src, g) * C
-        return FourierToWDM(inner.src, self.dst, "dense", lo=0, width=inner.src.n, C=C[geo["sel"]])
+        return FourierToWDM(inner.src, self.dst, "dense", lo=0, width=inner.src.n, C=C[geo["sel"]],
+                            built_for=(inner.src, self.dst, "dense", False))
