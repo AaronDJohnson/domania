@@ -84,7 +84,7 @@ def test_maps_match_direct_transforms():
     assert np.allclose(C.apply(z[j]), np.fft.rfft(x[start:start + Nc])[20:70], rtol=0, atol=1e-13)
 
 
-def test_functions_are_the_oracle_kernels():
+def test_kernels_are_the_map_matrices_and_chunk_exactly():
     """pad_maps/crop_maps take the output and input bins as arrays, so a caller can build the
     rows in chunks."""
     A, B = pad_maps(NS, 320, np.arange(5, 85), np.arange(20, 61))

@@ -70,8 +70,9 @@ class BandAveragedVariance:
         object.__setattr__(self, "window", window)
 
     def on(self, be: Backend) -> "BandAveragedVariance":
-        """The variance for ``be``: it has no array leaves (the PSD runs on the host), so this
-        only checks ``be`` (``require_x64`` for JAX).  ``as_evaluator`` recognises a variance
+        """The variance for ``be``: it has no array leaves (the PSD runs on the host).  On
+        NumPy this returns ``self``; on JAX it calls ``require_x64`` and returns a re-validated
+        copy (``dataclasses.replace`` with no changes).  ``as_evaluator`` recognises a variance
         by this method."""
         return on_backend(self, be, ())
 
@@ -100,8 +101,9 @@ class MidpointVariance:
         object.__setattr__(self, "cells", cells)
 
     def on(self, be: Backend) -> "MidpointVariance":
-        """The variance for ``be``: it has no array leaves (the PSD runs on the host), so this
-        only checks ``be`` (``require_x64`` for JAX).  ``as_evaluator`` recognises a variance
+        """The variance for ``be``: it has no array leaves (the PSD runs on the host).  On
+        NumPy this returns ``self``; on JAX it calls ``require_x64`` and returns a re-validated
+        copy (``dataclasses.replace`` with no changes).  ``as_evaluator`` recognises a variance
         by this method."""
         return on_backend(self, be, ())
 

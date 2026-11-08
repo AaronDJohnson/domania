@@ -15,17 +15,19 @@ Fourier ``X / dt``/``dt R``, WDM ``wilson.inverse_many``/``wilson.forward_many``
 or packed cell sets stay with :mod:`domainia.maps`.
 
 In the real coordinates (time samples; WDM cells; Fourier ``Re X_0``, ``sqrt(2) Re/Im X_k``,
-``Re X_{N/2}``) every domain is the time record scaled by ``exp(log_coordinate_scale(domain))``:
-1 for time, ``sqrt(dt)`` for WDM (any admissible window), ``dt sqrt(N)`` for Fourier.
+and ``Re X_{N/2}`` for even ``N`` only) every domain is the time record scaled by
+``exp(log_coordinate_scale(domain))``: 1 for time, ``sqrt(dt)`` for WDM (any admissible
+window), ``dt sqrt(N)`` for Fourier.
 :func:`to_coordinates` turns a dict into these coordinates, one row per channel, and
 :func:`from_coordinates` turns the rows back into a dict in the canonical layout.
 
 A covariance :class:`Operator` lives on one full-record domain.  :func:`translate_operator`
 gives a :class:`TranslatedOperator` that sees it from another domain lazily: every call
 moves the dicts with :func:`transform` and applies the coordinate Jacobian
-``Delta = log_coordinate_scale(target) - log_coordinate_scale(native)``.  The
-real-coordinate convention (sqrt(2) Re/Im interiors, real endpoints, masks) stays inside
-the native operator.
+``Delta = log_coordinate_scale(target) - log_coordinate_scale(native)``.  It moves dicts
+only: the native operator applies the real-coordinate convention (sqrt(2) Re/Im interiors,
+real endpoints, masks) itself, for example through :func:`to_coordinates` and
+:func:`from_coordinates`.
 """
 
 from __future__ import annotations
@@ -334,8 +336,9 @@ def from_coordinates(R: Any, domain: Domain, channel_names: tuple[str, ...]) -> 
 
     The layout is canonical, exactly: inactive WDM cells are 0 and the Fourier DC bin (and
     the even-``N`` Nyquist bin) are real, so :func:`transform` takes the result back.
-    Raises ``TypeError`` for a masked array, non-numeric values or bad ``channel_names``,
-    and ``ValueError`` for complex or non-finite values, or a shape other than
+    Raises ``TypeError`` for a masked array, non-numeric values, or ``channel_names`` that
+    is not a tuple or list of non-empty strings; ``ValueError`` for duplicate or empty
+    ``channel_names``, complex or non-finite values, or a shape other than
     ``(len(channel_names), N)``; ``domain`` as :func:`to_coordinates`.
     """
     N, _ = _record(domain, "domain")

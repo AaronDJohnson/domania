@@ -22,7 +22,6 @@ from wdm_dev_ev import evolutionary as ev
 
 from domainia.wilson import evolutionary as E
 from domainia.wilson import special
-from domainia.wilson.grid import active_mask
 from domainia.wilson.matrix import active_W
 from domainia.wilson.noise import evolutionary_band_variance
 

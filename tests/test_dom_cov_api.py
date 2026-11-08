@@ -6,6 +6,10 @@
 * Under JAX every factor is a pytree: it flattens, round-trips, and two factors stack
   along a rung axis into one ``vmap``.
 * ``EvolutionaryCovariance`` refuses the arguments it would ignore (fail closed).
+* The removed hooks are absent: ``Covariance.batchable``, ``Covariance.complete_constants``,
+  ``GenericPSD.capabilities`` and the variances' ``t`` leaves.
+* ``as_evaluator`` still takes both variances (``BandAveragedVariance``,
+  ``MidpointVariance``).
 """
 
 from __future__ import annotations
