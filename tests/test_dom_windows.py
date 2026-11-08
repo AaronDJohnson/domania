@@ -378,6 +378,43 @@ def test_band_averaged_variance_uses_its_window():
     assert BandAveragedVariance(psd, CELLS).window is MEYER
 
 
+def test_the_cell_set_consumers_take_a_wdm_domain_and_its_window():
+    """Spec section 2.7: built on a ``WDMDomain`` they use its cells and its window, so a
+    non-Meyer domain cannot fall back to Meyer; ``MidpointVariance`` reads the cells only."""
+    psd, nu = _stationary_psd()
+    cut = CELLS.drop_columns(2, 1)
+    dom = WDMDomain(cut, window=ALT_WINDOW)
+    ev = EvolutionaryCovariance(psd, dom)
+    assert ev.window is ALT_WINDOW and ev.cells == cut
+    np.testing.assert_array_equal(ev.dense(nu), EvolutionaryCovariance(psd, cut, window=ALT_WINDOW).dense(nu))
+    bv = BandAveragedVariance(psd, dom)
+    assert bv.window is ALT_WINDOW and bv.cells == cut
+    np.testing.assert_array_equal(bv(nu), BandAveragedVariance(psd, cut, window=ALT_WINDOW)(nu))
+    mv = MidpointVariance(psd, dom)
+    assert mv.cells == cut
+    np.testing.assert_array_equal(mv(nu), MidpointVariance(psd, cut)(nu))
+    dg = DiagonalCovariance(bv, cut.size)
+    assert dg.window is ALT_WINDOW and dg.cells == cut
+    # the domain's own window passed again (equal, not identical) is accepted
+    assert EvolutionaryCovariance(psd, dom, window=_roundtrip(ALT_WINDOW)).window is ALT_WINDOW
+    assert BandAveragedVariance(psd, dom, window=ALT_WINDOW).window is ALT_WINDOW
+
+
+def test_a_wdm_domain_with_another_explicit_window_is_refused():
+    psd, _ = _stationary_psd()
+    alt = WDMDomain(CELLS, window=ALT_WINDOW)
+    for build in (EvolutionaryCovariance, BandAveragedVariance):
+        with pytest.raises(ValueError, match=r"^window meyer\(d=4\) is not the WDMDomain's window "
+                                             r"wide-smoothstep: pass window=None"):
+            build(psd, alt, window=MEYER)
+        with pytest.raises(ValueError, match=r"window wide-smoothstep is not the WDMDomain's window meyer"):
+            build(psd, WDMDomain(CELLS), window=ALT_WINDOW)
+        with pytest.raises(TypeError, match="Window"):
+            build(psd, alt, window="meyer")
+    assert EvolutionaryCovariance(psd, CELLS, window=None).window is MEYER     # None on a CellSet
+    assert BandAveragedVariance(psd, CELLS, window=None).window is MEYER
+
+
 def test_evolutionary_covariance_stationary_limit_with_another_window():
     psd = GenericPSD(lambda f, t, nu: (1.0 + np.asarray(f, float) ** 2) ** nu[0] + 0.0 * np.asarray(t, float))
     nu = np.array([-1.2])

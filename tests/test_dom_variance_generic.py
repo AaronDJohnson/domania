@@ -70,11 +70,12 @@ def test_only_generic_psds_are_accepted(cls):
 
 
 @pytest.mark.parametrize("cls", [BandAveragedVariance, MidpointVariance])
-@pytest.mark.parametrize("wrong", ["domain", "grid"])
-def test_cells_must_be_a_cell_set(cls, wrong):
-    arg = WDMDomain(CELLS) if wrong == "domain" else GRID
-    with pytest.raises(TypeError, match=r"cells must be a CellSet.*domain\.cells"):
-        cls(PSD, arg)
+def test_cells_must_be_a_cell_set_or_a_wdm_domain(cls):
+    v = cls(PSD, WDMDomain(CUT))
+    assert v.cells == CUT and isinstance(v.cells, CellSet)
+    np.testing.assert_array_equal(v(NU), cls(PSD, CUT)(NU))
+    with pytest.raises(TypeError, match=r"^cells must be a CellSet or a WDMDomain; got Grid$"):
+        cls(PSD, GRID)
 
 
 def test_diagonal_covariance_of_a_variance_carries_its_cells_and_factors():

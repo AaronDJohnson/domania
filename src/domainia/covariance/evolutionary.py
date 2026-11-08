@@ -28,9 +28,9 @@ import numpy as np
 from domainia.wilson.backend import Backend, get_backend
 from domainia.wilson.evolutionary import eq45_blocks_cheb, eq45_coeffs_interp, eq45_direct, eq45_plan
 from domainia.wilson.grid import packed_cells
-from domainia.wilson.windows import MEYER, Window, require_window
+from domainia.wilson.windows import Window
 
-from ..domains import CellSet
+from ..domains import _cells_and_window
 from .base import Covariance
 from .blocktri import BlockTridiagonalCovariance, blocks_to_dense, to_layout
 from .dense import DenseCovariance
@@ -124,7 +124,7 @@ class EvolutionaryCovariance(Covariance):
     psd
         Any callable, elementwise, broadcasting ``psd(f, t, nu)``.
     cells
-        A ``CellSet`` in band order.
+        A ``CellSet`` in band order, or a ``WDMDomain`` (its cells and its window).
     builder
         ``"interp"`` (default) or ``"direct"`` (needs ``assembly="dense"``).
     assembly, layout
@@ -135,21 +135,21 @@ class EvolutionaryCovariance(Covariance):
     P
         Chebyshev order of ``interp`` (24).
     window
-        The Wilson window of the cells' basis (default :data:`MEYER`).
+        The Wilson window of the cells' basis.  ``None`` (default) means the
+        ``WDMDomain``'s window, or :data:`~domainia.wilson.MEYER` for a ``CellSet``; a
+        ``WDMDomain`` with another ``window`` raises ``ValueError``.
     """
 
     def __init__(self, psd: Any, cells: Any, *, builder: Builder = "interp", assembly: str = "blocktri",
                  layout: str | None = None, t_max: float | None = None, P: int = 24,
                  chol_impl: Literal["numpy", "scipy"] = "numpy", symmetrize: bool = True,
-                 window: Window = MEYER) -> None:
+                 window: Window | None = None) -> None:
         if builder not in BUILDERS:
             raise ValueError(f"unknown builder {builder!r}; expected one of {BUILDERS}")
         if not callable(psd):
             raise TypeError(f"builder {builder!r} needs a callable PSD psd(f, t, nu); "
                             f"{type(psd).__name__} is not callable")
-        if not isinstance(cells, CellSet):
-            raise TypeError(f"cells must be a CellSet, got {type(cells).__name__}; for a "
-                            "WDMDomain pass domain.cells")
+        cells, window = _cells_and_window(cells, window)
         if assembly not in ("blocktri", "dense"):
             raise ValueError(f"assembly must be 'blocktri' or 'dense'; got {assembly!r}")
         if builder == "direct" and assembly != "dense":
@@ -159,7 +159,6 @@ class EvolutionaryCovariance(Covariance):
                              "with assembly='dense'")
         if chol_impl not in ("numpy", "scipy"):
             raise ValueError(f"chol_impl must be 'numpy' or 'scipy'; got {chol_impl!r}")
-        require_window(window)
         self.psd, self.cells, self.builder, self.assembly = psd, cells, builder, assembly
         self.n = len(cells.m)
         keep = keep_mask(cells)

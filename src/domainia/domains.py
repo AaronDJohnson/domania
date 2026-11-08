@@ -387,6 +387,31 @@ class WDMDomain:
         return self.cells.size
 
 
+def _cells_and_window(cells: object, window: object = None, *,
+                      default: Window = MEYER) -> tuple[CellSet, Window]:
+    """``(cell set, window)`` for a consumer that takes ``cells`` and ``window=``
+    (``EvolutionaryCovariance``, ``BandAveragedVariance``; ``MidpointVariance`` reads the
+    cells only).
+
+    A :class:`WDMDomain` gives its cells and its window; an explicit ``window`` must equal
+    the domain's (``ValueError`` otherwise).  A :class:`CellSet` takes ``window``, where
+    ``None`` means ``default`` (:data:`MEYER`, the WDM transform).  Any other ``cells``
+    raises ``TypeError``, and so does a ``window`` that is not a Window instance.
+    ``default`` is a parameter, not a name in the body, so the window scan
+    (``tests/wilson/test_window_threading.py``) sees no hard-coded window.
+    """
+    if isinstance(cells, WDMDomain):
+        if window is not None:
+            w = require_window(window)
+            if w != cells.window:
+                raise ValueError(f"window {w.name} is not the WDMDomain's window "
+                                 f"{cells.window.name}: pass window=None to use the domain's")
+        return cells.cells, cells.window
+    if not isinstance(cells, CellSet):
+        raise TypeError(f"cells must be a CellSet or a WDMDomain; got {type(cells).__name__}")
+    return cells, require_window(default if window is None else window)
+
+
 @dataclass(frozen=True)
 class ChannelAxis:
     """Named channels; ``ChannelAxis()`` means one channel and no channel axis."""

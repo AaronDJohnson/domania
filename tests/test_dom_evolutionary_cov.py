@@ -94,12 +94,12 @@ def test_arguments_are_checked():
     assert not EvolutionaryCovariance(PSD, cells).jittable
 
 
-@pytest.mark.parametrize("wrong", ["domain", "grid"])
-def test_cells_must_be_a_cell_set(wrong):
+def test_cells_must_be_a_cell_set_or_a_wdm_domain():
     cells = _cells()
-    arg = WDMDomain(cells) if wrong == "domain" else cells.grid
-    with pytest.raises(TypeError, match=r"cells must be a CellSet.*domain\.cells"):
-        EvolutionaryCovariance(PSD, arg)
+    ev = EvolutionaryCovariance(PSD, WDMDomain(cells))
+    assert ev.cells == cells and isinstance(ev.cells, CellSet)
+    with pytest.raises(TypeError, match=r"^cells must be a CellSet or a WDMDomain; got Grid$"):
+        EvolutionaryCovariance(PSD, cells.grid)
 
 
 def test_keep_mask_selects_the_cells_in_band_order():

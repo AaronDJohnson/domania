@@ -5,8 +5,9 @@
 * :class:`MidpointVariance` (Eq. 39) -- ``0.5 S(f_m, t_n)`` at the band centre
   ``f_m = m dF`` and the cell time ``t_n = n dT``.
 
-``BandAveragedVariance(..., window=)`` averages over that window (default Meyer); the
-midpoint variance is window-free.
+Both take a ``CellSet`` or a ``WDMDomain``.  ``BandAveragedVariance`` averages over the
+window of the cells' basis: the ``WDMDomain``'s window, or ``window=`` (default Meyer) for a
+``CellSet``.  The midpoint variance is window-free.
 
 Both are pytrees (``domainia.wilson.backend.pytree_dataclass``; the window is static
 metadata), but evaluating them calls the PSD on the host, so neither is jittable
@@ -23,9 +24,9 @@ import numpy as np
 
 from domainia import wilson
 from domainia.wilson.backend import Backend, pytree_dataclass
-from domainia.wilson.windows import MEYER, Window, require_window
+from domainia.wilson.windows import Window
 
-from .domains import CellSet
+from .domains import CellSet, _cells_and_window
 from .maps.base import _BUILD, on_backend
 from .spectra import GenericPSD
 
@@ -45,18 +46,15 @@ def _require_generic(psd: Any, what: str) -> None:
                         "domainia.spectra.GenericPSD")
 
 
-def _require_cells(cells: Any) -> None:
-    if not isinstance(cells, CellSet):
-        raise TypeError(f"cells must be a CellSet, got {type(cells).__name__}; for a "
-                        "WDMDomain pass domain.cells")
-
-
 @pytree_dataclass(data=("t",), meta=("psd", "cells", "window"))
 @dataclass(frozen=True, eq=False)
 class BandAveragedVariance:
     """Eq. 36: ``0.5 <S(f, t_n)>`` over the window squared around each cell's band.
 
-    ``window`` is the Wilson window of the cells' basis (default :data:`MEYER`).
+    ``cells`` is a ``CellSet`` or a ``WDMDomain`` (stored as its cells).  ``window`` is the
+    Wilson window of the cells' basis: ``None`` (default) means the ``WDMDomain``'s window,
+    or :data:`~domainia.wilson.MEYER` for a ``CellSet``; a ``WDMDomain`` with another
+    ``window`` raises ``ValueError``.
     """
 
     jittable: ClassVar[bool] = False
@@ -64,15 +62,16 @@ class BandAveragedVariance:
     psd: Any
     cells: CellSet
     t: Any = field(default=_BUILD, kw_only=True)
-    window: Window = field(default=MEYER, kw_only=True)
+    window: Window | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
         if self.t is not _BUILD:
             return
         _require_generic(self.psd, "band-averaged")
-        _require_cells(self.cells)
-        require_window(self.window)
-        object.__setattr__(self, "t", _cell_arrays(self.cells)[2])
+        cells, window = _cells_and_window(self.cells, self.window)
+        object.__setattr__(self, "cells", cells)
+        object.__setattr__(self, "window", window)
+        object.__setattr__(self, "t", _cell_arrays(cells)[2])
 
     def on(self, be: Backend) -> "BandAveragedVariance":
         """The constants moved to ``be``."""
@@ -89,7 +88,8 @@ class BandAveragedVariance:
 @pytree_dataclass(data=("t",), meta=("psd", "cells"))
 @dataclass(frozen=True, eq=False)
 class MidpointVariance:
-    """Eq. 39: ``0.5 S(f_m, t_n)``."""
+    """Eq. 39: ``0.5 S(f_m, t_n)``.  ``cells`` is a ``CellSet`` or a ``WDMDomain`` (stored as
+    its cells; the midpoint variance does not depend on the window)."""
 
     jittable: ClassVar[bool] = False
 
@@ -101,8 +101,9 @@ class MidpointVariance:
         if self.t is not _BUILD:
             return
         _require_generic(self.psd, "midpoint")
-        _require_cells(self.cells)
-        object.__setattr__(self, "t", _cell_arrays(self.cells)[2])
+        cells, _ = _cells_and_window(self.cells)
+        object.__setattr__(self, "cells", cells)
+        object.__setattr__(self, "t", _cell_arrays(cells)[2])
 
     def on(self, be: Backend) -> "MidpointVariance":
         """The constants moved to ``be``."""
