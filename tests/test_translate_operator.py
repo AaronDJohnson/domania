@@ -15,7 +15,9 @@ from domainia.testing import ALT_WINDOW, PointwiseOperator
 from domainia.translate import (
     Operator,
     TranslatedOperator,
+    from_coordinates,
     log_coordinate_scale,
+    to_coordinates,
     transform,
     translate_operator,
 )
@@ -56,12 +58,6 @@ def _close(got, want, rel=1e-10):
 
 # -- independent references: numpy.fft.rfft and wilson.matrix.active_W only, never transform --
 assert N % 2 == 0                                    # the Fourier maps below have a Nyquist bin
-_H = N // 2 - 1                                      # interior rfft bins
-
-
-def _cells(domain):
-    g = domain.cells.grid
-    return wilson.grid.packed_cells(g.Nf, g.Nt)
 
 
 def _coordinates(domain):
@@ -83,33 +79,6 @@ def _maps(domain):
     return M, np.linalg.inv(M)
 
 
-def _pack(domain, a):
-    """Layout -> real coordinates."""
-    a = np.asarray(a)
-    if isinstance(domain, TimeDomain):
-        return a.astype(float)
-    if isinstance(domain, FourierDomain):
-        return np.concatenate([a[:1].real, np.sqrt(2) * a[1:-1].real, np.sqrt(2) * a[1:-1].imag, a[-1:].real])
-    m, n = _cells(domain)
-    return a[m, n]
-
-
-def _unpack(domain, r):
-    """Real coordinates -> the canonical layout (inactive cells exactly 0, end bins exactly real)."""
-    if isinstance(domain, TimeDomain):
-        return np.array(r, dtype=float)
-    if isinstance(domain, FourierDomain):
-        out = np.empty(N // 2 + 1, dtype=complex)
-        out[0], out[-1] = r[0], r[-1]
-        out[1:-1] = (r[1:1 + _H] + 1j * r[1 + _H:-1]) / np.sqrt(2)
-        return out
-    g = domain.cells.grid
-    out = np.zeros((g.Nf + 1, g.Nt))
-    m, n = _cells(domain)
-    out[m, n] = r
-    return out
-
-
 class _DenseOperator:
     """A duck-typed native (no PointwiseOperator): per channel a non-diagonal SPD covariance
     ``U Cr U^T`` on the span of the orthonormal columns ``U`` (``domain``'s real coordinates).
@@ -127,16 +96,21 @@ class _DenseOperator:
         self.degrees_of_freedom = len(self.channel_names) * rank
 
     def _z(self, values):
-        return {k: self.U.T @ _pack(self.domain, values[k]) for k in self.channel_names}
+        R = to_coordinates(values, self.domain, self.channel_names)
+        return {k: self.U.T @ R[i] for i, k in enumerate(self.channel_names)}
+
+    def _out(self, rows):
+        return from_coordinates(np.stack([rows[k] for k in self.channel_names]), self.domain,
+                                self.channel_names)
 
     def apply(self, values):
-        return {k: _unpack(self.domain, self.U @ (self.Cr[k] @ z)) for k, z in self._z(values).items()}
+        return self._out({k: self.U @ (self.Cr[k] @ z) for k, z in self._z(values).items()})
 
     def solve(self, values):
-        return {k: _unpack(self.domain, self.U @ np.linalg.solve(self.Cr[k], z)) for k, z in self._z(values).items()}
+        return self._out({k: self.U @ np.linalg.solve(self.Cr[k], z) for k, z in self._z(values).items()})
 
     def project(self, values):
-        return {k: _unpack(self.domain, self.U @ z) for k, z in self._z(values).items()}
+        return self._out({k: self.U @ z for k, z in self._z(values).items()})
 
     def quadratic_form(self, values):
         return float(sum(z @ np.linalg.solve(self.Cr[k], z) for k, z in self._z(values).items()))
@@ -170,25 +144,31 @@ def _native_covariance(op, k):
     """``(C, rank)``: ``op``'s channel-``k`` covariance in its domain's real coordinates, from
     its definition, and the rank it was built with."""
     if isinstance(op, PointwiseOperator):
-        return np.diag(_pack(op.domain, op.variances[k])), N
+        v = op.variances[k]
+        if isinstance(op.domain, WDMDomain):                 # 1.0 at the inactive cells: not coordinates
+            g = op.domain.cells.grid
+            v = np.where(wilson.active_mask(g.Nf, g.Nt), v, 0.0)
+        return np.diag(to_coordinates({k: v}, op.domain)[0]), N
     return op.U @ op.Cr[k] @ op.U.T, op.U.shape[1]
 
 
 @pytest.mark.parametrize("name", TARGETS)
 def test_the_reference_coordinate_maps(name):
     """The references are built without transform; check them against it once: ``M`` is
-    ``exp(s)`` times an orthogonal matrix, transform is ``M`` in real coordinates, and
-    ``_unpack`` gives a canonical layout that transform takes back."""
+    ``exp(s)`` times an orthogonal matrix, transform is ``M`` in real coordinates
+    (``to_coordinates``), and ``from_coordinates`` gives a canonical layout that transform
+    takes back."""
     d = TARGETS[name]
     M = _maps(d)[0]
     s2 = np.exp(2.0 * log_coordinate_scale(d))
     np.testing.assert_allclose(M @ M.T, s2 * np.eye(N), rtol=0, atol=1e-12 * s2)
     for k, x in X.items():
         r = M @ x
-        np.testing.assert_allclose(_pack(d, _y(d)[k]), r, rtol=0, atol=1e-12 * np.max(np.abs(r)))
-        v = _unpack(d, r)
-        np.testing.assert_allclose(_pack(d, v), r, rtol=0, atol=1e-15 * np.max(np.abs(r)))
-        _close(transform({k: v}, d, TIME), {k: x}, rel=1e-12)
+        np.testing.assert_allclose(to_coordinates({k: _y(d)[k]}, d)[0], r, rtol=0,
+                                   atol=1e-12 * np.max(np.abs(r)))
+        v = from_coordinates(r[None], d, (k,))
+        np.testing.assert_allclose(to_coordinates(v, d)[0], r, rtol=0, atol=1e-15 * np.max(np.abs(r)))
+        _close(transform(v, d, TIME), {k: x}, rel=1e-12)
 
 
 def test_the_operators_satisfy_the_protocol():
@@ -234,22 +214,24 @@ def test_every_method_matches_the_dense_reference(native, target):
     t = translate_operator(op, d)
     S = _maps(d)[0] @ _maps(op.domain)[1]
     y = _y(d)
-    got = {name: getattr(t, name)(y) for name in ("apply", "solve", "project")}
+    names = op.channel_names
+    got = {name: to_coordinates(getattr(t, name)(y), d, names) for name in ("apply", "solve", "project")}
+    Y = to_coordinates(y, d, names)
     rank, logdet, qf = 0, 0.0, 0.0
-    for k in op.channel_names:
+    for i, k in enumerate(names):
         C, built = _native_covariance(op, k)
         C = S @ C @ S.T
         w, V = np.linalg.eigh(0.5 * (C + C.T))
         keep = w > 1e-9 * w.max()
         assert keep.sum() == built                                  # the reference itself
         w, V = w[keep], V[:, keep]
-        r = _pack(d, y[k])
+        r = Y[i]
         want = {"apply": C @ r, "solve": V @ ((V.T @ r) / w), "project": V @ (V.T @ r)}
         for name, v in want.items():
-            np.testing.assert_allclose(_pack(d, got[name][k]), v, rtol=0, atol=1e-10 * np.max(np.abs(v)),
+            np.testing.assert_allclose(got[name][i], v, rtol=0, atol=1e-10 * np.max(np.abs(v)),
                                        err_msg=f"{name}[{k}]")
         if built < N:
-            assert not np.allclose(got["project"][k], y[k])        # the projection is not vacuous
+            assert not np.allclose(got["project"][i], r)           # the projection is not vacuous
         rank += built
         logdet += float(np.sum(np.log(w)))
         qf += float(r @ want["solve"])
@@ -288,10 +270,10 @@ class _ChannelCorrelated:
                          [np.diag(B[:, 1, 0]), np.diag(B[:, 1, 1])]])
 
     def _z(self, values):
-        return np.stack([_pack(self.domain, values[k]) for k in self.channel_names], -1)
+        return to_coordinates(values, self.domain, self.channel_names).T
 
     def _out(self, Z):
-        return {k: _unpack(self.domain, Z[:, i]) for i, k in enumerate(self.channel_names)}
+        return from_coordinates(Z.T, self.domain, self.channel_names)
 
     def _spectral(self, values, f):
         coef = np.einsum("nij,ni->nj", self._V, self._z(values))           # V^T z per coordinate
@@ -339,11 +321,10 @@ def test_an_operator_that_correlates_its_channels_matches_the_stacked_dense_refe
     w, V = w[keep], V[:, keep]
     assert keep.sum() == op.degrees_of_freedom == (2 * N if native == "full-rank" else 2 * N - 8)
     y = _y(d)
-    r = np.concatenate([_pack(d, y["A"]), _pack(d, y["E"])])
+    r = to_coordinates(y, d, ("A", "E")).reshape(-1)
     want = {"apply": C @ r, "solve": V @ ((V.T @ r) / w), "project": V @ (V.T @ r)}
     for name, v in want.items():
-        out = getattr(t, name)(y)
-        got = np.concatenate([_pack(d, out["A"]), _pack(d, out["E"])])
+        got = to_coordinates(getattr(t, name)(y), d, ("A", "E")).reshape(-1)
         np.testing.assert_allclose(got, v, rtol=0, atol=1e-10 * np.max(np.abs(v)), err_msg=name)
     assert t.degrees_of_freedom == keep.sum()
     assert t.log_determinant() == pytest.approx(float(np.sum(np.log(w))), rel=1e-10, abs=1e-9)

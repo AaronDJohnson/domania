@@ -17,6 +17,8 @@ or packed cell sets stay with :mod:`domainia.maps`.
 In the real coordinates (time samples; WDM cells; Fourier ``Re X_0``, ``sqrt(2) Re/Im X_k``,
 ``Re X_{N/2}``) every domain is the time record scaled by ``exp(log_coordinate_scale(domain))``:
 1 for time, ``sqrt(dt)`` for WDM (any admissible window), ``dt sqrt(N)`` for Fourier.
+:func:`to_coordinates` turns a dict into these coordinates, one row per channel, and
+:func:`from_coordinates` turns the rows back into a dict in the canonical layout.
 
 A covariance :class:`Operator` lives on one full-record domain.  :func:`translate_operator`
 gives a :class:`TranslatedOperator` that sees it from another domain lazily: every call
@@ -36,7 +38,7 @@ from typing import Any, Protocol, runtime_checkable
 import numpy as np
 
 from domainia import wilson
-from domainia.domains import FourierDomain, TimeDomain, WDMDomain
+from domainia.domains import ChannelAxis, FourierDomain, TimeDomain, WDMDomain
 
 __all__ = ["Domain", "Operator", "TranslatedOperator", "log_coordinate_scale", "transform",
            "translate_operator"]
@@ -90,6 +92,12 @@ def _shape(domain: Domain) -> tuple[int, ...]:
 def _active(domain: WDMDomain) -> np.ndarray:
     g = domain.cells.grid
     return wilson.active_mask(g.Nf, g.Nt)
+
+
+def _packed(domain: WDMDomain) -> tuple[np.ndarray, np.ndarray]:
+    """``(m, n)`` of every active cell in ``wilson.grid.packed_cells`` order."""
+    g = domain.cells.grid
+    return wilson.grid.packed_cells(g.Nf, g.Nt)
 
 
 def _relative(value: float, a: np.ndarray) -> str:
@@ -243,6 +251,108 @@ def log_coordinate_scale(domain: Domain) -> float:
     if isinstance(domain, WDMDomain):
         return 0.5 * math.log(dt)
     return math.log(dt) + 0.5 * math.log(N)
+
+
+def _channel_names(channel_names: Any) -> tuple[str, ...]:
+    """``channel_names`` as a tuple, by the :class:`~domainia.domains.ChannelAxis` rules
+    (non-empty strings, ``TypeError``; unique, ``ValueError``), and at least one name."""
+    if isinstance(channel_names, str) or not isinstance(channel_names, (tuple, list)):
+        raise TypeError(f"channel_names must be a tuple of channel names; got "
+                        f"{type(channel_names).__name__}")
+    names = ChannelAxis(tuple(channel_names)).names
+    if not names:
+        raise ValueError("channel_names is empty: name at least one channel")
+    return names
+
+
+def _real_coordinates(X: np.ndarray, domain: Domain) -> np.ndarray:
+    """``(K, N)``: the real coordinates of the validated ``(K, *shape)`` stack ``X``."""
+    if isinstance(domain, TimeDomain):
+        return X
+    if isinstance(domain, FourierDomain):
+        h = (domain.N - 1) // 2
+        root2 = np.sqrt(2.0)
+        parts = [X[:, :1].real, root2 * X[:, 1:h + 1].real, root2 * X[:, 1:h + 1].imag]
+        if domain.N % 2 == 0:
+            parts.append(X[:, -1:].real)
+        return np.concatenate(parts, axis=1)
+    m, n = _packed(domain)
+    return X[:, m, n]
+
+
+def _canonical_layout(R: np.ndarray, domain: Domain) -> np.ndarray:
+    """``(K, *shape)``: the canonical layout of the ``(K, N)`` float64 coordinates ``R``."""
+    K = R.shape[0]
+    if isinstance(domain, TimeDomain):
+        return R.copy()
+    if isinstance(domain, FourierDomain):
+        N = domain.N
+        h = (N - 1) // 2
+        out = np.zeros((K, N // 2 + 1), dtype=np.complex128)
+        out[:, 0] = R[:, 0]
+        out[:, 1:h + 1] = (R[:, 1:h + 1] + 1j * R[:, h + 1:2 * h + 1]) / np.sqrt(2.0)
+        if N % 2 == 0:
+            out[:, -1] = R[:, -1]
+        return out
+    g = domain.cells.grid
+    out = np.zeros((K, g.Nf + 1, g.Nt))
+    m, n = _packed(domain)
+    out[:, m, n] = R
+    return out
+
+
+def to_coordinates(channel_data: Mapping[str, Any], domain: Domain,
+                   channel_names: tuple[str, ...] | None = None) -> np.ndarray:
+    """``(K, N)`` float64: row ``i`` is channel ``i``'s real coordinates on ``domain``.
+
+    The coordinates (module docstring): the time samples; the WDM active cells in
+    ``wilson.grid.packed_cells`` order (the order of ``CellSet.all_active``); and, for
+    Fourier with ``X = dt numpy.fft.rfft(x)`` and ``h = (N - 1) // 2``,
+    ``[Re X_0, sqrt(2) Re X_1 .. sqrt(2) Re X_h, sqrt(2) Im X_1 .. sqrt(2) Im X_h]``, then
+    ``Re X_{N/2}`` for even ``N`` only.
+
+    The rows follow ``channel_names`` when it is given, whatever order the dict was built
+    in, and the dict's channels must then be exactly those names (``ValueError``
+    otherwise); without it they follow the dict's order.  ``channel_data`` is validated
+    exactly as :func:`transform` validates its input, with the same errors; ``domain``
+    must be a full-record domain (``TypeError`` for a non-domain, ``ValueError`` for a
+    partial one, as :func:`log_coordinate_scale`).
+    """
+    _record(domain, "domain")
+    want = None if channel_names is None else _channel_names(channel_names)
+    names, X = _stack(channel_data, domain)
+    if want is not None:
+        if set(names) != set(want):
+            raise ValueError(f"channel_data has channels {names}; channel_names are {want}")
+        X = X[[names.index(k) for k in want]]
+    return _real_coordinates(X, domain)
+
+
+def from_coordinates(R: Any, domain: Domain, channel_names: tuple[str, ...]) -> dict[str, np.ndarray]:
+    """The ``(K, N)`` real coordinates ``R`` (:func:`to_coordinates`) as a
+    ``{channel: array}`` dict on ``domain``, in ``channel_names`` order.
+
+    The layout is canonical, exactly: inactive WDM cells are 0 and the Fourier DC bin (and
+    the even-``N`` Nyquist bin) are real, so :func:`transform` takes the result back.
+    Raises ``TypeError`` for a masked array, non-numeric values or bad ``channel_names``,
+    and ``ValueError`` for complex or non-finite values, or a shape other than
+    ``(len(channel_names), N)``; ``domain`` as :func:`to_coordinates`.
+    """
+    N, _ = _record(domain, "domain")
+    names = _channel_names(channel_names)
+    if isinstance(R, np.ma.MaskedArray):
+        raise TypeError("R: masked arrays are refused (numpy.asarray drops the mask)")
+    a = np.asarray(R)
+    if a.dtype.kind not in "iufc":
+        raise TypeError(f"R must hold real coordinates; got dtype {a.dtype}")
+    if a.dtype.kind == "c":
+        raise ValueError("R must hold real coordinates; got complex values")
+    if a.shape != (len(names), N):
+        raise ValueError(f"R has shape {a.shape}; {len(names)} channel(s) on this "
+                         f"{type(domain).__name__} need shape ({len(names)}, {N})")
+    wilson.validate_finite(a, "R")
+    out = _canonical_layout(a.astype(np.float64), domain)
+    return {name: out[i].copy() for i, name in enumerate(names)}
 
 
 @runtime_checkable
