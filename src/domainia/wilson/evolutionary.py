@@ -54,6 +54,7 @@ from numpy.typing import NDArray
 
 from .backend import NUMPY, Backend, get_backend, pytree_dataclass
 from .grid import (
+    _require_int,
     active_mask,
     delta_T,
     endpoint_weights,
@@ -446,10 +447,22 @@ def eq45_plan(Nf: int, Nt: int, dt: float, keep: BoolArray | None = None, *,
     window : Window, optional
         The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
         See :mod:`domainia.wilson.windows`.
+
+    Raises
+    ------
+    TypeError
+        If ``Nf``, ``Nt`` or ``P`` is not an integer (``bool`` included), ``dt`` is not a
+        real number, or ``keep`` is not a boolean mask.
+    ValueError
+        If the grid or ``dt`` is invalid, ``P < 1``, ``keep`` has the wrong shape, or a
+        kept pair mid-time lies outside ``[0, t_max]``.
     """
     validate_grid(Nf, Nt)
     validate_dt(dt)
-    Nf, Nt, dt, P = int(Nf), int(Nt), float(dt), int(P)
+    P = _require_int("P", P)
+    if P < 1:
+        raise ValueError(f"P must be >= 1, got {P}")
+    Nf, Nt, dt = int(Nf), int(Nt), float(dt)
     N = Nf * Nt
     T = N * dt
     mask = active_mask(Nf, Nt)

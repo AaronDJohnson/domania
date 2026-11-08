@@ -46,6 +46,7 @@ from numpy.typing import NDArray
 
 from .grid import (
     _require_even_positive_int,
+    _require_int,
     active_mask,
     n_samples,
     sanitize_psd,
@@ -212,6 +213,13 @@ def build_C_time(N: int, dt: float, Sn_func: PsdFunc) -> Array:
     ndarray, shape (N, N)
         Real symmetric Toeplitz covariance matrix.
 
+    Raises
+    ------
+    TypeError
+        If ``N`` is not an integer (``bool`` included), or ``dt`` is not a real number.
+    ValueError
+        If ``N`` is not positive and even, or ``dt`` is not positive and finite.
+
     Examples
     --------
     >>> import numpy as np; from domainia import wilson as wdm
@@ -220,7 +228,8 @@ def build_C_time(N: int, dt: float, Sn_func: PsdFunc) -> Array:
     ((32, 32), True)
     """
     validate_dt(dt)
-    if int(N) <= 0 or int(N) % 2 != 0:
+    N = _require_int("N", N)
+    if N <= 0 or N % 2 != 0:
         raise ValueError(f"N must be a positive even integer, got {N}")
     freqs = np.fft.rfftfreq(N, d=dt)
     # Force double. `sanitize_psd` preserves single precision so that a

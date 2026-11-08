@@ -87,3 +87,27 @@ def test_nu_d_splits_the_kind_and_range_checks():
     assert nu_d(x, d=np.int64(4)).item() == 0.5
     with pytest.raises(TypeError, match="d must be an integer, got float"):
         phi_centered(8, 16, 1.0, d=2.5)
+
+
+@pytest.mark.parametrize("N", [8.0, True])
+def test_build_C_time_N_of_the_wrong_kind_raises_type_error(N):
+    with pytest.raises(TypeError, match="N must be an integer"):
+        wilson.matrix.build_C_time(N, 1.0, lambda f: np.ones_like(f))
+
+
+def test_build_C_time_range_and_numpy_int():
+    with pytest.raises(ValueError, match="N must be a positive even integer, got 5"):
+        wilson.matrix.build_C_time(5, 1.0, lambda f: np.ones_like(f))
+    assert wilson.matrix.build_C_time(np.int64(8), 1.0, lambda f: np.ones_like(f)).shape == (8, 8)
+
+
+@pytest.mark.parametrize("P", [2.7, True])
+def test_eq45_plan_P_of_the_wrong_kind_raises_type_error(P):
+    with pytest.raises(TypeError, match="P must be an integer"):
+        wilson.evolutionary.eq45_plan(8, 16, 1.0, P=P)
+
+
+def test_eq45_plan_P_range_and_numpy_int():
+    with pytest.raises(ValueError, match="P must be >= 1, got 0"):
+        wilson.evolutionary.eq45_plan(8, 16, 1.0, P=0)
+    assert wilson.evolutionary.eq45_plan(8, 16, 1.0, P=np.int64(4)).P == 4
