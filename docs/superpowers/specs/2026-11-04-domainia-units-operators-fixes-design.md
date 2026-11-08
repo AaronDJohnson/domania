@@ -410,17 +410,6 @@ presents it as an `Operator`.
     including the pseudo-determinant for a partial support.
 * `PushedCovariance._matvec`'s error message names `CovarianceOperator` as the route.
 
-### 2.8 Package surface for §2
-
-* `domainia.translate.__all__` gains `to_coordinates` and `from_coordinates`.
-* The new module `domainia.operators` has
-  `__all__ = ["CovarianceOperator", "DenseOperator", "operator_matrix"]`.
-* `domainia.__all__` gains the module `operators` and those five names, following how it
-  already re-exports `translate`'s names. `tests/test_package.py` pins `PUBLIC` exactly
-  and is updated with them.
-* `operators.py` joins `SCANNED` in `tests/wilson/test_window_threading.py`, or
-  `test_the_scan_covers_every_module_but_filter_and_windows` fails.
-
 ### 2.7 Taking the window from a `WDMDomain`
 
 * `EvolutionaryCovariance`, `BandAveragedVariance` and `MidpointVariance` accept a
@@ -434,6 +423,22 @@ presents it as an `Operator`.
 * The `WDMDomain` form is for callers. Call sites in `src/` keep passing `window=`
   explicitly, so the window scan in `tests/wilson/test_window_threading.py`, which flags a
   consumer call without `window=`, stays as it is.
+
+### 2.8 Package surface for §2
+
+* `domainia.translate.__all__` gains `to_coordinates` and `from_coordinates`.
+* The new module `domainia.operators` has
+  `__all__ = ["CovarianceOperator", "DenseOperator", "operator_matrix"]`.
+* `domainia.__all__` gains the module `operators` and those five names, following how it
+  already re-exports `translate`'s names. `tests/test_package.py` pins `PUBLIC` exactly
+  and is updated with them.
+* `import domainia` still does not import `domainia.covariance`, as the package docstring
+  says (`src/domainia/__init__.py:25-27`). `domainia.operators` imports
+  `domainia.covariance` lazily, inside `CovarianceOperator`'s constructor, where its
+  `isinstance` checks need it. A test asserts that a fresh `import domainia` leaves
+  `domainia.covariance` out of `sys.modules`.
+* `operators.py` joins `SCANNED` in `tests/wilson/test_window_threading.py`, or
+  `test_the_scan_covers_every_module_but_filter_and_windows` fails.
 
 ## 3. Single precision throughout
 
@@ -455,8 +460,9 @@ presents it as an `Operator`.
   | `forward_bands`                     | c64 → f32      | **f64**, c128 FFTs                         |
   | `inverse_bands`                     | f32 → c64      | **c128**, c128 FFTs                        |
 
-* For the forward family the change is the post-FFT product only (`transform.py:425`,
-  `:431`).
+* For the forward family the FFTs are already single precision. The change is the
+  post-FFT products (`transform.py:425`, `:431`) and the edge-band divides by `np.sqrt(2)`
+  (`:437-438`), which are float64 in a float32 run today.
 
 * **Tests:**
   * A recording backend wraps the NumPy backend's `fft` namespace and asserts that every
@@ -543,17 +549,23 @@ item itself is not a reader: it is removed with the item.
 * the `Covariance.complete_constants` hook, if no subclass overrides it;
 * `GenericPSD.capabilities` (`spectra.py:79`). Its only reader is the pin at
   `tests/test_dom_spectra.py:37`, which goes with it;
-* `BandAveragedVariance.t` and `MidpointVariance.t`, unused pytree data leaves.
-  `BandAveragedVariance.on()` stays: `as_evaluator` (`covariance/base.py:153`) recognises
-  the variance classes by `hasattr(obj, "on")`;
+* `BandAveragedVariance.t` and `MidpointVariance.t`, unused pytree data leaves. Both
+  classes' `on()` methods stay: `as_evaluator` (`covariance/base.py:153`) recognises the
+  variance classes by `hasattr(obj, "on")`;
+* `covariance.evolutionary.keep_mask` (`evolutionary.py:44`), replaced by
+  `CellSet.keep_mask()`. Its extra checks (active cells, band order) are already
+  guaranteed by `CellSet.__post_init__` (`domains.py:192-197`), and
+  `EvolutionaryCovariance` only reaches it after `isinstance(cells, CellSet)`
+  (`evolutionary.py:150-152`). Spec review found the two equal on 8 cell sets over two
+  grids.
+  * `evolutionary.py:165` calls `cells.keep_mask()`.
+  * The name leaves `covariance.evolutionary.__all__` and `covariance/__init__.py`.
+  * Its pins go with it: the `"keep_mask"` entry of the export table at
+    `tests/test_dom_cov_api.py:28`, and the import at `tests/test_dom_evolutionary_cov.py:10`
+    with its test at `:105`. `CellSet.keep_mask()` stays covered by
+    `tests/test_dom_domains.py:44` and `:84-85`;
 * `_oracle_paths`, duplicated in `tests/wilson/test_evolutionary_kernels.py:44` and
   `test_grid_bands.py:46`: move it to `tests/wilson/conftest.py`.
-
-**Kept:** `covariance.evolutionary.keep_mask` (`evolutionary.py:44`). It is not a
-duplicate of `CellSet.keep_mask()`: it also raises unless the cells are active and in band
-order, which `EvolutionaryCovariance` relies on (`evolutionary.py:165`), and it has readers
-in `covariance/__init__.py`, `tests/test_dom_cov_api.py:28` and
-`tests/test_dom_evolutionary_cov.py:10`, `:105`.
 
 ## 7. Text sweep (last task)
 
