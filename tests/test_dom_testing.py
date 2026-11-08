@@ -11,7 +11,8 @@ from domainia.wilson.evolutionary import (eq45_blocks_cheb, eq45_coeffs_bessel, 
 from domainia import testing as T
 from domainia.domains import CellSet
 
-# The WT test_matrix.py configuration: 8 x 16 cells, dt = 1/16, f_min = 0.5, f_ref = 1.
+# The WDM Paper II toy models' test configuration: 8 x 16 cells, dt = 1/16, f_min = 0.5,
+# f_ref = 1.
 NF, NT, DT = 8, 16, 1.0 / 16
 N = NF * NT
 F_MIN, F_REF = 0.5, 1.0
@@ -52,14 +53,14 @@ def test_congruence_is_the_exact_covariance():
 
 @pytest.mark.parametrize("ac", [-2.0, -0.7])
 def test_eq45_is_exact_for_stationary_noise(ac):
-    """WT test_matrix.py::test_eq45_is_exact_for_stationary_noise."""
+    """Ported from the toy models' test of the same name."""
     C = T.eq45_dense(CellSet.all_active(GRID), drift(ac, 0.0))
     assert rel(C, exact_covariance(NF, NT, DT, drift(ac, 0.0))) < 1e-10
 
 
 def test_eq45_differs_from_exact_at_second_order_with_drift():
-    """WT test_matrix.py::test_eq45_differs_from_exact_at_second_order_with_drift (the
-    test's small edges: 3 leading and 1 trailing column)."""
+    """Ported from the toy models' test of the same name (the test's small edges: 3
+    leading and 1 trailing column)."""
     cells = CellSet.all_active(GRID)
     C = T.eq45_dense(cells, drift(-2.0, 1.2))
     exact = exact_covariance(NF, NT, DT, drift(-2.0, 1.2))
@@ -70,9 +71,9 @@ def test_eq45_differs_from_exact_at_second_order_with_drift():
 
 @pytest.mark.parametrize("cut", [None, (3, 1)])
 def test_blocktri_dense_of_the_fast_blocks_is_the_direct_sum(cut):
-    """Adapted from WT test_matrix.py::test_fast_blocks_equal_the_direct_sum (here the 8 x 16
-    grid and one noise point, through blocktri_dense; WT used its 8 x 64 WIDE grid and three
-    points).  The padded-grid case is S1's packages/wdm/tests/test_evolutionary_kernels.py::
+    """Adapted from the toy models' test_fast_blocks_equal_the_direct_sum (here the 8 x 16
+    grid and one noise point, through blocktri_dense; the toy models used an 8 x 64 grid and
+    three points).  The padded-grid case is S1's packages/wdm/tests/test_evolutionary_kernels.py::
     test_bessel_blocks_match_the_direct_sum_and_gram."""
     cells = CellSet.all_active(GRID)
     if cut:

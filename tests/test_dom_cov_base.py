@@ -60,8 +60,8 @@ def test_chol_factor_is_the_dense_gaussian(backend, rng, impl):
 
 
 def test_symmetrize_selects_the_oracle_matrix(rng):
-    """``symmetrize=False`` factorises S's lower triangle (WT cho_factor);
-    ``symmetrize=True`` factorises 0.5 (S + S^T) (GB)."""
+    """``symmetrize=False`` factorises S's lower triangle (``cho_factor``);
+    ``symmetrize=True`` factorises 0.5 (S + S^T)."""
     S = _spd(rng, 8)
     junk = S + 0.1 * np.triu(rng.standard_normal((8, 8)), 1)      # upper triangle perturbed (|.| << 1: PD)
     low = np.tril(junk) + np.tril(junk, -1).T

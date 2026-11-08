@@ -1,17 +1,17 @@
 """Array kernels of the WDM Paper II factorisations.
 
-Every routine is a line-for-line port of one oracle code path and keeps that oracle's
+Every routine is a line-for-line port of one code path of the WDM Paper II toy models,
+their GPU port or the galactic-binary toy model (none of them ships), and keeps that code's
 library call at each call site.  The Cholesky implementation
 is pinned per site through ``Backend.cholesky(A, impl=...)``:
 
-==========================  ==========  ===============================================
-routine                     ``impl``    oracle
-==========================  ==========  ===============================================
-:func:`blocktri_factor`     ``numpy``   WT ``matrix.BlockTri`` (ragged), WG ``_btri_factor``
-                                        (padded)
-:func:`cblock_factor`       ``numpy``   GB ``fullcache.block_factor`` (12-month exact)
-:func:`pcg`                 --          WT ``fastcov.pcg``, WG ``BandFullCovarianceGPU._solve``
-==========================  ==========  ===============================================
+==========================  ==========  ===================================================
+routine                     ``impl``    ported from
+==========================  ==========  ===================================================
+:func:`blocktri_factor`     ``numpy``   WDM Paper II toy models (ragged); GPU port (padded)
+:func:`cblock_factor`       ``numpy``   galactic-binary toy model (12-month exact)
+:func:`pcg`                 --          WDM Paper II toy models; GPU port
+==========================  ==========  ===================================================
 
 **One factor family.**  The factor objects with methods -- diagonal and
 dense Cholesky (``domainia.covariance.base.DiagFactor`` / ``CholFactor``) and the
@@ -21,16 +21,16 @@ in ``domainia.covariance``; this module keeps the array kernels they call.
 Layouts of a block-tridiagonal matrix:
 
 * ``"ragged"``: Python lists of per-band blocks, a host loop.  Runs eagerly on either
-  backend (never under ``jit``); the NumPy golden default, bitwise WT.
+  backend (never under ``jit``); the NumPy golden default, bitwise the ported code.
 * ``"padded"``: ``(nb, B, B)`` arrays with identity dummy slots (:class:`BandLayout`),
-  a ``be.scan`` over the bands; jit/vmap-able, the JAX default (WG).
+  a ``be.scan`` over the bands; jit/vmap-able, the JAX default.
 
 Factors are pytrees (:func:`wilson.backend.pytree_dataclass`): they stack along a rung
 axis and pass through ``jax.jit``/``vmap``.  A factor whose Cholesky failed carries
 ``ok = False`` (NaN entries on the padded layout, a truncated factor on the ragged
 one); callers map that to ``-inf``.  The JAX Cholesky
-reads the lower triangle only (``symmetrize_input=False``, see ``wilson.backend``); WG
-called ``jnp.linalg.cholesky`` with JAX's default, which differs by <= 7.4e-14 relative
+reads the lower triangle only (``symmetrize_input=False``, see ``wilson.backend``); the GPU
+port called ``jnp.linalg.cholesky`` with JAX's default, which differs by <= 7.4e-14 relative
 on inputs that are not bitwise symmetric (JAX is never claimed bitwise).
 
 Constants (:class:`BandLayout` and its index arrays) are host NumPy
@@ -90,10 +90,10 @@ def _logdet_from_chol(xp: Any, L: Any) -> Any:
 class BandLayout:
     """Band-major positions ``0..n-1`` laid out as ``(nb, B)`` slots with dummies.
 
-    WG ``_BandLayout`` for a vector whose
-    bands are contiguous: ``valid[m, i]`` marks real slots, ``src[m, i]`` is the
-    position read into slot ``(m, i)`` (0 for a dummy) and ``back[p]`` the flat slot
-    of position ``p``.  Host NumPy constants: pass the layout to ``jit`` as an argument.
+    For a vector whose bands are contiguous: ``valid[m, i]`` marks real slots,
+    ``src[m, i]`` is the position read into slot ``(m, i)`` (0 for a dummy) and ``back[p]``
+    the flat slot of position ``p``.  Host NumPy constants: pass the layout to ``jit`` as an
+    argument.
     """
 
     nb: int
@@ -131,19 +131,19 @@ class BandLayout:
         return tuple(int(s) for s in np.asarray(self.valid).sum(axis=1))
 
     def pack(self, b: Any, *, be: Backend | None = None) -> Any:
-        """``(n, k) -> (nb, B, k)`` with zero dummies (WG ``_BandLayout.pack``)."""
+        """``(n, k) -> (nb, B, k)`` with zero dummies."""
         be = _be(be, b, self.src)
         xp = be.xp
         g = be.asarray(b)[be.asarray(self.src)]
         return xp.where(be.asarray(self.valid)[..., None], g, 0.0)
 
     def unpack(self, x: Any, *, be: Backend | None = None) -> Any:
-        """``(nb, B, k) -> (n, k)`` (WG ``_BandLayout.unpack``)."""
+        """``(nb, B, k) -> (n, k)``, dropping the dummies."""
         be = _be(be, x, self.back)
         return be.asarray(x).reshape(self.nb * self.B, -1)[be.asarray(self.back)]
 
     def add_identity_dummies(self, diag: Any, *, be: Backend | None = None) -> Any:
-        """``diag + diag(1 on dummy slots)`` per band: WG ``_tri_factor``
+        """``diag + diag(1 on dummy slots)`` per band, in the ported order
         (``diag + vmap(jnp.diag)(where(valid, 0, 1))``)."""
         be = _be(be, diag, self.valid)
         xp = be.xp
@@ -197,7 +197,7 @@ class BlockTriFactor:
 
 
 def _ragged_factor(diag: Sequence[Any], up: Sequence[Any | None], be: Backend) -> BlockTriFactor:
-    # WT BlockTri.__init__, line for line.
+    # Ported line for line: keep the operation order (it fixes the float64 bits).
     xp = be.xp
     Ls: list[Any] = []
     Xs: list[Any] = []
@@ -218,13 +218,13 @@ def _ragged_factor(diag: Sequence[Any], up: Sequence[Any | None], be: Backend) -
             L = A
         Ls.append(L)
         prev = L
-    # WT BlockTri.logdet: Python sum of per-block float sums.
+    # A Python sum of per-block float sums (the ported order).
     logdet = 2.0 * sum(float(xp.sum(xp.log(xp.diagonal(L)))) for L in Ls if L.size)
     return BlockTriFactor(tuple(Ls), tuple(Xs), logdet, True, None, "ragged")
 
 
 def _padded_layout_factor(diag: Any, up: Any, band_layout: BandLayout, be: Backend) -> BlockTriFactor:
-    # WG _btri_factor, line for line.
+    # Ported line for line: keep the operation order (it fixes the float64 bits).
     xp = be.xp
     L0, _ = be.cholesky(diag[0], impl="numpy")
     if diag.shape[0] == 1:
@@ -250,12 +250,12 @@ def blocktri_factor(diag: Any, up: Any, *, layout: Layout,
     """Block Cholesky of a symmetric block-tridiagonal matrix.
 
     ``layout="ragged"``: ``diag`` a sequence of square blocks (empty allowed), ``up`` a
-    sequence of ``len(diag) - 1`` upper blocks or ``None`` (WT ``BlockTri``).  Eager only.
+    sequence of ``len(diag) - 1`` upper blocks or ``None``.  Eager only.
 
     ``layout="padded"``: ``band_layout`` is required.  ``diag``/``up`` are either ragged
     sequences (packed with :meth:`BandLayout.pack_blocks`) or ``(nb, B, B)`` /
     ``(nb-1, B, B)`` arrays that already carry identity dummies
-    (:meth:`BandLayout.add_identity_dummies`, the WG ``_tri_factor`` order).
+    (in the order of :meth:`BandLayout.add_identity_dummies`).
     """
     if layout == "ragged":
         if not isinstance(diag, (list, tuple)):
@@ -300,7 +300,7 @@ def _factor_arrays(f: BlockTriFactor) -> tuple[Any, ...]:
 
 
 def _ragged_forward(f: BlockTriFactor, B: Any, be: Backend) -> list[Any]:
-    # The forward half of WT BlockTri.solve.
+    # The forward half of the ragged solve, in the ported order.
     off = np.concatenate([[0], np.cumsum([L.shape[0] for L in f.Ls])])
     z: list[Any] = []
     for i, L in enumerate(f.Ls):
@@ -323,10 +323,10 @@ def _layout_of(f: BlockTriFactor, band_layout: BandLayout | None) -> BandLayout:
 def blocktri_whiten(f: BlockTriFactor, b: Any, *, band_layout: BandLayout | None = None,
                     be: Backend | None = None) -> Any:
     """``L^-1 b`` for ``b`` of shape ``(n,)`` or ``(n, k)`` in natural (band-major) order,
-    so ``b^T Lambda^-1 b = |L^-1 b|^2`` (WG ``_forward_only``).
+    so ``b^T Lambda^-1 b = |L^-1 b|^2``.
 
-    Ragged: the forward substitution of WT ``BlockTri.solve``.  Padded: WG
-    ``_btri_forward`` between :meth:`BandLayout.pack` and :meth:`BandLayout.unpack`
+    Ragged: the forward substitution of :func:`blocktri_solve`.  Padded:
+    :func:`blocktri_whiten_packed` between :meth:`BandLayout.pack` and :meth:`BandLayout.unpack`
     (the dummy entries of the packed result are exactly zero); ``band_layout`` overrides
     the factor's own (``None`` when a covariance stored it without).
     """
@@ -347,8 +347,8 @@ def blocktri_solve(f: BlockTriFactor, b: Any, *, band_layout: BandLayout | None 
                    be: Backend | None = None) -> Any:
     """``Lambda^-1 b`` for ``b`` of shape ``(n,)`` or ``(n, k)`` in natural order.
 
-    Ragged: WT ``BlockTri.solve`` verbatim.  Padded: WG
-    ``_approx_solve`` (``unpack(_btri_solve(pack(b)))``); ``band_layout``
+    Ragged: the forward and back substitutions, in the ported order.  Padded:
+    ``unpack(blocktri_solve_packed(pack(b)))``; ``band_layout``
     as :func:`blocktri_whiten`.
     """
     if f.layout == "ragged":
@@ -374,8 +374,8 @@ def blocktri_solve(f: BlockTriFactor, b: Any, *, band_layout: BandLayout | None 
 
 
 def blocktri_whiten_packed(f: BlockTriFactor, b: Any, *, be: Backend | None = None) -> Any:
-    """Padded layout only: ``L^-1 b`` for ``b (nb, B, k)`` -- WG ``_btri_forward``
-    verbatim; the forward-only quadratic form is ``sum(z * z)``."""
+    """Padded layout only: ``L^-1 b`` for ``b (nb, B, k)``, one ``be.scan`` over the bands;
+    the forward-only quadratic form is ``sum(z * z)``."""
     if f.layout != "padded":
         raise ValueError("blocktri_whiten_packed needs the padded layout")
     be = _be(be, f.Ls, b)
@@ -395,8 +395,8 @@ def blocktri_whiten_packed(f: BlockTriFactor, b: Any, *, be: Backend | None = No
 
 
 def blocktri_solve_packed(f: BlockTriFactor, b: Any, *, be: Backend | None = None) -> Any:
-    """Padded layout only: ``Lambda^-1 b`` for ``b (nb, B, k)`` -- WG ``_btri_solve``
-    verbatim."""
+    """Padded layout only: ``Lambda^-1 b`` for ``b (nb, B, k)``: :func:`blocktri_whiten_packed`,
+    then a reverse ``be.scan`` of the back substitution."""
     if f.layout != "padded":
         raise ValueError("blocktri_solve_packed needs the padded layout")
     be = _be(be, f.Ls, b)
@@ -417,7 +417,7 @@ def blocktri_solve_packed(f: BlockTriFactor, b: Any, *, be: Backend | None = Non
 
 
 # ---------------------------------------------------------------------------
-# Complex Hermitian block-tridiagonal (GB 12-month exact model)
+# Complex Hermitian block-tridiagonal (the galactic-binary 12-month exact model)
 # ---------------------------------------------------------------------------
 
 
@@ -436,7 +436,7 @@ class CBlockFactor:
 
 
 def cblock_factor(M: Any, b: int, *, be: Backend | None = None) -> CBlockFactor:
-    """GB ``fullcache.block_factor`` + ``logdet_of`` verbatim;
+    """Block Cholesky of the Hermitian block tridiagonal of ``M``, with its log-determinant;
     the blocks outside the tridiagonal are not read."""
     be = _be(be, M)
     xp = be.xp
@@ -463,7 +463,7 @@ def cblock_factor(M: Any, b: int, *, be: Backend | None = None) -> CBlockFactor:
 
 
 def cblock_forward(f: CBlockFactor, h: Any, *, be: Backend | None = None) -> Any:
-    """``L^-1 h`` (GB ``fullcache.forward``, block branch)."""
+    """``L^-1 h``, by block forward substitution."""
     be = _be(be, f.Ls, h)
     Ls, Cs, b = f.Ls, f.Cs, f.b
     nb = Ls.shape[0]
@@ -474,7 +474,7 @@ def cblock_forward(f: CBlockFactor, h: Any, *, be: Backend | None = None) -> Any
 
 
 def cblock_backward(f: CBlockFactor, u: Any, *, be: Backend | None = None) -> Any:
-    """``L^-H u`` (GB ``fullcache.backward``, block branch)."""
+    """``L^-H u``, by block back substitution."""
     be = _be(be, f.Ls, u)
     xp = be.xp
     Ls, Cs, b = f.Ls, f.Cs, f.b
@@ -495,7 +495,7 @@ def cblock_backward(f: CBlockFactor, u: Any, *, be: Backend | None = None) -> An
 @pytree_dataclass(data=("x", "iterations", "converged"))
 @dataclass(frozen=True, eq=False)
 class PCGResult:
-    """``x (R, N)``; ``iterations`` (the loop count, the WT ``it`` at ``R = 1``);
+    """``x (R, N)``; ``iterations`` (the loop count);
     ``converged (R,)`` (recurrence and true-residual check both passed)."""
 
     x: Any
@@ -508,17 +508,17 @@ def pcg(apply_A: Callable[[Any], Any], apply_M: Callable[[Any], Any], B: Any, *,
         be: Backend | None = None) -> PCGResult:
     """Solve ``A x_r = b_r`` for every row of ``B (R, N)`` by preconditioned CG.
 
-    One body for both oracles: the WG ``BandFullCovarianceGPU._solve`` frozen-row
-    ``while_loop`` (rows that converge or fail are frozen, ``p = 0``), whose ``R = 1``
-    run is the WT early-exit loop (``fastcov.pcg``: same alpha/beta order, row dots by
-    ``vecdot`` = ``numpy.dot``, norms ``sqrt(vecdot)`` = ``numpy.linalg.norm``).  After the
-    loop the true residual is checked as WT ``BandCovariance.quad``:
-    ``|b - A x| <= true_rtol |b|``, ``true_rtol = max(5 tol, 1e-12)`` by default.
+    One body for both ported code paths: a frozen-row ``while_loop`` (rows that converge or
+    fail are frozen, ``p = 0``), whose ``R = 1`` run is the early-exit loop bit for bit
+    (same alpha/beta order, row dots by ``vecdot`` = ``numpy.dot``, norms
+    ``sqrt(vecdot)`` = ``numpy.linalg.norm``).  After the loop the true residual is
+    checked: ``|b - A x| <= true_rtol |b|``, ``true_rtol = max(5 tol, 1e-12)`` by default.
 
     ``apply_A``/``apply_M`` map ``(R, N) -> (R, N)``.  ``on_fail="raise"`` (eager only)
-    raises ``RuntimeError`` as WT does; ``on_fail="nan"`` (jit-able) returns NaN rows
+    raises ``RuntimeError``; ``on_fail="nan"`` (jit-able) returns NaN rows
     where ``converged`` is False, which a caller maps to ``-inf``.  A row with a
-    non-positive or non-finite curvature ``p.Ap`` fails (WG); WT had no such check.
+    non-positive or non-finite curvature ``p.Ap`` fails (the early-exit loop had no such
+    check).
     """
     if on_fail not in ("raise", "nan"):
         raise ValueError(f"on_fail must be 'raise' or 'nan'; got {on_fail!r}")

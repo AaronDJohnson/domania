@@ -309,7 +309,8 @@ class _NumpyBackend(Backend):
         return f
 
     def bessel_i(self, P: int, a: Any) -> np.ndarray:
-        # Exactly the WT ``TriCovariance._cheb_weights`` expression (before its x2).
+        # Exactly the expression the NumPy references were computed with
+        # (``eq45_coeffs_bessel`` then doubles ``c[1:]``).
         from scipy.special import ive
 
         a = np.asarray(a)
@@ -411,8 +412,8 @@ class _JaxBackend(Backend):
         return jax.jit(f, **kw)
 
     def bessel_i(self, P: int, a: Any) -> Any:
-        # Verbatim WG ``jaxlike.bessel_i`` (40-term power series).  Every
-        # term is positive, so there is no cancellation; 40 terms cover |a| <= 8.
+        # The 40-term power series of ``I_p``.  Every term is positive, so there is no
+        # cancellation; 40 terms cover |a| <= 8.
         from jax import lax
 
         jnp = self.xp

@@ -87,6 +87,28 @@ X[[0, -1]] = X[[0, -1]].real                  # odd N: X[0] only
 assert np.allclose(transform({"A": X}, freq, time)["A"], x)
 ```
 
+### Units
+
+A WDM value is always a Wilson coefficient `w = W x` of the time record (`W W^T = dt I`),
+whichever path produced it: `transform`, the maps `TimeToWDM` and `FourierToWDM` (both
+implementations, and `after()`) and the `domainia.wilson` band kernels; the WDM variances
+and covariances describe these coefficients. A Fourier value `z` carries the units its
+`FourierDomain` declares, and `FourierDomain.rfft_scale` is the `u` with
+`numpy.fft.rfft(x) = u * z`:
+
+| `units`     | `z`                 | `u`      |
+|-------------|---------------------|----------|
+| `"rfft"`    | `numpy.fft.rfft(x)` | 1        |
+| `"dt_rfft"` | `dt * rfft(x)`      | `1 / dt` |
+| `"sigma0"`  | `rfft(x) / sigma0`  | `sigma0` |
+
+`FourierDomain(N, dt, k0, n, "sigma0", sigma0=s)` stores the value `s` (positive and
+finite; it is part of the domain's equality and hash), and the other units take no
+`sigma0`. Every map honours the label: `FourierToWDM(src, wdm).apply(z)` equals
+`TimeToWDM(time, wdm).apply(x)` on the same cells for every `units` value, and
+`FourierZeroPad` and `FourierCrop` return the rfft of the zero-padded or cropped record in
+the source's units (`sigma0` included).
+
 ## Operators
 
 An `Operator` lives on one full-record domain and acts on `{channel: array}` dicts:
@@ -124,6 +146,18 @@ w = transform(x, time, wdm)
 assert np.isclose(on_wdm.quadratic_form(w), op.quadratic_form(x))
 assert np.isclose(on_wdm.log_determinant(), op.log_determinant() + N * np.log(dt))
 ```
+
+`domainia.operators` makes operators out of explicit matrices and domainia covariances.
+`DenseOperator(matrix, domain, channel_names)` is a symmetric positive semi-definite matrix
+on the stacked real coordinates (channel-major, in `channel_names` order).
+`CovarianceOperator(cov, nu, support, channel_names)` fixes a `domainia.covariance`
+covariance at the noise state `nu` on its WDM `support` (a `WDMDomain`, possibly partial);
+its `domain` is the full-record WDM domain. `operator_matrix(op)` reads any operator back as
+its matrix in those coordinates, with one `apply` per column (small grids only).
+`domainia.translate.to_coordinates` and `from_coordinates` convert between `{channel: array}`
+dicts and the `(K, N)` coordinate rows, in `channel_names` order. Each of these works with
+`translate_operator`, so a covariance matrix or a domainia covariance can be seen from time
+or Fourier.
 
 ## Errors
 

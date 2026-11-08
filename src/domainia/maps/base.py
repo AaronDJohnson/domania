@@ -204,9 +204,9 @@ class PushedCovariance:
     """``M Sigma M^T`` evaluated on demand: ``rows(idx)``, ``diag()``, ``dense()``.
 
     Rows follow the oracle order of each map kind: ``"real"`` --
-    ``M (Sigma M[idx]^T)``, i.e. ``map.apply(cov.matvec(map.rows(idx)))`` (WT
-    ``MatrixWdm._exact_rows``: atoms, then the covariance, then the forward transform);
-    ``"cells"`` -- ``0.5 * Re((C[idx] @ M') @ conj(C).T)`` (GB ``exact_rows_builder``);
+    ``M (Sigma M[idx]^T)``, i.e. ``map.apply(cov.matvec(map.rows(idx)))`` (atoms, then
+    the covariance, then the forward transform);
+    ``"cells"`` -- ``0.5 * Re((C[idx] @ M') @ conj(C).T)``;
     ``"analysis"`` -- ``F[idx] Sigma F^H``; ``"complex"`` --
     ``(A M' A^H)[idx]``.
 

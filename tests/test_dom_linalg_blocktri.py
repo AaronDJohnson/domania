@@ -32,15 +32,15 @@ def drift(ac, ad):
 
 
 def eq45_blocks(cells, ac, ad):
-    """The WT TriCovariance.blocks call pattern (Bessel coefficients per block)."""
+    """The call pattern of the WDM Paper II toy models (Bessel coefficients per block)."""
     plan = eq45_plan(NF, NT, DT, cells.keep_mask(), P=24)
     Lf = L_of(plan.f)
     return eq45_blocks_cheb(plan, lambda k: eq45_coeffs_bessel(Lf[k], ac, ad, 24, r=1.0))
 
 
 class WTBlockTri:
-    """WT ``matrix.BlockTri`` (wdm_paper_2/toy_models/src/wdm_toys/matrix.py:522-563),
-    verbatim: the oracle formula the ragged layout must reproduce bit for bit."""
+    """The block-tridiagonal solver of the WDM Paper II toy models, verbatim: the oracle
+    formula the ragged layout must reproduce bit for bit."""
 
     def __init__(self, blocks, upper):
         self.sizes = [b.shape[0] for b in blocks]
@@ -126,7 +126,7 @@ def test_chol_scipy_is_wt_solver_dense(rng):
 
 
 def test_chol_numpy_is_gb_dense_quad_logdet(rng):
-    """GB matrix._dense_quad_logdet and MatrixCache.state (matrix.py:928-938, 978-983)."""
+    """The galactic-binary toy model's dense Cholesky of ``0.5 (S + S^T)`` and its solves."""
     A = rng.standard_normal((25, 25))
     S = A @ A.T + 25 * np.eye(25) + 1e-9 * rng.standard_normal((25, 25))  # not symmetric
     r = rng.standard_normal(25)
@@ -166,7 +166,7 @@ def test_one_ok_rule_finite_and_positive():
 
 
 class WGBandLayout:
-    """WG ``_BandLayout`` (gpu_sinusoid/wdmtoysgpu/matrix.py:148-180) in NumPy."""
+    """The band layout of the toy models' GPU port, in NumPy."""
 
     def __init__(self, band_cells, cells):
         pos = -np.ones(int(cells.max()) + 1, int)
@@ -237,8 +237,8 @@ def test_ragged_and_padded_match_dense(rng, sizes):
 
 
 def test_ragged_is_wt_blocktri_bit_for_bit(rng):
-    """The ragged layout on the Eq. (45) blocks of the 8 x 16 grid (raw and cut) is WT
-    BlockTri: every factor block, the log-determinant and the solves."""
+    """The ragged layout on the Eq. (45) blocks of the 8 x 16 grid (raw and cut) is
+    ``WTBlockTri`` bit for bit: every factor block, the log-determinant and the solves."""
     for cells in (CellSet.all_active(GRID), CellSet.all_active(GRID).drop_columns(3, 1)):
         diag, up = eq45_blocks(cells, -2.0, 1.2)
         wt = WTBlockTri(diag, up)
@@ -253,7 +253,7 @@ def test_ragged_is_wt_blocktri_bit_for_bit(rng):
 
 
 def test_ported_wt_block_tridiagonal_solver_matches_dense(rng):
-    """WT tests/test_matrix.py::test_block_tridiagonal_solver_matches_dense."""
+    """Ported from the toy models' test_block_tridiagonal_solver_matches_dense."""
     cells = CellSet.all_active(GRID)
     diag, up = eq45_blocks(cells, -2.0, 1.2)
     bt = la.blocktri_factor(diag, up, layout="ragged")

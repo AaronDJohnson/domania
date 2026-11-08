@@ -34,7 +34,8 @@ def test_rows_are_active_W_and_apply_is_the_transform(grid):
 
 
 def test_atoms_have_energy_dt_and_give_the_cells():
-    """Ported from WT tests/test_matrix.py:58-64 on its grid (Nf, Nt, dt) = (8, 16, 1/16)."""
+    """Ported from the WDM Paper II toy models' test_matrix.py, on its grid
+    (Nf, Nt, dt) = (8, 16, 1/16)."""
     g, _, M = _maps(8, 16, 1 / 16)
     x = np.random.default_rng(3).standard_normal(g.N)
     w = M.apply(x)

@@ -1,8 +1,7 @@
 """Maps out of the time domain: WDM cells, retained Fourier bins, crops and zero padding.
 
-Every evaluator here is the library call the WT oracle made (``Grid.forward``/
-``forward_many``/``inverse_many``/``atom``, ``Variant.extend``, ``MatrixWhittle``,
-``FourierBand``), so the NumPy path is bitwise:
+Every evaluator here makes the library call of the WDM Paper II toy models it was ported
+from (they do not ship), so the NumPy path is bitwise:
 ``TimeToWDM.apply(d) == forward_time(d, window=dst.window)[mask][keep]``.  The Wilson window
 is the ``WDMDomain``'s (``dst.window`` of ``TimeToWDM``, ``src.window`` of ``WDMToTime``).
 """
@@ -44,11 +43,10 @@ class TimeToWDM(LinearMap):
     """``x -> (W x)[cells]``: the WDM transform of a record, cells in ``dst``'s order.
 
     ``apply`` is ``wilson.forward_time`` (1-D) or ``wilson.forward_time_many`` (batched; bitwise
-    the same per row), then a gather -- WT ``Grid.forward``/``forward_many`` followed by
-    ``Variant.map``'s ``[keep]``.  ``adjoint`` is
+    the same per row), then a gather of ``dst``'s cells.  ``adjoint`` is
     ``W^T`` restricted to the cells, ``dt * W^{-1}`` of the zero-filled grid
     (``W W^T = dt I``), valid on any cell subset.  ``rows`` are the time-domain atoms
-    ``irfft(atom_spectrum)`` (WT ``Grid.atom``).
+    ``irfft(atom_spectrum)``.
     """
 
     src: TimeDomain
@@ -106,7 +104,7 @@ class TimeToWDM(LinearMap):
 @dataclass(frozen=True, eq=False)
 class WDMToTime(LinearMap):
     """``W^{-1} = W^T / dt`` on a complete cell set: ``wilson.inverse_time_many`` of the
-    unpacked grid (WT ``Grid.inverse_many``).  ``adjoint`` is
+    unpacked grid.  ``adjoint`` is
     ``W^{-T} = W / dt``."""
 
     src: WDMDomain
@@ -149,8 +147,8 @@ class WDMToTime(LinearMap):
 
 
 def _keep_bins(N: int, dt: float, fmin: float) -> tuple[int, int]:
-    """``fmin <= f < f_Nyq``, DC and Nyquist dropped (WT ``FourierBand`` and
-    ``MatrixWhittle``): the contiguous kept bins ``(k0, n)``."""
+    """``fmin <= f < f_Nyq``, DC and Nyquist dropped: the contiguous kept bins
+    ``(k0, n)``."""
     f = np.fft.rfftfreq(N, d=dt)
     keep = (f >= max(float(fmin), 0.0)) & (f < 0.5 / dt)
     keep[[0, -1]] = False
@@ -234,8 +232,8 @@ class TimeToFourier(LinearMap):
 @pytree_dataclass(data=(), meta=("src", "start", "n"))
 @dataclass(frozen=True, eq=False)
 class CropTime(LinearMap):
-    """Samples ``[start, start + n)`` (whittle_cut: ``[6*64, 251*64)``, ``N_c = 15680``;
-    WT ``MatrixWhittle``)."""
+    """Samples ``[start, start + n)`` (the sinusoid model's Whittle cut: ``[6*64, 251*64)``,
+    ``N_c = 15680``)."""
 
     src: TimeDomain
     start: int
@@ -266,7 +264,7 @@ class CropTime(LinearMap):
 @dataclass(frozen=True, eq=False)
 class ZeroPadTime(LinearMap):
     """``n_extra`` zero samples appended at the end (the sinusoid pad: 16 columns, 1024
-    samples; cyclically equivalent to 8 + 8).  WT ``Variant.extend``."""
+    samples; cyclically equivalent to 8 + 8)."""
 
     src: TimeDomain
     n_extra: int

@@ -36,9 +36,9 @@ from domainia.wilson.transform import (
 
 from .conftest import _oracle_paths
 
-#: The GB toy tree under $DOMAINIA_ORACLE_ROOT.
+#: The galactic-binary toy model's tree under $DOMAINIA_ORACLE_ROOT.
 GB_SUBDIR = "toy_models/galactic_binary"
-#: (Nf, Nt, dt): small grids plus the three GB analysis grids (N // NT, NT, 5 s).
+#: (Nf, Nt, dt): small grids plus the three galactic-binary analysis grids (N // NT, NT, 5 s).
 ATOM_GRIDS = [(4, 8, 1.0), (16, 32, 0.5), (6570, 240, 5.0), (7200, 438, 5.0), (7008, 900, 5.0)]
 
 
@@ -109,7 +109,8 @@ def test_hz_identity(grid):
     assert np.max(phi_centered(Nf, Nt, dt)) == 1.0 / np.sqrt(wilson.delta_F(Nf, dt))
 
 
-#: grids whose window arithmetic is not "nice": dt with long mantissas, odd Nf, GB 5 s.
+#: grids whose window arithmetic is not "nice": dt with long mantissas, odd Nf, the
+#: galactic binary's 5 s.
 WINDOW_GRIDS = [(8, 16, 1.0), (16, 32, 0.5), (8, 32, 1.7), (64, 256, 2.0**-10), (6, 10, 0.3),
                 (32, 64, 1.0 / 3.0), (4, 8, 7.123456789e-5), (12, 24, 123.456), (6570, 240, 5.0)]
 
@@ -174,7 +175,7 @@ def test_atoms_are_the_rows_of_the_transform():
 
 
 def _gb_reference(tmp_path: Path, grids) -> dict:
-    """GB phi and atoms computed by the frozen GB code, from a temporary copy."""
+    """phi and atoms computed by the frozen galactic-binary code, from a temporary copy."""
     (gb_dir,) = _oracle_paths(GB_SUBDIR)
     copy = tmp_path / "gb"
     copy.mkdir()

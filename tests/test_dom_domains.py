@@ -18,7 +18,7 @@ SIN = wilson.Grid(64, 256, 2.0**-10)
 def test_time_domain():
     d = TimeDomain(16384, 2.0**-10)
     assert (d.N, d.dt, d.t0, d.size) == (16384, 2.0**-10, 0.0, 16384)
-    assert np.array_equal(d.times(), np.arange(16384) * 2.0**-10)        # WT cfg.times()
+    assert np.array_equal(d.times(), np.arange(16384) * 2.0**-10)
     assert d == TimeDomain(16384, 2.0**-10) and hash(d) == hash(TimeDomain(16384, 2.0**-10))
     with pytest.raises(ValueError):
         TimeDomain(0, 1.0)
@@ -103,7 +103,7 @@ def test_gb_counts_from_the_prepared_grids():
         assert cells.drop_columns(5, 4).size == 3 * NT - 27
         assert cells.columns(5, 4).size == 27
         assert cells.band_sizes() == tuple((b, NT) for b in bands)
-        assert np.array_equal(cells.m_array, np.repeat(bands, NT))      # GB Variant.b order
+        assert np.array_equal(cells.m_array, np.repeat(bands, NT))
         assert np.array_equal(cells.n_array, np.tile(np.arange(NT), 3))
 
 

@@ -31,7 +31,7 @@ def test_fourier_rows_adjoint_and_orthonormal_coordinates():
 
 
 def test_push_of_a_stationary_covariance_is_the_whittle_diagonal():
-    """F Sigma F^H = diag(N S(f_k) / (2 dt)) for the periodic stationary Sigma (WT FreqWhittle)."""
+    """F Sigma F^H = diag(N S(f_k) / (2 dt)) for the periodic stationary Sigma."""
     n, dt = 128, 0.5
     F = TimeToFourier(TimeDomain(n, dt), fmin=0.2)
     Sn = lambda f, t: np.maximum(f, 0.05) ** -1.5 + 0.0 * t  # noqa: E731
@@ -67,8 +67,8 @@ def test_crop_and_zero_pad_adjoints():
 
 
 def test_sinusoid_pad_record_is_bitwise_the_oracle_extension():
-    """``TimeToWDM(extended) . ZeroPadTime`` = WT ``PaddedMarginal.solve``'s
-    ``g.forward_many(ext)`` with ``ext[:, :n] = X`` (matrix.py:640-643)."""
+    """``TimeToWDM(extended) . ZeroPadTime`` is the padded transform of the WDM Paper II toy
+    models bit for bit: ``g.forward_many(ext)`` with ``ext[:, :n] = X``."""
     td = TimeDomain(N, DT)
     Z = ZeroPadTime(td, SIN_PAD_COLUMNS * SIN_NF)
     g = wilson.Grid(SIN_NF, SIN_NT + SIN_PAD_COLUMNS, DT)

@@ -26,7 +26,7 @@ __all__ = ["FourierCrop", "FourierToWDM", "FourierZeroPad", "crop_maps", "pad_ma
 
 
 # ---------------------------------------------------------------------------
-# Dirichlet kernels (GB; the self-conjugate source bins counted once)
+# Dirichlet kernels (the self-conjugate source bins counted once)
 # ---------------------------------------------------------------------------
 
 
@@ -137,10 +137,10 @@ class FourierZeroPad(_WidelyLinear):
 @dataclass(frozen=True, eq=False)
 class FourierCrop(_WidelyLinear):
     """Bins ``dst`` of the record cropped to samples ``[start, start + dst.N)``, from the
-    bins ``src``: ``z^c = A z + B conj z`` (:func:`crop_maps`; GB ``whittle_map`` and
-    ``mask_rows``), the rfft of the cropped record in ``src``'s units (``dst`` must have the
-    same ``(units, sigma0)``).  ``apply`` is the oracle's template call site
-    ``(h @ A.T) + (conj(h) @ B.T)``; :meth:`apply_data` its data call site."""
+    bins ``src``: ``z^c = A z + B conj z`` (:func:`crop_maps`), the rfft of the cropped
+    record in ``src``'s units (``dst`` must have the same ``(units, sigma0)``).  ``apply`` is
+    the oracle's template call site ``(h @ A.T) + (conj(h) @ B.T)``; :meth:`apply_data` its
+    data call site."""
 
     src: FourierDomain
     dst: FourierDomain
@@ -185,7 +185,7 @@ class FourierCrop(_WidelyLinear):
 
 
 def _band_phase(bands: np.ndarray, Nt: int, phi: np.ndarray) -> np.ndarray:
-    """``(nb, Nt)`` carrier sign x quadrature x ``(-1)^n Nt / |phi|`` (GB ``wdm_bands._phase``)."""
+    """``(nb, Nt)`` carrier sign x quadrature x ``(-1)^n Nt / |phi|``."""
     n = np.arange(Nt)
     out = np.empty((bands.size, Nt), complex)
     for b, m in enumerate(bands):
@@ -195,13 +195,13 @@ def _band_phase(bands: np.ndarray, Nt: int, phi: np.ndarray) -> np.ndarray:
 
 
 def _analyse(phase: np.ndarray, phi: np.ndarray, X: np.ndarray) -> np.ndarray:
-    """``W_b X_b`` for a stack of bands, ``X`` ``(nb, Nt, k)`` (GB ``wdm_full.analyse``)."""
+    """``W_b X_b`` for a stack of bands, ``X`` ``(nb, Nt, k)``."""
     Y = np.fft.ifft(np.asarray(phi)[None, :, None] * X, axis=1)
     return np.asarray(phase)[:, :, None] * Y
 
 
 def _geometry(dom: WDMDomain) -> dict:
-    """Bands, window, per-cell positions of a cell set of interior bands (GB ``make_grid``)."""
+    """Bands, window, per-cell positions of a cell set of interior bands."""
     cells = dom.cells
     g = cells.grid
     Nt = g.Nt
@@ -221,8 +221,7 @@ def _geometry(dom: WDMDomain) -> dict:
 
 def _dense_atoms(geo: dict, Nf: int, dt: float, *, window: Window) -> np.ndarray:
     """``(nb Nt, G)``: row ``b Nt + n`` is the unit-norm atom of cell ``(bands[b], n)`` on the
-    window bins (GB ``Grid.dense_atoms``), in the Wilson basis of
-    ``window``."""
+    window bins, in the Wilson basis of ``window``."""
     bands, Nt, G, idx = geo["bands"], geo["Nt"], geo["G"], geo["idx"]
     atoms = band_atoms(bands, Nf, Nt, dt, window=window)
     U = np.zeros((bands.size * Nt, G), complex)
@@ -244,14 +243,14 @@ class FourierToWDM(LinearMap):
     """Wilson coefficients of interior-band cells from band-limited bins: ``cells = Re(C z)``
     (kind ``"cells"``).
 
-    ``src`` is the ``FourierDomain`` the data live on (the GB store, or the band window
-    itself); the cells read the window bins ``[g0, g0 + G)``, ``g0 = (m_0 - 1) Nt/2``, which
-    ``src`` must cover -- or, with ``restrict=True``, ``src`` may be a sub-window of it and
-    the atoms are truncated to ``src`` (the GB exact rows on the analysis window).
-    ``C = kappa U``: ``U`` holds the unit-norm atoms in the Wilson basis of ``dst.window``
-    (GB ``Variant.C``), and ``kappa = src.rfft_scale * sqrt(2 dt / N)`` (``N``, ``dt`` of the
+    ``src`` is the ``FourierDomain`` the data live on (a wider store of bins, or the band
+    window itself); the cells read the window bins ``[g0, g0 + G)``, ``g0 = (m_0 - 1) Nt/2``,
+    which ``src`` must cover -- or, with ``restrict=True``, ``src`` may be a sub-window of it
+    and the atoms are truncated to ``src``.
+    ``C = kappa U``: ``U`` holds the unit-norm atoms in the Wilson basis of ``dst.window``,
+    and ``kappa = src.rfft_scale * sqrt(2 dt / N)`` (``N``, ``dt`` of the
     cells' grid) turns bins in ``src.units`` into Wilson coefficients.  ``impl="dense"``
-    evaluates ``Re(z[..., lo:lo+width] @ C.T)`` (GB ``cells``, the golden default);
+    evaluates ``Re(z[..., lo:lo+width] @ C.T)`` (the golden default);
     ``impl="fft"`` evaluates ``src.rfft_scale * wilson.forward_bands`` (opt-in, <= 1e-12
     relative).  For a record ``x`` and its bins ``z`` in ``src.units``, the cells equal
     ``TimeToWDM.apply(x)`` on the same cells.
@@ -279,7 +278,7 @@ class FourierToWDM(LinearMap):
         geo = _geometry(self.dst)
         g0, G = geo["g0"], geo["G"]
         k0, n = self.src.k0, self.src.n
-        U = _dense_atoms(geo, g.Nf, g.dt, window=self.dst.window)[geo["sel"]]  # (P, G), GB V.U
+        U = _dense_atoms(geo, g.Nf, g.dt, window=self.dst.window)[geo["sel"]]  # (P, G)
         kappa = _kappa(self.src, g)
         if k0 <= g0 and g0 + G <= k0 + n:
             lo, width, C = g0 - k0, G, kappa * U
@@ -304,11 +303,11 @@ class FourierToWDM(LinearMap):
     @property
     def window(self) -> FourierDomain:
         """The band windows' bins ``[g0, g0 + G)`` of the cells' grid record
-        (480 / 876 / 1800 for the GB).  The record is ``dst``'s grid, not ``src``'s: the two
-        agree for a built map (the constructor checks it), while a map returned by
-        :meth:`after` reads the bins of the outer record.  It is ``dataclasses.replace`` of
-        ``src``, so ``units`` and ``sigma0`` are ``src``'s.  (These are band-window *bins*.
-        The Wilson window of the cells is ``dst.window``.)"""
+        (480 / 876 / 1800 for the galactic-binary toy model).  The record is ``dst``'s grid,
+        not ``src``'s: the two agree for a built map (the constructor checks it), while a map
+        returned by :meth:`after` reads the bins of the outer record.  It is
+        ``dataclasses.replace`` of ``src``, so ``units`` and ``sigma0`` are ``src``'s.  (These
+        are band-window *bins*.  The Wilson window of the cells is ``dst.window``.)"""
         geo = _geometry(self.dst)
         g = self.dst.cells.grid
         return replace(self.src, N=g.N, dt=g.dt, k0=geo["g0"], n=geo["G"])
@@ -342,7 +341,7 @@ class FourierToWDM(LinearMap):
         return out
 
     def push_rows(self, Mp, idx, be=None):
-        """``1/2 Re((C[idx] @ M') @ conj(C).T)`` (GB ``exact_rows_builder``);
+        """``1/2 Re((C[idx] @ M') @ conj(C).T)``;
         ``M'`` is ``(src.n, src.n)``, the bins' covariance in ``src.units``; the ``width`` bins
         ``C`` reads are sliced out of it.  ``C`` carries ``kappa``, so the push carries
         ``kappa^2``."""
@@ -355,7 +354,7 @@ class FourierToWDM(LinearMap):
 
     def after(self, inner: Any) -> "FourierToWDM":
         """The dense cell matrix of ``self . inner`` for a widely linear ``inner``
-        (:class:`FourierZeroPad`, :class:`FourierCrop`) -- GB ``_cells``:
+        (:class:`FourierZeroPad`, :class:`FourierCrop`):
         ``C = kappa * (analyse(A[idx]) + conj(analyse(B[idx])))``, rows of ``dst``, with
         ``self``'s ``kappa``: ``inner`` keeps the units, so the composite's cells are the
         Wilson coefficients of the padded or cropped record.

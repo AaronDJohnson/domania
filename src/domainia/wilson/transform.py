@@ -1059,8 +1059,8 @@ def band_atoms(bands: NDArray[np.integer], Nf: int, Nt: int, dt: float, *,
     record's spectrum.  The atoms are unit-norm (the spectrum of a basis function, not a
     coefficient): for rfft bins ``z = numpy.fft.rfft(x)`` of an ``N = Nf Nt``-sample record,
     ``sqrt(2 dt / N) * Re(atoms[b, n] . z[window])`` is the Wilson coefficient
-    ``forward(z)[m_b, n]``, which :func:`forward_bands` returns.  Verbatim GB
-    ``geometry.band_atoms`` with ``window``'s samples (Hz normalisation).
+    ``forward(z)[m_b, n]``, which :func:`forward_bands` returns.  Ported verbatim from the
+    galactic-binary toy model (not shipped), with ``window``'s samples (Hz normalisation).
 
     Parameters
     ----------
@@ -1089,7 +1089,7 @@ def band_atoms(bands: NDArray[np.integer], Nf: int, Nt: int, dt: float, *,
 
 
 def _band_phase(bands: NDArray[np.integer], Nt: int, phi: Array) -> CArray:
-    """``(nb, Nt)``: ``carrier_phase * quad * (-1)^n * Nt / |phi|`` (GB ``wdm_bands._phase``)."""
+    """``(nb, Nt)``: ``carrier_phase * quad * (-1)^n * Nt / |phi|``."""
     n = np.arange(Nt)
     out = np.empty((bands.size, Nt), complex)
     for b, m in enumerate(bands):
@@ -1117,7 +1117,7 @@ def forward_bands(z: CArray, k0: int, bands: NDArray[np.integer], Nf: int, Nt: i
     ``z[..., j]`` is the rfft bin ``k0 + j`` in ``numpy.fft.rfft`` units (no ``dt``).  On a
     whole record, ``z = rfft(x)``, the result is ``forward(z)[bands]`` (<= 1e-12 relative).
     Cell ``(b, n)`` is ``sqrt(2 dt / N) Re(band_atoms[b, n] . z[window_b])``, ``N = Nf Nt``,
-    computed with one length-``Nt`` IFFT per band (GB ``wdm_full.analyse``):
+    computed with one length-``Nt`` IFFT per band:
     ``sqrt(2 dt / N) Re(phase * ifft(phi * z[window]))``.  It agrees with the dense
     ``sqrt(2 dt / N) Re(band_atoms @ z)`` to ~1e-15 (not bitwise).  Interior bands only.
     Cost ``O(nb Nt log Nt)`` against ``O(nb Nt^2)`` dense.

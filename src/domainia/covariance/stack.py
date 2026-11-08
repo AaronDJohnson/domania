@@ -1,4 +1,4 @@
-"""``ChannelStack``: independent channels (GB A and E), one covariance each."""
+"""``ChannelStack``: independent channels (for example A and E), one covariance each."""
 
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ class StackFactor:
 
 class ChannelStack(Covariance):
     """Independent channels: ``covs[c]`` sees ``nu[c * k:(c + 1) * k]``,
-    ``k = params_per_channel`` (GB: ``n_env`` envelope coefficients per channel)."""
+    ``k = params_per_channel`` (for example ``n_env`` envelope coefficients per channel)."""
 
     def __init__(self, covs: tuple[Covariance, ...] | list[Covariance], params_per_channel: int) -> None:
         self.covs = tuple(covs)

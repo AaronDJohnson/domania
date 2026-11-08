@@ -1,11 +1,11 @@
 """Special functions shared by the WDM Paper II kernels (dual backend).
 
 * :func:`bessel_i` -- modified Bessel functions ``I_p(a)``, ``p = 0..P-1``:
-  ``scipy.special.ive(p, a) * exp(|a|)`` on NumPy (the WT expression), the
-  40-term power series of the WG ``jaxlike.bessel_i`` on JAX (relative
-  error <= 1e-13 for ``|a| <= 8``; the sinusoid priors need ``|a| <= 3.2``).
-* :func:`chebyshev_basis` -- ``T_p(u_i)`` on a record's time grid
-  (WT ``fastcov.cheb_basis``), host NumPy.
+  ``scipy.special.ive(p, a) * exp(|a|)`` on NumPy, a 40-term power series on JAX
+  (relative error <= 1e-13 for ``|a| <= 8``; the sinusoid priors need ``|a| <= 3.2``).
+* :func:`chebyshev_basis` -- ``T_p(u_i)`` on a record's time grid, host NumPy.
+
+Both are ported from the WDM Paper II toy models and their GPU port, which do not ship.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ def bessel_i(P: int, a: Any, be: Backend | None = None) -> Any:
 def chebyshev_basis(N: int, P: int) -> NDArray[np.floating]:
     """Chebyshev polynomials ``T_p(u_i)``, ``(P, N)``, ``u_i = 2 (i/N - 1/2)``.
 
-    WT ``fastcov.cheb_basis`` verbatim (host constant).
+    Ported verbatim (host constant).
 
     Examples
     --------

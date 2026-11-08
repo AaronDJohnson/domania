@@ -1,5 +1,6 @@
-"""D-A6: preconditioned CG -- one frozen-row body (WG) whose single-row run is the WT
-early-exit loop bit for bit, with the WT true-residual check (NumPy)."""
+"""D-A6: preconditioned CG -- one frozen-row body (the GPU toy models' semantics) whose
+single-row run is the WDM Paper II toy models' early-exit loop bit for bit, with their
+true-residual check (NumPy)."""
 
 from __future__ import annotations
 
@@ -33,7 +34,7 @@ def M2(V):
 
 
 def wt_pcg(A, b, M, tol=1e-7, maxit=200):
-    """WT ``fastcov.pcg`` (src/wdm_toys/fastcov.py:121-143) verbatim, ``x0=None``."""
+    """The toy models' early-exit PCG, verbatim, ``x0=None``."""
     bn = float(np.linalg.norm(b))
     if bn == 0.0:
         return np.zeros_like(b), 0
@@ -105,7 +106,7 @@ def test_iteration_limit():
 
 
 def test_an_indefinite_row_fails_alone():
-    """WG semantics: a row with p.Ap <= 0 is frozen as failed; the others finish."""
+    """The frozen-row semantics: a row with p.Ap <= 0 is frozen as failed; the others finish."""
     B = np.random.default_rng(6).standard_normal((3, N))
 
     def A(V):

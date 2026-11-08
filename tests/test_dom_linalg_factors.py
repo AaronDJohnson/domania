@@ -1,5 +1,6 @@
 """D-A5: the complex Hermitian block factor (``linalg.cblock_factor`` / ``cblock_forward`` /
-``cblock_backward``) against, bit for bit, the GB ``fullcache`` formulas it ports (NumPy)."""
+``cblock_backward``) against, bit for bit, the galactic-binary toy model's formulas it
+ports (NumPy)."""
 
 from __future__ import annotations
 
@@ -10,11 +11,11 @@ from scipy.linalg import solve_triangular
 from domainia import linalg as la
 
 
-# -- complex Hermitian (GB fullcache) ---------------------------------------------------
+# -- complex Hermitian ------------------------------------------------------------------
 
 
 def gb_block_factor(M, b):
-    """GB ``fullcache.block_factor`` (fullcache.py:82-95), NumPy, verbatim."""
+    """The block factor, NumPy, verbatim."""
     nb = M.shape[0] // b
 
     def blk(i, j):
@@ -29,7 +30,7 @@ def gb_block_factor(M, b):
 
 
 def gb_forward(Ls, Cs, h):
-    """GB ``fullcache.forward``, block branch."""
+    """The forward substitution, block branch."""
     nb, b = Ls.shape[0], Ls.shape[1]
     u = [solve_triangular(Ls[0], h[:b], lower=True, check_finite=False)]
     for i in range(1, nb):
@@ -39,7 +40,7 @@ def gb_forward(Ls, Cs, h):
 
 
 def gb_backward(Ls, Cs, u):
-    """GB ``fullcache.backward``, block branch."""
+    """The back substitution, block branch."""
     nb, b = Ls.shape[0], Ls.shape[1]
     y = [None] * nb
     y[-1] = solve_triangular(Ls[-1], u[(nb - 1) * b:], lower=True, trans="C", check_finite=False)

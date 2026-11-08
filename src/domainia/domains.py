@@ -16,7 +16,7 @@ Every domain is a frozen, hashable dataclass, so it can be the static part of a
   ``domainia.wilson.MEYER``, the WDM transform).  A value on it is the Wilson coefficient
   ``w = W x`` of the time record, whichever map produced it.  ``.full(...)``: the
   full-record domain of :mod:`domainia.translate`.
-* :class:`ChannelAxis`: named channels (``("A", "E")`` for the GB); empty for one
+* :class:`ChannelAxis`: named channels (for example ``("A", "E")``); empty for one
   channel without a channel axis.
 """
 

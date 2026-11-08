@@ -2,10 +2,10 @@
 
 Two layouts of the same factorisation:
 
-* ``"ragged"`` -- Python lists of per-band blocks, WT ``BlockTri`` order; eager on both
+* ``"ragged"`` -- Python lists of per-band blocks, a host loop; eager on both
   backends (the NumPy golden default);
-* ``"padded"`` -- ``(nb, B, B)`` arrays with identity dummy slots (``BandLayout``), WG
-  ``_btri_*`` over ``be.scan``; jit-able (the JAX golden default).
+* ``"padded"`` -- ``(nb, B, B)`` arrays with identity dummy slots (``BandLayout``), a
+  ``be.scan`` over the bands; jit-able (the JAX golden default).
 """
 
 from __future__ import annotations
@@ -41,9 +41,9 @@ def to_layout(diag: Any, up: Any, sizes: tuple[int, ...], layout: Layout, be: Ba
     input: ``(nb, B, B)`` / ``(nb - 1, B, B)`` arrays whose slot ``i < s_m`` of band ``m``
     is the band's ``i``-th cell and whose dummy slots are zero (the identity is ADDED
     there: a padded input already carrying it would get 2.0).  Padded output symmetrises
-    the diagonal blocks and puts the identity on dummy slots (WG
-    ``MatrixGPU._tri_factor``); ``dummy`` is :func:`dummy_slots` (from the constants under
-    ``jit``).  A single band (``nb = 1``) has no upper blocks: ``up`` is ``(0, B, B)``.
+    the diagonal blocks and puts the identity on dummy slots; ``dummy`` is
+    :func:`dummy_slots` (from the constants under ``jit``).  A single band (``nb = 1``) has
+    no upper blocks: ``up`` is ``(0, B, B)``.
     """
     xp = be.xp
     ragged_in = isinstance(diag, (list, tuple))
@@ -88,7 +88,7 @@ class BlockTriCovFactor:
 
     The padded layout's :class:`~domainia.linalg.BandLayout` is a constant: it is not stored
     (``bt.band_layout`` is ``None``) and comes from the covariance's constants,
-    ``C["layout"]`` (WG kept ``lay_*`` in ``C``)."""
+    ``C["layout"]``."""
 
     bt: Any
     logdet: Any
@@ -99,7 +99,8 @@ class BlockTriCovFactor:
 
     def _apply(self, fn: Any, b: Any, C: Any, be: Backend, what: str) -> Any:
         # domainia.linalg takes natural, band-major vectors on both layouts: the padded
-        # layout packs, runs WG's _btri_* and unpacks inside (the dummy entries are exactly 0).
+        # layout packs, runs the ``*_packed`` kernels and unpacks inside (the dummy entries
+        # are exactly 0).
         if self.layout == "ragged":
             return fn(self.bt, b, be=be)
         return fn(self.bt, b, band_layout=factor_constants(self, C, what)["layout"], be=be)

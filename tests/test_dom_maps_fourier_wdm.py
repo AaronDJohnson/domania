@@ -1,4 +1,4 @@
-"""FourierToWDM on synthetic records (replaces the GB-golden test_dom_maps_cells)."""
+"""FourierToWDM on synthetic records."""
 
 from __future__ import annotations
 
@@ -58,7 +58,8 @@ def _crop_case(rng):
 def _pad_case(rng):
     """``(Wp, zp, z, x)``: a band-limited 128-sample record ``x`` with no DC or Nyquist
     content, its store bins ``z = rfft(x)[1:64]``, their zero pad to the 160-sample record of
-    ``PAD_GRID`` and the band-window map of that record's cells with ``n < 16`` (GB pad)."""
+    ``PAD_GRID`` and the band-window map of that record's cells with ``n < 16`` (the
+    galactic-binary pad)."""
     X = np.zeros(65, complex)
     X[1:64] = rng.standard_normal(63) + 1j * rng.standard_normal(63)
     x = np.fft.irfft(X, n=AG.N)
@@ -211,8 +212,8 @@ def test_after_a_crop_carries_the_units_factor():
 
 def test_after_a_zero_pad_is_the_padded_record_transform():
     """``A z + B conj z`` is the zero-padded record's rfft, so ``W.after(zp)`` is the padded
-    record's Wilson coefficients on the cells (here the GB pad: no DC or Nyquist bin in the
-    store, cells with ``n < 16``)."""
+    record's Wilson coefficients on the cells (here the galactic-binary pad: no DC or
+    Nyquist bin in the store, cells with ``n < 16``)."""
     Wp, zp, z, x = _pad_case(np.random.default_rng(1))
     M = Wp.after(zp)
     assert M.src == zp.src and M.window == Wp.window == Wp.src

@@ -1,10 +1,10 @@
 """C8: the stateless WDM Paper II kernels (wdm.evolutionary, wdm.special, wdm.noise).
 
 Every kernel is checked against its source: the frozen wdm_dev oracle
-(``wdm_dev_ev``), the WT ``TriCovariance`` in a lineage-A subprocess, dense
-references, and across backends.  Both sources run the omega-normalised window
-of releases <= 0.11 and were matched bit for bit until then; the Hz window of
-v0.12.0 (Paper I eq:Meyer-def, the same products rounded differently) leaves
+(``wdm_dev_ev``), the block builder of the WDM Paper II toy models in a lineage-A
+subprocess, dense references, and across backends.  Both sources run the
+omega-normalised window of releases <= 0.11 and were matched bit for bit until then; the
+Hz window of v0.12.0 (Paper I eq:Meyer-def, the same products rounded differently) leaves
 every window-dependent kernel equal to them to rounding (``ORACLE_RTOL`` of the
 reference's max), while the window-independent ones are still bit for bit.
 """
@@ -48,7 +48,7 @@ def _block_gap(got, ref):
     """max|got - ref| over every block, over max|ref| over the DIAGONAL blocks ``ref[0]``.
 
     The off-diagonal (upper) blocks come from the frequency variation of S and are 7e-6 to
-    5e-3 of the diagonal here (the WT toy's DC block 5e-19: rounding noise of a zero block),
+    5e-3 of the diagonal here (the toy models' DC block 5e-19: rounding noise of a zero block),
     so their own max is not the scale of their rounding."""
     scale = max(np.max(np.abs(b)) for b in ref[0])
     return max(_gap(a, b, scale) for a, b in zip(got[0] + got[1], ref[0] + ref[1], strict=True))
@@ -127,8 +127,8 @@ def test_wrap_rule_on_the_sinusoid_grid():
 
 
 @pytest.mark.parametrize("Nf, Nt, bands, cut", [
-    (6570, 240, (65, 66, 67), (5, 4)),     # GB 3 months, 5 s
-    (7200, 438, (71, 72, 73), (5, 4)),     # GB 6 months
+    (6570, 240, (65, 66, 67), (5, 4)),     # galactic binary, 3 months, 5 s
+    (7200, 438, (71, 72, 73), (5, 4)),     # galactic binary, 6 months
 ])
 def test_wrap_rule_on_the_gb_grids(Nf, Nt, bands, cut):
     assert E.wrap_cut_columns(Nf, Nt, 5.0, bands=np.array(bands)) == cut
@@ -211,7 +211,7 @@ def test_bessel_blocks_match_the_direct_sum_and_gram(Nt_grid, keep_cols, r):
 
 
 def test_bessel_blocks_are_the_wt_toy_to_rounding(tmp_path):
-    """Lineage A (frozen WT wdm_toys + vendored wdm) in a subprocess: WT
+    """Lineage A (the frozen toy models ``wdm_toys`` + vendored wdm) in a subprocess: their
     TriCovariance.blocks == eq45_blocks_cheb(eq45_coeffs_bessel) to rounding (bit
     for bit up to v0.11.0; lineage A runs the omega-normalised window), on the data
     grid (r = 1) and on a padded grid (t_max = T', r = T'/T_obs)."""
@@ -424,7 +424,7 @@ def test_separable_kernels_and_assembly(backend, rng):
     U = rng.standard_normal((P, G)) + 1j * rng.standard_normal((P, G))
     sI, sG = rng.uniform(0.5, 2.0, G), rng.uniform(0.5, 2.0, G)
     KI = E.eq45_separable_kernels(U, sI)
-    # GB matrix._kernel, verbatim (toy_models/galactic_binary/matrix.py L503-506)
+    # The galactic-binary toy model's kernel, verbatim
     Ur, Ui = U.real, U.imag
     assert np.array_equal(KI, 0.5 * ((Ur * sI) @ Ur.T + (Ui * sI) @ Ui.T))
     assert np.allclose(KI, 0.5 * np.real(U @ np.diag(sI) @ U.conj().T), rtol=1e-14, atol=1e-14)

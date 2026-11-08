@@ -65,8 +65,8 @@ def test_full_record_bins_pad_and_crop_to_the_exact_rfft(N):
 
 
 def test_maps_match_direct_transforms():
-    """Ported from GB tests/test_matrix.py:19-40 (pad and crop; the taper map is dropped):
-    Nf = 24, NT = 16, store bins 40..89, atol 1e-13."""
+    """Ported from the galactic-binary toy model's test_matrix.py (pad and crop; the taper
+    map is dropped): Nf = 24, NT = 16, store bins 40..89, atol 1e-13."""
     rng = np.random.default_rng(1)
     Nf, NT = 24, 16
     N = NT * Nf

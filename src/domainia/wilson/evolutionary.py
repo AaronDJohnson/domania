@@ -18,13 +18,13 @@ kernels), the factors of :mod:`domainia.linalg` (``BlockTriFactor``) and the map
 
   - :func:`eq45_plan` -- host constants (one plan per grid and kept-cell set);
   - Chebyshev-in-time builders: :func:`eq45_coeffs_bessel` (exact Bessel-I
-    coefficients of the log-linear family; the WT ``TriCovariance._cheb_weights``
-    that wrote the NumPy references) or :func:`eq45_coeffs_interp` (any
+    coefficients of the log-linear family, the ported code that wrote the NumPy
+    references) or :func:`eq45_coeffs_interp` (any
     ``Sn(f, t)``, interpolated at ``P`` Chebyshev nodes; wdm_dev), then
     :func:`eq45_blocks_cheb`;
-  - the Gram form for the log-linear family (the JAX chains' WG build):
+  - the Gram form for the log-linear family (the JAX build):
     :func:`eq45_gram_plan`, :func:`eq45_gram_gather`, :func:`eq45_blocks_gram`;
-  - the separable form :math:`S_c = s_I + g(t) s_G` (GB):
+  - the separable form :math:`S_c = s_I + g(t) s_G`:
     :func:`eq45_separable_kernels`, :func:`eq45_separable_assemble`;
   - :func:`eq45_direct` -- the direct sum, the oracle.
 
@@ -39,8 +39,8 @@ PSDs are callables ``Sn(f, t)``: elementwise, broadcasting, argument order
 
 Numerics: every NumPy path is an operation-order-preserving transcription of its
 source (wdm_dev ``evolutionary.py``, frozen in ``tests/wilson/oracle/wdm_dev_ev``, and
-the WT, WG and GB toy-model oracles), so it is bit-identical to it; the JAX paths agree
-to round-off.
+the WDM Paper II toy models, their GPU port and the galactic-binary toy model, none of
+which ships), so it is bit-identical to it; the JAX paths agree to round-off.
 """
 
 from __future__ import annotations
@@ -219,7 +219,8 @@ def wrap_cut_columns(Nf: int, Nt: int, dt: float, tol: float = 1e-3, *,
     (all by default) wraps more than ``tol`` of its energy (WDM Paper II: ``tol = 1e-3``).
 
     The rule is geometric (it ignores the noise).  With the default window: ``(6, 5)`` on the
-    sinusoid grid ``(64, 256, 2**-10)``; ``(5, 4)`` on the 3- and 6-month GB analysis bands.
+    sinusoid grid ``(64, 256, 2**-10)``; ``(5, 4)`` on the 3- and 6-month galactic-binary
+    analysis bands.
     Another window has other atoms, so other cuts.
 
     Parameters
@@ -326,8 +327,7 @@ class Eq45BlockSpec:
 
     ``R``/``C`` (row/column packed cells), ``combo = 2a + b`` (base-atom parities),
     ``d`` (circular column lag), ``s = n + n'`` (mid-time index; ``t_bar = s dT/2``)
-    and ``B = {combo: (k, eta_k G_ma(k) G*_m2b(k) / T)}`` over the support bins:
-    the entries of WT ``TriCovariance._block_spec``'s dict, as fields.
+    and ``B = {combo: (k, eta_k G_ma(k) G*_m2b(k) / T)}`` over the support bins.
 
     A JAX pytree: the band indices ``m``/``m2`` are static (they pick the block's
     slot and whether it is symmetrised); every array is a leaf.  ``R``/``C`` are
@@ -355,8 +355,8 @@ class Eq45Plan:
     """Host (NumPy float64) constants of Eq. (45) on the kept cells of one grid.
 
     ``specs`` holds one :class:`Eq45BlockSpec` per band block ``(m, m2)``,
-    ``m2 in {m, m+1}``.  Mirrors WT ``TriCovariance.__init__``/``_block_spec``
-    line for line.
+    ``m2 in {m, m+1}``.  Built line for line in the ported order (it fixes the float64
+    bits).
 
     A JAX pytree: the grid scalars (``Nf, Nt, dt, N, T, K, P, t_max``) and
     ``fold_has_duplicates`` are static; every array is a leaf.  (Registered
@@ -520,9 +520,9 @@ def eq45_coeffs_bessel(L: Array, alpha_c: Any, alpha_d: Any, P: int, *, r: float
     ``r`` is a required keyword: ``plan.t_max / T_obs``, i.e. ``1.0`` on the
     data grid and ``Nt' / Nt`` on a padded grid (``272/256`` for the sinusoid
     pad).  It used to default to ``1.0``, which is silently wrong on a padded
-    plan.  WT ``TriCovariance._cheb_weights`` verbatim (the spec's 4-argument
-    signature omitted ``r``).  On JAX the Bessel functions are the 40-term
-    series of :meth:`domainia.wilson.backend.Backend.bessel_i`.
+    plan.  Ported verbatim: keep the operation order (it fixes the float64 bits).  On JAX
+    the Bessel functions are the 40-term series of
+    :meth:`domainia.wilson.backend.Backend.bessel_i`.
     """
     be = be or get_backend(L, alpha_c, alpha_d)
     xp = be.xp
@@ -560,10 +560,10 @@ def eq45_blocks_cheb(plan: Eq45Plan, coeffs: Array | Callable[[IntArray], Array]
 
     ``coeffs`` is either a ``(P, K)`` array over every rfft bin
     (:func:`eq45_coeffs_interp`; read as ``coeffs[:, k]``) or a callable
-    ``k -> (P, len(k))`` evaluated per block (the WT call pattern:
+    ``k -> (P, len(k))`` evaluated per block (for example
     ``lambda k: eq45_coeffs_bessel(L[k], ac, ad, P, r=r)``).  Each block costs
-    one length-``Nt`` FFT per order.  The NumPy path is WT ``TriCovariance.blocks``
-    / wdm_dev ``TriCovariance.blocks`` line for line (``np.add.at`` fold).
+    one length-``Nt`` FFT per order.  The NumPy path is wdm_dev
+    ``TriCovariance.blocks`` line for line (``np.add.at`` fold).
     Returns ragged lists (``diag[m]``: kept cells of band ``m`` squared).
 
     Under ``jax.jit`` pass ``plan`` as an argument (see :class:`Eq45Plan`) and
@@ -596,7 +596,7 @@ def eq45_blocks_cheb(plan: Eq45Plan, coeffs: Array | Callable[[IntArray], Array]
 
 
 # ---------------------------------------------------------------------------
-# Eq. (45): Gram form for the log-linear family (WG ``_gram_setup``/``_tri_blocks``)
+# Eq. (45): Gram form for the log-linear family
 # ---------------------------------------------------------------------------
 
 
@@ -609,7 +609,7 @@ class Eq45GramPlan:
     ``slot[m, i]`` is the kept-cell position of slot ``i`` of band ``m`` (``-1`` for
     a dummy); ``gG`` the cells' atom spectra on their band's support bins
     ``sup[m]``; ``gW = eta/T``; ``gT`` the cell times; ``uI1``/``uI2``/``uW`` the
-    overlap bins of adjacent bands.  WG ``MatrixGPU._gram_setup`` line for line.
+    overlap bins of adjacent bands.  Built line for line in the ported order.
 
     A JAX pytree (registered lazily, as :class:`Eq45Plan`): the layout sizes
     ``nb``, ``B``, ``Kb`` are static; every array is a leaf.
@@ -676,7 +676,7 @@ def eq45_gram_plan(plan: Eq45Plan) -> Eq45GramPlan:
 
 def eq45_gram_gather(gplan: Eq45GramPlan, values: Array) -> Array:
     """``(nb, Kb)``: a per-rfft-bin array (e.g. ``L(f)``) on each band's support bins,
-    zero-padded (WG ``gL[m, :len(k)] = L[k]``)."""
+    zero-padded (``gL[m, :len(k)] = L[k]``)."""
     out = np.zeros((gplan.nb, gplan.Kb))
     for mm, k in enumerate(gplan.sup):
         out[mm, :len(k)] = values[k]
@@ -688,9 +688,10 @@ def eq45_blocks_gram(gplan: Eq45GramPlan, alpha_cells: Array, gL: Array, *,
     """Eq. (45) blocks in the Gram form: diagonal ``(nb, B, B)`` and upper ``(nb-1, B, B)``.
 
     ``alpha_cells`` is ``alpha(t_p)`` per slot, ``(nb, B)``; the caller computes it
-    from ``gplan.gT`` with the **data record's** ``T_obs`` (WG:
+    from ``gplan.gT`` with the **data record's** ``T_obs`` (the log-linear family:
     ``ac + ad * (gT / T_obs - 0.5)``).  ``gL`` is :func:`eq45_gram_gather` of
-    ``L(f)``.  Dummy slots give zero rows and columns.  WG ``_tri_blocks`` verbatim.
+    ``L(f)``.  Dummy slots give zero rows and columns.  Ported verbatim: keep the operation
+    order.
     Under ``jax.jit`` pass ``gplan`` as an argument (see :class:`Eq45GramPlan`).
     The backend follows ``alpha_cells``, ``gL`` and the plan's arrays.
     """
@@ -708,7 +709,7 @@ def eq45_blocks_gram(gplan: Eq45GramPlan, alpha_cells: Array, gL: Array, *,
 
 
 # ---------------------------------------------------------------------------
-# Eq. (45): separable spectra S_c(f, t) = s_I(f) + g(t) s_G(f)  (GB ``tri_kernels``)
+# Eq. (45): separable spectra S_c(f, t) = s_I(f) + g(t) s_G(f)
 # ---------------------------------------------------------------------------
 
 
@@ -716,7 +717,7 @@ def eq45_separable_kernels(U: CArray, s: Array) -> Array:
     r""":math:`K^X = \tfrac12 \mathrm{Re}(U\,\mathrm{diag}(s)\,U^{\mathsf H})` in real arithmetic.
 
     ``U`` (cells x window bins) holds the unit-norm atoms; ``s`` a stationary
-    spectrum on the window bins.  GB ``matrix._kernel`` verbatim (host NumPy,
+    spectrum on the window bins.  Ported verbatim (host NumPy,
     built once per noise component).
     """
     Ur, Ui = U.real, U.imag
@@ -729,7 +730,7 @@ def eq45_separable_assemble(KI: Array, KG: Array, g_half: Array, half_index: Int
 
     ``g_half`` is the envelope on the half-step grid :math:`t = j\,\Delta T/2`,
     ``half_index = n_p + n_q`` (non-circular), so ``g_half[half_index]`` is
-    :math:`g(\bar t_{pq})`.  GB ``covariance_builder``: ``KI[c] + g[half] * KG[c]``.
+    :math:`g(\bar t_{pq})`: ``KI + g_half[half_index] * KG``.
     """
     be = be or get_backend(g_half)
     return be.asarray(KI) + be.asarray(g_half)[be.asarray(half_index)] * be.asarray(KG)

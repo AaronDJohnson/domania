@@ -8,8 +8,7 @@ likelihood path).  Every oracle here is ``O(N^2)`` memory or worse: keep ``N`` <
 * :func:`blocktri_dense`: a ragged block-tridiagonal matrix assembled densely.
 * :func:`hhat`, :func:`eq54_covariance`, :func:`dense_lambda_generic`: the generic
   Eq. (54) covariance of a modulated stationary process on Fourier bins and its WDM
-  form (GB ``wdm_full.hhat_at`` / ``dense_lambda_generic``, in the dense form that
-  the GB test helper ``generic_M`` pins it to).
+  form (ported from the galactic-binary toy model, which does not ship).
 
 :func:`dense_W`, :func:`wdm_congruence` and :func:`eq45_dense` take ``window=`` (default
 Meyer: the WDM transform) and compute in the Wilson basis of that window.
@@ -99,7 +98,7 @@ def blocktri_dense(diag: Sequence[Array], up: Sequence[Array | None]) -> Array:
 
 def hhat(mu: Array, basis_L: Array, lags: NDArray[np.int64]) -> CArray:
     r""":math:`\hat h[q] = \frac1L \sum_t \sqrt{g(t)}\,e^{-2\pi i q t/L}` at integer ``lags``,
-    ``g = exp(mu @ basis_L)`` on the ``L``-point decimation grid (GB ``wdm_full.hhat_at``)."""
+    ``g = exp(mu @ basis_L)`` on the ``L``-point decimation grid."""
     L = basis_L.shape[1]
     R = np.fft.rfft(np.exp(0.5 * (np.asarray(mu) @ basis_L))) / L
     lags = np.asarray(lags)
@@ -113,7 +112,7 @@ def eq54_covariance(s_I: Array, s_G_src: Array, h: CArray, *, margin: int) -> CA
     :math:`\kappa = -\mathrm{margin} \ldots G + \mathrm{margin} - 1` (grid units).
 
     ``s_G_src`` has ``G + 2 margin`` entries; ``h`` is :math:`\hat h` at the lags
-    ``-(G + margin) .. G + margin``.  The GB test helper ``generic_M`` verbatim.
+    ``-(G + margin) .. G + margin``.  Ported verbatim.
     """
     s_I = np.asarray(s_I, dtype=float)
     G = s_I.size
@@ -132,8 +131,7 @@ def eq54_covariance(s_I: Array, s_G_src: Array, h: CArray, *, margin: int) -> CA
 def dense_lambda_generic(U: CArray, s_I: Array, s_G_src: Array, h: CArray, *,
                          margin: int) -> Array:
     r""":math:`\Lambda = \tfrac12\mathrm{Re}(U M U^\dagger)` with ``M`` from
-    :func:`eq54_covariance` and ``U`` the unit-norm atoms on the ``G`` grid bins
-    (GB ``wdm_full.dense_lambda_generic``, equal to this dense form to 1e-12)."""
+    :func:`eq54_covariance` and ``U`` the unit-norm atoms on the ``G`` grid bins."""
     U = np.asarray(U)
     M = eq54_covariance(s_I, s_G_src, h, margin=margin)
     return 0.5 * np.real(U @ M @ U.conj().T)

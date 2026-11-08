@@ -15,9 +15,8 @@ def dense_factor(S: Any, *, chol_impl: Literal["numpy", "scipy"], symmetrize: bo
                  be: Backend) -> CholFactor:
     """Cholesky of ``S`` (of ``0.5 (S + S^T)`` when ``symmetrize``).
 
-    GB ``_dense_quad_logdet`` / ``MatrixCache``: ``np.linalg.cholesky(0.5 * (S + S.T))``
-    (``chol_impl="numpy"``, ``symmetrize=True``).  WT ``Solver(dense=...)``:
-    ``cho_factor(S)`` (``"scipy"``, ``symmetrize=False``).
+    For example ``np.linalg.cholesky(0.5 * (S + S.T))`` (``chol_impl="numpy"``,
+    ``symmetrize=True``) or ``cho_factor(S)`` (``"scipy"``, ``symmetrize=False``).
     """
     if symmetrize:
         S = 0.5 * (S + S.T)
@@ -28,9 +27,9 @@ class DenseCovariance(Covariance):
     """``C = S(nu)`` as a dense matrix.
 
     ``matrix`` is an :class:`~domainia.covariance.base.Evaluator` returning ``(n, n)``, a
-    callable ``fn(nu, be)`` or a fixed array.  ``chol_impl`` pins the Cholesky of the
-    oracle (``"scipy"``: WT; ``"numpy"``: GB) and ``symmetrize`` whether ``0.5 (S + S^T)``
-    is factorised (GB) or ``S`` itself (WT).
+    callable ``fn(nu, be)`` or a fixed array.  ``chol_impl`` pins the Cholesky
+    (``"scipy"``: ``cho_factor``; ``"numpy"``: ``np.linalg.cholesky``) and ``symmetrize``
+    whether ``0.5 (S + S^T)`` is factorised or ``S`` itself.
     """
 
     def __init__(self, matrix: Any, n: int, *, chol_impl: Literal["numpy", "scipy"],

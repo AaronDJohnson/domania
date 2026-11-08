@@ -31,11 +31,11 @@ is static (ints, tuples, strings).  Every array a factorisation reads comes from
 ``jax.device_put``).  Choosing jit or eager is dispatch, not arithmetic: the arithmetic is
 one code path per named strategy.
 
-Quadratic-form orders (each is the operation order of an oracle, kept per call site):
+Quadratic-form orders (each fixes one operation order, kept per call site):
 
-* ``"solve"``: ``b @ solve(b)`` -- WT ``marginal_lnlike`` (``float(y @ Ciy)``);
-* ``"whiten"``: ``w @ w`` with ``w = whiten(b)`` -- GB ``_dense_quad_logdet``, WG forward-only;
-* ``"elementwise"``: ``sum(b**2 / v)`` -- GB diagonal models (:class:`DiagFactor` only).
+* ``"solve"``: ``b @ solve(b)``, one dot product with the solve;
+* ``"whiten"``: ``w @ w`` with ``w = whiten(b)``, the forward solve only;
+* ``"elementwise"``: ``sum(b**2 / v)`` (:class:`DiagFactor` only).
 """
 
 from __future__ import annotations
@@ -229,10 +229,9 @@ class DiagFactor:
 class CholFactor:
     """Dense real Cholesky ``C = L L^T``.
 
-    ``impl="scipy"`` (WT ``Solver(dense)``, ``Schur``, ``PaddedMarginal``, the marginal's
-    ``H``): ``scipy.linalg.cho_factor`` and ``solve = cho_solve``.  ``impl="numpy"`` (GB):
-    ``np.linalg.cholesky`` and ``solve`` = forward then backward triangular solve (GB
-    ``MatrixCache.state``).  ``whiten`` is the forward solve for both.
+    ``impl="scipy"``: ``scipy.linalg.cho_factor`` and ``solve = cho_solve``.
+    ``impl="numpy"``: ``np.linalg.cholesky`` and ``solve`` = forward then backward
+    triangular solve.  ``whiten`` is the forward solve for both.
     """
 
     L: Any
