@@ -18,8 +18,8 @@ GRID = wilson.Grid(NF, NT, DT)
 BANDS = (3, 4, 5)
 SIGMA0 = 2.5
 
-#: The after() cases (7211bd5 test_dom_maps_cells::test_adjoint_and_the_record_scale): the
-#: interior bands of an (8, 16) grid at dt = 0.5, and the same bands padded by 4 columns.
+#: The after() cases (ported from 7211bd5's test_dom_maps_cells): the interior bands of an
+#: (8, 16) grid at dt = 0.5, and the same bands padded by 4 columns.
 AG = wilson.Grid(8, 16, 0.5)
 ACELLS = WDMDomain(CellSet.bands(AG, tuple(range(1, 8))))
 PAD_GRID = wilson.Grid(8, 20, 0.5)
@@ -171,7 +171,7 @@ def test_push_of_white_record_bins_is_the_white_cell_covariance(bands):
 
 
 def test_after_a_crop_is_the_composition_and_the_cropped_transform():
-    """7211bd5 test_dom_maps_cells::test_adjoint_and_the_record_scale, its golden-free half."""
+    """Ported from 7211bd5's test_dom_maps_cells (its golden-free half)."""
     W, crop, Z, xr = _crop_case(np.random.default_rng(0))
     # after(FourierCrop): the composite matrix is the composition, and on a band-limited
     # 160-sample record it is the WDM transform of the cropped samples [16, 144)
@@ -210,17 +210,37 @@ def test_after_a_crop_carries_the_units_factor():
 
 
 def test_after_a_zero_pad_is_the_padded_record_transform():
-    """With no DC or Nyquist bin in the store, ``A z + B conj z`` is the zero-padded record's
-    rfft, and ``W.after(zp)`` is the padded record's Wilson coefficients times
-    ``FourierZeroPad.scale = sqrt(N / N')`` (spec section 1.5 removes that scale)."""
+    """``A z + B conj z`` is the zero-padded record's rfft, so ``W.after(zp)`` is the padded
+    record's Wilson coefficients on the cells (here the GB pad: no DC or Nyquist bin in the
+    store, cells with ``n < 16``)."""
     Wp, zp, z, x = _pad_case(np.random.default_rng(1))
     M = Wp.after(zp)
     assert M.src == zp.src and M.window == Wp.window == Wp.src
     got = M.apply(z)
     assert np.max(np.abs(got - Compose(Wp, zp).apply(z))) <= 1e-12 * np.max(np.abs(got))
     xpad = np.concatenate([x, np.zeros(PAD_GRID.N - AG.N)])
-    ref = np.sqrt(AG.N / PAD_GRID.N) * TimeToWDM(TimeDomain(PAD_GRID.N, AG.dt), Wp.dst).apply(xpad)
+    ref = TimeToWDM(TimeDomain(PAD_GRID.N, AG.dt), Wp.dst).apply(xpad)
     assert np.max(np.abs(got - ref)) <= 1e-12 * np.max(np.abs(ref))
+
+
+@pytest.mark.parametrize("units", ["rfft", "dt_rfft", "sigma0"])
+def test_pad_then_wdm_is_the_padded_record_transform(units):
+    """The headline units test (spec section 1.5): every bin of a white 128-sample record
+    (non-zero DC and Nyquist), in any units, zero padded to 160 samples and analysed on the
+    padded grid's cells, is the padded record's Wilson coefficients, through ``after`` and
+    through ``Compose``."""
+    x = synthetic_record(AG.N, 11)
+    store = FourierDomain(AG.N, AG.dt, 0, AG.N // 2 + 1, units,
+                          sigma0=SIGMA0 if units == "sigma0" else None)
+    R = np.fft.rfft(x)
+    z = {"rfft": R, "dt_rfft": AG.dt * R, "sigma0": R / SIGMA0}[units]
+    cells = WDMDomain(CellSet.bands(PAD_GRID, tuple(range(1, 8))))
+    win = FourierToWDM(replace(store, N=PAD_GRID.N, n=PAD_GRID.N // 2 + 1), cells).window
+    W, pad = FourierToWDM(win, cells), FourierZeroPad(store, win)
+    want = TimeToWDM(TimeDomain(PAD_GRID.N, AG.dt), cells).apply(
+        np.concatenate([x, np.zeros(PAD_GRID.N - AG.N)]))
+    for got in (W.after(pad).apply(z), Compose(W, pad).apply(z)):
+        assert np.max(np.abs(got - want)) <= 1e-12 * np.max(np.abs(want))
 
 
 def test_edge_bands_are_refused():

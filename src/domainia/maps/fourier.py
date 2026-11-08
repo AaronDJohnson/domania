@@ -1,10 +1,11 @@
 """Maps out of band-limited Fourier bins: zero padding, cropping, WDM cells (GB, spec §4.2).
 
-Ported from the GB toy-model oracle (frozen): ``_geometric``, ``pad_maps``, ``crop_maps``
-verbatim, the cell matrices of ``Grid.dense_atoms`` and ``_cells`` (with
-``wdm_full.analyse`` and ``wdm_bands._phase``), and the data map ``cells``.  The atoms are
-``wilson.transform.band_atoms`` (GB ``geometry.band_atoms`` to rounding; bit-identical
-until the Hz window of v0.12.0, S1 Task C6).
+Ported from the GB toy-model oracle (frozen): ``_geometric`` verbatim, ``pad_maps`` and
+``crop_maps`` with the self-conjugate source bins counted once, the cell matrices of
+``Grid.dense_atoms`` and ``_cells`` (with ``wdm_full.analyse`` and ``wdm_bands._phase``),
+and the data map ``cells``.  The atoms are ``wilson.transform.band_atoms`` (GB
+``geometry.band_atoms`` to rounding; bit-identical until the Hz window of v0.12.0, S1
+Task C6).
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ __all__ = ["FourierCrop", "FourierToWDM", "FourierZeroPad", "crop_maps", "pad_ma
 
 
 # ---------------------------------------------------------------------------
-# Dirichlet kernels (GB, verbatim)
+# Dirichlet kernels (GB; the self-conjugate source bins counted once)
 # ---------------------------------------------------------------------------
 
 
@@ -41,10 +42,23 @@ def _geometric(num, den: int, n: int, n_nu_mod2):
     return np.where(exact, float(n), np.exp(1j * np.pi * (n_nu_mod2 - nu)) * ratio)
 
 
+def _count_self_conjugate_once(N: int, j_in, A, B):
+    """Halve the ``A`` and ``B`` columns of the self-conjugate source bins (absolute bin 0, and
+    ``N / 2`` for even ``N``): there ``z`` and ``conj(z)`` are the same DFT coefficient, which
+    ``A z + B conj(z)`` would otherwise count twice."""
+    j = np.asarray(j_in, np.int64)
+    self_conj = (j == 0) | (2 * j == N)
+    A[:, self_conj] *= 0.5
+    B[:, self_conj] *= 0.5
+    return A, B
+
+
 def pad_maps(N: int, Np: int, k_out, j_in):
     r"""Bins ``k_out`` of the record zero-padded from ``N`` to ``Np`` samples, from the
     record's bins ``j_in``: ``z'_k = A z + B conj(z)``, both ``(len(k_out), len(j_in))``,
-    ``A_kj = (1/N) sum_{s<N} e^{2 pi i s (j/N - k/Np)}`` and ``B`` the same at ``-j``."""
+    ``A_kj = (1/N) sum_{s<N} e^{2 pi i s (j/N - k/Np)}`` and ``B`` the same at ``-j``, with
+    the columns of the self-conjugate bins ``j = 0`` and ``j = N/2`` (even ``N``) halved, so
+    ``z'`` is the exact rfft of the padded real record in ``z``'s units."""
     k = np.asarray(k_out, np.int64)[:, None]
     out = []
     for j in (np.asarray(j_in, np.int64)[None, :], -np.asarray(j_in, np.int64)[None, :]):
@@ -52,13 +66,15 @@ def pad_maps(N: int, Np: int, k_out, j_in):
         # N nu = j - k N / Np, mod 2
         n_nu = np.mod(np.mod(j, 2) * Np - np.mod(k * N, 2 * Np), 2 * Np) / Np
         out.append(_geometric(num, N * Np, N, n_nu) / N)
-    return out[0], out[1]
+    return _count_self_conjugate_once(N, j_in, out[0], out[1])
 
 
 def crop_maps(N: int, start: int, Nc: int, k_out, j_in):
     r"""Bins ``k_out`` of the record cropped to samples ``[start, start + Nc)``, from the
     record's bins ``j_in``: ``z^c_k = A z + B conj(z)``,
-    ``A_kj = (1/N) e^{2 pi i j start / N} sum_{s<Nc} e^{2 pi i s (j/N - k/Nc)}``."""
+    ``A_kj = (1/N) e^{2 pi i j start / N} sum_{s<Nc} e^{2 pi i s (j/N - k/Nc)}``, with the
+    columns of the self-conjugate bins ``j = 0`` and ``j = N/2`` (even ``N``) halved, so
+    ``z^c`` is the exact rfft of the cropped real record in ``z``'s units."""
     k = np.asarray(k_out, np.int64)[:, None]
     out = []
     for j in (np.asarray(j_in, np.int64)[None, :], -np.asarray(j_in, np.int64)[None, :]):
@@ -67,35 +83,34 @@ def crop_maps(N: int, start: int, Nc: int, k_out, j_in):
         n_nu = np.mod(np.mod(j * Nc, 2 * N) - np.mod(k, 2) * N, 2 * N) / N
         shift = np.exp(2j * np.pi * np.mod(j * start, N) / N)
         out.append(shift * _geometric(num, N * Nc, Nc, n_nu) / N)
-    return out[0], out[1]
+    return _count_self_conjugate_once(N, j_in, out[0], out[1])
 
 
 class _WidelyLinear(LinearMap):
-    """``z -> scale (A z + B conj z)`` (kind ``"widely"``): there is no complex matrix
-    ``M`` with ``M z`` equal to it, so :meth:`rows` (and :meth:`LinearMap.dense`) refuse
-    instead of returning ``conj(A^H e + B^T e)``; read ``.A``, ``.B`` (and ``.scale``).
-    ``push`` raises in :class:`LinearMap`."""
+    """``z -> A z + B conj z`` (kind ``"widely"``): there is no complex matrix ``M`` with
+    ``M z`` equal to it, so :meth:`rows` (and :meth:`LinearMap.dense`) refuse instead of
+    returning ``conj(A^H e + B^T e)``; read ``.A`` and ``.B``.  ``push`` raises in
+    :class:`LinearMap`."""
 
     kind = "widely"
 
     def rows(self, idx):
         raise TypeError(f"{type(self).__name__} is widely linear (A z + B conj z): it has no "
-                        "complex row matrix; use its .A, .B and .scale")
+                        "complex row matrix; use its .A and .B")
 
 
-@pytree_dataclass(data=("A", "B"), meta=("src", "dst", "scale"))
+@pytree_dataclass(data=("A", "B"), meta=("src", "dst"))
 @dataclass(frozen=True, eq=False)
 class FourierZeroPad(_WidelyLinear):
     """Bins ``dst`` of the record zero-padded from ``src.N`` to ``dst.N`` samples, from the
-    bins ``src``: ``z' = scale (A z + B conj z)``, ``scale = sqrt(N / N')`` (kind
-    ``"widely"``).  ``A, B`` are :func:`pad_maps`; ``scale`` keeps the padded record's
-    unit-norm cells in the record's cell units (GB ``variant``)."""
+    bins ``src``: ``z' = A z + B conj z`` (kind ``"widely"``, ``A, B`` from :func:`pad_maps`),
+    the rfft of the padded record in ``src``'s units (``dst`` must have the same
+    ``(units, sigma0)``)."""
 
     src: FourierDomain
     dst: FourierDomain
     A: Any = field(default=_BUILD, kw_only=True)
     B: Any = field(default=_BUILD, kw_only=True)
-    scale: float = field(default=_BUILD, kw_only=True)
 
     def __post_init__(self) -> None:
         if self.A is _BUILD:
@@ -106,17 +121,16 @@ class FourierZeroPad(_WidelyLinear):
             A, B = pad_maps(s.N, d.N, d.k0 + np.arange(d.n), s.k0 + np.arange(s.n))
             object.__setattr__(self, "A", A)
             object.__setattr__(self, "B", B)
-            object.__setattr__(self, "scale", float(np.sqrt(s.N / d.N)))
 
     def apply(self, z, be=None):
         be = self._be(z, be)
         z = be.asarray(z)
-        return self.scale * ((z @ self.A.T) + (be.xp.conj(z) @ self.B.T))
+        return (z @ self.A.T) + (be.xp.conj(z) @ self.B.T)
 
     def adjoint(self, y, be=None):
         be = self._be(y, be)
         y = be.asarray(y)
-        return self.scale * ((y @ be.xp.conj(self.A)) + (be.xp.conj(y) @ self.B))
+        return (y @ be.xp.conj(self.A)) + (be.xp.conj(y) @ self.B)
 
 
 @pytree_dataclass(data=("A", "B"), meta=("src", "dst", "start"))
@@ -124,7 +138,8 @@ class FourierZeroPad(_WidelyLinear):
 class FourierCrop(_WidelyLinear):
     """Bins ``dst`` of the record cropped to samples ``[start, start + dst.N)``, from the
     bins ``src``: ``z^c = A z + B conj z`` (:func:`crop_maps`; GB ``whittle_map`` and
-    ``mask_rows``).  ``apply`` is the oracle's template call site
+    ``mask_rows``), the rfft of the cropped record in ``src``'s units (``dst`` must have the
+    same ``(units, sigma0)``).  ``apply`` is the oracle's template call site
     ``(h @ A.T) + (conj(h) @ B.T)``; :meth:`apply_data` its data call site."""
 
     src: FourierDomain
@@ -132,8 +147,6 @@ class FourierCrop(_WidelyLinear):
     start: int = 0
     A: Any = field(default=_BUILD, kw_only=True)
     B: Any = field(default=_BUILD, kw_only=True)
-
-    scale = 1.0
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "start", operator.index(self.start))
@@ -338,8 +351,9 @@ class FourierToWDM(LinearMap):
     def after(self, inner: Any) -> "FourierToWDM":
         """The dense cell matrix of ``self . inner`` for a widely linear ``inner``
         (:class:`FourierZeroPad`, :class:`FourierCrop`) -- GB ``_cells``:
-        ``C = kappa * inner.scale * (analyse(A[idx]) + conj(analyse(B[idx])))``, rows of
-        ``dst``, with ``self``'s ``kappa``.
+        ``C = kappa * (analyse(A[idx]) + conj(analyse(B[idx])))``, rows of ``dst``, with
+        ``self``'s ``kappa``: ``inner`` keeps the units, so the composite's cells are the
+        Wilson coefficients of the padded or cropped record.
 
         The atoms are rebuilt from ``dst``'s geometry, so ``self.src`` must be exactly the
         band window :attr:`window` of the cells' grid record: a ``restrict=True`` map
@@ -358,5 +372,5 @@ class FourierToWDM(LinearMap):
         A, B = np.asarray(inner.A), np.asarray(inner.B)
         C = _analyse(phase, phi, A[geo["idx"]]).reshape(nb * Nt, -1)
         C = C + np.conj(_analyse(phase, phi, B[geo["idx"]]).reshape(nb * Nt, -1))
-        C = (_kappa(self.src, g) * inner.scale) * C
+        C = _kappa(self.src, g) * C
         return FourierToWDM(inner.src, self.dst, "dense", lo=0, width=inner.src.n, C=C[geo["sel"]])

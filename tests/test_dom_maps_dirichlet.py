@@ -29,8 +29,8 @@ def test_zero_pad_reproduces_the_padded_record_rfft():
     padded[:NS] = x
     Xp = np.fft.rfft(padded)
     Z = FourierZeroPad(SRC, FourierDomain(Np, 1.0, 5, 80, "rfft"))
-    assert Z.kind == "widely" and Z.scale == np.sqrt(NS / Np)
-    assert np.max(np.abs(Z.apply(X[20:61]) - Z.scale * Xp[5:85])) <= 1e-14 * np.max(np.abs(Xp))
+    assert Z.kind == "widely" and not hasattr(Z, "scale")
+    assert np.max(np.abs(Z.apply(X[20:61]) - Xp[5:85])) <= 1e-14 * np.max(np.abs(Xp))
 
 
 def test_crop_reproduces_the_cropped_record_rfft():
@@ -38,7 +38,30 @@ def test_crop_reproduces_the_cropped_record_rfft():
     start, Nc = 24, 200
     Xc = np.fft.rfft(x[start:start + Nc])
     C = FourierCrop(SRC, FourierDomain(Nc, 1.0, 10, 70, "rfft"), start)
+    assert not hasattr(C, "scale")
     assert np.max(np.abs(C.apply(X[20:61]) - Xc[10:80])) <= 1e-14 * np.max(np.abs(Xc))
+
+
+@pytest.mark.parametrize("N", [256, 255])
+def test_full_record_bins_pad_and_crop_to_the_exact_rfft(N):
+    """Spec section 1.5: the self-conjugate source bins (DC, and Nyquist for even N) count
+    once, so pad and crop of every bin of a record with non-zero DC and Nyquist content are
+    the rfft of the padded or cropped series.  The output end bins are real to rounding."""
+    x = np.random.default_rng(N).standard_normal(N) + 0.75             # non-zero DC
+    x[::2] += 0.5                                                      # non-zero Nyquist (even N)
+    X = np.fft.rfft(x)
+    assert abs(X[0]) > 1 and (N % 2 or abs(X[-1]) > 1)
+    src = FourierDomain(N, 1.0, 0, N // 2 + 1, "rfft")
+    for Np in (N + 64, N + 65):
+        want = np.fft.rfft(np.r_[x, np.zeros(Np - N)])
+        got = FourierZeroPad(src, FourierDomain(Np, 1.0, 0, Np // 2 + 1, "rfft")).apply(X)
+        assert np.max(np.abs(got - want)) <= 1e-13 * np.max(np.abs(want))
+        assert abs(got[0].imag) <= 1e-13 * np.max(np.abs(want))
+    for start, Nc in ((24, 200), (7, 141)):
+        want = np.fft.rfft(x[start:start + Nc])
+        got = FourierCrop(src, FourierDomain(Nc, 1.0, 0, Nc // 2 + 1, "rfft"), start).apply(X)
+        assert np.max(np.abs(got - want)) <= 1e-13 * np.max(np.abs(want))
+        assert abs(got[0].imag) <= 1e-13 * np.max(np.abs(want))
 
 
 def test_maps_match_direct_transforms():
@@ -55,7 +78,7 @@ def test_maps_match_direct_transforms():
     Np = (NT + 4) * Nf
     Z = FourierZeroPad(store, FourierDomain(Np, 1.0, 30, 80, "rfft"))
     want = np.fft.rfft(np.r_[x, np.zeros(Np - N)])[30:110]
-    assert np.allclose(Z.apply(z[j]) / Z.scale, want, rtol=0, atol=1e-13)
+    assert np.allclose(Z.apply(z[j]), want, rtol=0, atol=1e-13)
     start, Nc = 3 * Nf, (NT - 4) * Nf
     C = FourierCrop(store, FourierDomain(Nc, 1.0, 20, 50, "rfft"), start)
     assert np.allclose(C.apply(z[j]), np.fft.rfft(x[start:start + Nc])[20:70], rtol=0, atol=1e-13)
