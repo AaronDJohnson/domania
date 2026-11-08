@@ -69,7 +69,8 @@ def _diagonal(v):
     return DiagonalCovariance(lambda nu, be: be.asarray(v) * be.xp.exp(nu[0]), v.size)
 
 
-#: (covariance, support, channel_names): every kind of covariance, both kinds of partial support.
+#: (covariance, support, channel_names): every kind of covariance, both kinds of partial support,
+#: and a support in a non-Meyer window.
 CASES = {
     "diagonal": lambda: (_diagonal(_V[:ALL.size]), WDM, ("A",)),
     "blocktri": lambda: (_blocktri(ALL), WDM, ("A",)),
@@ -83,6 +84,8 @@ CASES = {
     "drop-columns": lambda: (EvolutionaryCovariance(PSD, CUT), WDMDomain(CUT), ("A",)),
     "drop-columns-stack": lambda: (ChannelStack([_blocktri(CUT), EvolutionaryCovariance(PSD, CUT)], 2),
                                    WDMDomain(CUT), ("A", "E")),
+    "alt-window": lambda: (EvolutionaryCovariance(PSD, ALL, window=ALT_WINDOW), WDMDomain(ALL, ALT_WINDOW),
+                           ("A",)),
 }
 
 
@@ -121,7 +124,8 @@ def test_operator_matrix_is_the_selected_covariance_on_every_domain(case):
     same mapped by the Fourier coordinates."""
     cov, support, names = CASES[case]()
     op = CovarianceOperator(cov, _nu(cov), support, names)
-    assert isinstance(op, Operator) and op.domain == WDMDomain.full(GRID) and op.channel_names == names
+    assert isinstance(op, Operator) and op.channel_names == names
+    assert op.domain == WDMDomain.full(GRID, support.window)
     ref = _references(cov, support, len(names))
     _close(operator_matrix(op), ref["wdm"], 1e-12)
     for target, d in (("time", TIME), ("fourier", FOURIER)):
@@ -141,7 +145,7 @@ def test_every_method_matches_the_dense_moore_penrose_reference(case):
     assert op.degrees_of_freedom == K * support.size
     assert op.log_determinant() == pytest.approx(np.linalg.slogdet(cov.dense(_nu(cov)))[1], rel=1e-10)
     for target, C in _references(cov, support, K).items():
-        d = {"wdm": WDM, "time": TIME, "fourier": FOURIER}[target]
+        d = {"wdm": op.domain, "time": TIME, "fourier": FOURIER}[target]
         t = translate_operator(op, d)
         w, V = np.linalg.eigh(0.5 * (C + C.T))
         keep = w > 1e-9 * w.max()
@@ -229,10 +233,16 @@ def test_the_arguments_are_validated():
                            ("A", "E"))
     with pytest.raises(ValueError, match="window wide-smoothstep but the support uses meyer"):
         CovarianceOperator(EvolutionaryCovariance(PSD, ALL, window=ALT_WINDOW), NU, WDM, ("A",))
+    with pytest.raises(ValueError, match="window wide-smoothstep but the support uses meyer"):
+        CovarianceOperator(ChannelStack([ev, EvolutionaryCovariance(PSD, ALL, window=ALT_WINDOW)], 2),
+                           np.r_[NU, NU], WDM, ("A", "E"))       # each child is checked
     left, right = ALL.drop_columns(2, 0), ALL.drop_columns(0, 2)
     assert left.size == right.size and left != right
     with pytest.raises(ValueError, match="are not support.cells"):
         CovarianceOperator(EvolutionaryCovariance(PSD, left), NU, WDMDomain(right), ("A",))
+    stack = ChannelStack([EvolutionaryCovariance(PSD, right), EvolutionaryCovariance(PSD, left)], 2)
+    with pytest.raises(ValueError, match="are not support.cells"):
+        CovarianceOperator(stack, np.r_[NU, NU], WDMDomain(right), ("A", "E"))   # each child is checked
     with pytest.raises(ValueError, match=r"cov\.n_u = 1"):
         CovarianceOperator(_WithNuisance(np.ones(N), N), NU, WDM, ("A",))
     with pytest.raises(ValueError, match="^DenseCovariance is not positive definite at nu$"):
