@@ -60,3 +60,7 @@ class DiagonalCovariance(Covariance):
 
     def _matrix(self, C: Any, nu: Any, be: Backend) -> Any:
         return be.xp.diag(self.variances(C, nu, be))
+
+    def _multiply(self, C: Any, nu: Any, b: Any, be: Backend) -> Any:
+        v = self.variances(C, nu, be)
+        return v * b if b.ndim == 1 else v[:, None] * b

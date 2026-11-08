@@ -276,8 +276,10 @@ class Covariance:
     reads arrays only from ``C``).  A combinator lists the covariances it wraps in
     ``children()``; their constants appear in ``C`` under the same keys and keep their
     own caches.  Covariances with a dense form implement ``_matrix(C, nu, be)``;
-    :meth:`dense` is its host value.  ``jittable = False`` marks a strategy that runs
-    eagerly on both backends (the ragged layout, ``on_fail="raise"``).
+    :meth:`dense` is its host value.  :meth:`multiply` is ``_multiply(C, nu, b, be)``,
+    which defaults to ``_matrix(C, nu, be) @ b``; a class with a cheaper product overrides
+    it.  ``jittable = False`` marks a strategy that runs eagerly on both backends (the
+    ragged layout, ``on_fail="raise"``).
     """
 
     n: int
@@ -332,6 +334,25 @@ class Covariance:
 
     def _matrix(self, C: Any, nu: Any, be: Backend) -> Any:
         raise NotImplementedError(f"{type(self).__name__} has no dense assembly")
+
+    def _multiply(self, C: Any, nu: Any, b: Any, be: Backend) -> Any:
+        """``Sigma(nu) b`` from the constants ``C``: ``_matrix(C, nu, be) @ b`` unless a
+        subclass overrides it.  A class with neither raises ``TypeError``."""
+        if type(self)._matrix is Covariance._matrix:
+            raise TypeError(f"{type(self).__name__} has no multiply: it implements neither "
+                            "_multiply nor _matrix (a dense assembly)")
+        return self._matrix(C, nu, be) @ b
+
+    def multiply(self, nu: Any, b: Any, be: Backend | None = None) -> Any:
+        """``Sigma(nu) b``, eagerly.  ``b`` has the layout the factor's ``solve`` takes:
+        ``(n,)``, or ``(channels, n_c)`` for :class:`~domainia.covariance.stack.ChannelStack`.
+
+        NumPy is the tested backend; a JAX ``be`` is passed through.  The name is not
+        ``matvec``: ``PushedCovariance`` duck-types ``matvec(X, be)``, which has a
+        fixed-noise-state signature.
+        """
+        be = be or get_backend(nu, b)
+        return self._multiply(self.constants(be), be.asarray(nu), be.asarray(b), be)
 
     def constants(self, be: Backend | None = None) -> Any:
         """The constants on ``be``: built once in host NumPy, cached per backend (JAX:

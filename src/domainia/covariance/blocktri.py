@@ -164,3 +164,19 @@ class BlockTridiagonalCovariance(Covariance):
     def _matrix(self, C: Any, nu: Any, be: Backend) -> Any:
         diag, up = to_layout(*self.band_blocks(C, nu, be), self.sizes, "ragged", be)
         return blocks_to_dense(diag, up, be)
+
+    def _multiply(self, C: Any, nu: Any, b: Any, be: Backend) -> Any:
+        """Band by band from the ragged blocks, ``D_m x_m + U_m x_{m+1} + U_{m-1}^T x_{m-1}``
+        (``x_m`` the band-``m`` slice of ``b``): never the dense matrix."""
+        diag, up = to_layout(*self.band_blocks(C, nu, be), self.sizes, "ragged", be)
+        off = np.concatenate([[0], np.cumsum(self.sizes)]).astype(int)
+        x = [b[off[m]:off[m + 1]] for m in range(len(self.sizes))]
+        out = []
+        for m, D in enumerate(diag):
+            y = D @ x[m]
+            if m + 1 < len(diag):
+                y = y + up[m] @ x[m + 1]
+            if m > 0:
+                y = y + up[m - 1].T @ x[m - 1]
+            out.append(y)
+        return be.xp.concatenate(out)

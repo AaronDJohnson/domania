@@ -99,6 +99,23 @@ class ChannelStack(Covariance):
                     for c, (cov, nu_c) in enumerate(zip(self.covs, self.split(nu), strict=True)))
         return None if all(p is None for p in pre) else pre
 
+    def _matrix(self, C: Any, nu: Any, be: Backend) -> Any:
+        """The block-diagonal of the channels' dense matrices, each at its own slice of
+        ``nu``, in channel order: ``dense(nu) @ b.reshape(-1)`` is
+        ``multiply(nu, b).reshape(-1)`` (``b`` row-major, channel by channel)."""
+        xp = be.xp
+        blocks = [cov._matrix(C[str(c)], nu_c, be)
+                  for c, (cov, nu_c) in enumerate(zip(self.covs, self.split(nu), strict=True))]
+        sizes = [cov.n for cov in self.covs]
+        return xp.block([[blocks[i] if i == j else xp.zeros((sizes[i], sizes[j]))
+                          for j in range(len(blocks))] for i in range(len(blocks))])
+
+    def _multiply(self, C: Any, nu: Any, b: Any, be: Backend) -> Any:
+        """Each channel's ``Sigma_c(nu_c) b[c]``, stacked: ``b`` is ``(channels, n_c)``, so the
+        channels must share ``n_c`` (as :meth:`StackFactor.solve`)."""
+        return be.xp.stack([cov._multiply(C[str(c)], nu_c, b[c], be)
+                            for c, (cov, nu_c) in enumerate(zip(self.covs, self.split(nu), strict=True))])
+
     def _factor(self, C: Any, nu: Any, be: Backend, *, key: Any = None, pre: Any = None) -> StackFactor:
         fs = tuple(self.child_factor(cov, C[str(c)], nu_c, be, None if key is None else key[c],
                                      None if pre is None else pre[c])

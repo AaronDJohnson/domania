@@ -196,6 +196,9 @@ class EvolutionaryCovariance(Covariance):
     def _matrix(self, C: Any, nu: Any, be: Backend) -> Any:
         return self.impl._matrix(C, nu, be)
 
+    def _multiply(self, C: Any, nu: Any, b: Any, be: Backend) -> Any:
+        return self.impl._multiply(C, nu, b, be)
+
     def band_blocks(self, C: Any, nu: Any, be: Backend) -> tuple[Any, Any]:
         """``(diag, up)`` from the constants ``C`` (``assembly="blocktri"`` only)."""
         if not isinstance(self.impl, BlockTridiagonalCovariance):
