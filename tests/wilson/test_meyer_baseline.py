@@ -8,6 +8,7 @@ comparator, shared with ``meyer_cases.py --check``.
 
 from __future__ import annotations
 
+from collections import Counter
 from types import SimpleNamespace
 
 import numpy as np
@@ -41,10 +42,25 @@ def test_the_rescaled_families_are_exactly_the_spec_table(baseline):
                              ("wilson", "transform.forward_bands"),
                              ("wilson", "transform.inverse_bands")}
     rescaled = [k for k in baseline if rescale_factor(k) is not None]
-    assert len(rescaled) == 5 * 6                       # 3 grids x 2 dt each
+    per_family = Counter(tuple(k.split("::")[:2]) for k in rescaled)
+    assert per_family == {fam: 3 * 2 for fam in RESCALED}           # 3 grids x 2 dt each
     assert rescale_factor("domainia::FourierToWDM.fft::16x32::dt=0.25") == np.sqrt(2 * 0.25 / 512)
     assert rescale_factor("wilson::transform.inverse_bands::32x8::dt=1.0") == 1.0
     assert rescale_factor("wilson::transform.forward::8x16::dt=1.0") is None
+
+
+def test_the_rescaled_comparison_rejects_nan_and_a_wrong_factor():
+    """``mismatches`` on a RESCALED key: ``f * want`` passes, while a NaN in ``got`` (one entry,
+    or every entry) and a wrong factor are reported."""
+    key = "domainia::FourierToWDM.fft::16x32::dt=0.25"
+    f = rescale_factor(key)
+    want = {key: np.random.default_rng(0).standard_normal((3, 32))}
+    assert mismatches({key: f * want[key]}, want) == []
+    one_nan = f * want[key]
+    one_nan[1, 7] = np.nan
+    assert mismatches({key: one_nan}, want) == [key]
+    assert mismatches({key: np.full_like(want[key], np.nan)}, want) == [key]
+    assert mismatches({key: 2.0 * f * want[key]}, want) == [key]
 
 
 def test_default_window_reproduces_the_meyer_baseline_bit_for_bit(baseline):

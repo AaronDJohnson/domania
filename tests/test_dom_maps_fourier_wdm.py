@@ -191,6 +191,24 @@ def test_after_a_crop_is_the_composition_and_the_cropped_transform():
         Wc.after(FourierCrop(FourierDomain(192, AG.dt, 0, 64, "rfft"), Wc.src, 8))
 
 
+def test_after_a_crop_carries_the_units_factor():
+    """``after`` applies kappa's ``src.rfft_scale``: on ``dt_rfft`` bins (``u = 1 / dt = 2``) the
+    composite is still the composition with the crop (which has no scale), and its cells are
+    the cropped record's Wilson coefficients (the crop geometry of the test above)."""
+    rng = np.random.default_rng(0)
+    Z = np.zeros(81, complex)
+    Z[8:57] = rng.standard_normal(49) + 1j * rng.standard_normal(49)    # no DC, no Nyquist
+    xr = np.fft.irfft(Z, n=160)
+    W = FourierToWDM(FourierDomain(AG.N, AG.dt, 0, 64, "dt_rfft"), ACELLS)
+    crop = FourierCrop(FourierDomain(160, AG.dt, 0, 81, "dt_rfft"), W.src, 16)
+    z = AG.dt * Z                                                       # dt_rfft units
+    got = W.after(crop).apply(z)
+    want = Compose(W, crop).apply(z)
+    assert np.max(np.abs(got - want)) <= 1e-12 * np.max(np.abs(want))
+    ref = TimeToWDM(TimeDomain(AG.N, AG.dt), ACELLS).apply(xr[16:144])
+    assert np.max(np.abs(got - ref)) <= 1e-12 * np.max(np.abs(ref))
+
+
 def test_after_a_zero_pad_is_the_padded_record_transform():
     """With no DC or Nyquist bin in the store, ``A z + B conj z`` is the zero-padded record's
     rfft, and ``W.after(zp)`` is the padded record's Wilson coefficients times

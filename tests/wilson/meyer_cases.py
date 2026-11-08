@@ -82,7 +82,7 @@ def mismatches(got: dict[str, np.ndarray], want: dict[str, np.ndarray]) -> list[
     """The keys of ``want`` that ``got`` does not reproduce (the keys must be the same).
 
     Same dtype everywhere; ``np.array_equal`` except for the :data:`RESCALED` keys, which
-    need ``max |got - f want| <= RESCALED_RTOL * max |f want|``.
+    need ``max |got - f want| <= RESCALED_RTOL * max |f want|`` (a NaN anywhere fails it).
     """
     if sorted(got) != sorted(want):
         raise AssertionError(f"baseline keys differ: {sorted(set(got) ^ set(want))[:10]}")
@@ -95,8 +95,8 @@ def mismatches(got: dict[str, np.ndarray], want: dict[str, np.ndarray]) -> list[
         elif f is None:
             if not np.array_equal(g, w):
                 bad.append(k)
-        elif (np.max(np.abs(g - f * w), initial=0.0)
-              > RESCALED_RTOL * np.max(np.abs(f * w), initial=0.0)):
+        elif not (np.max(np.abs(g - f * w), initial=0.0)                 # NaN-safe: a NaN fails
+                  <= RESCALED_RTOL * np.max(np.abs(f * w), initial=0.0)):
             bad.append(k)
     return bad
 
