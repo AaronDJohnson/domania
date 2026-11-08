@@ -18,7 +18,7 @@ kernels), the factors of :mod:`domainia.linalg` (``BlockTriFactor``) and the map
 
   - :func:`eq45_plan` -- host constants (one plan per grid and kept-cell set);
   - Chebyshev-in-time builders: :func:`eq45_coeffs_bessel` (exact Bessel-I
-    coefficients of the log-linear family, the ported code that wrote the NumPy
+    coefficients of the log-linear family, a port of the code that wrote the NumPy
     references) or :func:`eq45_coeffs_interp` (any
     ``Sn(f, t)``, interpolated at ``P`` Chebyshev nodes; wdm_dev), then
     :func:`eq45_blocks_cheb`;

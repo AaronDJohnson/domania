@@ -203,9 +203,9 @@ class LinearMap:
 class PushedCovariance:
     """``M Sigma M^T`` evaluated on demand: ``rows(idx)``, ``diag()``, ``dense()``.
 
-    Rows follow the oracle order of each map kind: ``"real"`` --
-    ``M (Sigma M[idx]^T)``, i.e. ``map.apply(cov.matvec(map.rows(idx)))`` (atoms, then
-    the covariance, then the forward transform);
+    Rows follow one fixed operation order per map kind (it fixes the float64 bits):
+    ``"real"`` -- ``M (Sigma M[idx]^T)``, i.e. ``map.apply(cov.matvec(map.rows(idx)))``
+    (atoms, then the covariance, then the forward transform);
     ``"cells"`` -- ``0.5 * Re((C[idx] @ M') @ conj(C).T)``;
     ``"analysis"`` -- ``F[idx] Sigma F^H``; ``"complex"`` --
     ``(A M' A^H)[idx]``.

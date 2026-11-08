@@ -139,8 +139,8 @@ class FourierCrop(_WidelyLinear):
     """Bins ``dst`` of the record cropped to samples ``[start, start + dst.N)``, from the
     bins ``src``: ``z^c = A z + B conj z`` (:func:`crop_maps`), the rfft of the cropped
     record in ``src``'s units (``dst`` must have the same ``(units, sigma0)``).  ``apply`` is
-    the oracle's template call site ``(h @ A.T) + (conj(h) @ B.T)``; :meth:`apply_data` its
-    data call site."""
+    the ported toy model's template call site ``(h @ A.T) + (conj(h) @ B.T)``;
+    :meth:`apply_data` its data call site."""
 
     src: FourierDomain
     dst: FourierDomain
@@ -167,7 +167,7 @@ class FourierCrop(_WidelyLinear):
         return (z @ self.A.T) + (be.xp.conj(z) @ self.B.T)
 
     def apply_data(self, z, be=None):
-        """The oracle's DATA call site ``(A @ z.T + B @ conj(z).T).T``: the
+        """The ported toy model's DATA call site ``(A @ z.T + B @ conj(z).T).T``: the
         same map as :meth:`apply` in the other matmul orientation (<= 2e-15 apart)."""
         be = self._be(z, be)
         z = be.asarray(z)
@@ -251,8 +251,8 @@ class FourierToWDM(LinearMap):
     and ``kappa = src.rfft_scale * sqrt(2 dt / N)`` (``N``, ``dt`` of the
     cells' grid) turns bins in ``src.units`` into Wilson coefficients.  ``impl="dense"``
     evaluates ``Re(z[..., lo:lo+width] @ C.T)`` (the golden default);
-    ``impl="fft"`` evaluates ``src.rfft_scale * wilson.forward_bands`` (opt-in).  For
-    complex128 bins it agrees with dense to <= 1e-12 relative; complex64 bins run
+    ``impl="fft"`` evaluates ``src.rfft_scale * wilson.transform.forward_bands`` (opt-in).
+    For complex128 bins it agrees with dense to <= 1e-12 relative; complex64 bins run
     ``forward_bands`` in single precision on the fft path, so it returns float32 where dense
     returns float64.  For a record ``x`` and its bins ``z`` in ``src.units``, the cells equal
     ``TimeToWDM.apply(x)`` on the same cells.

@@ -1,4 +1,4 @@
-"""README.md's python blocks run, in order, in one namespace (the spec's README gate)."""
+"""README.md's python blocks run, in order, in one namespace."""
 
 from __future__ import annotations
 

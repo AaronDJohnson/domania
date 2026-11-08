@@ -51,7 +51,7 @@ in band order); convert with `domainia.wilson.pack(w, Nf, Nt)` and
 `domainia.wilson.unpack(y, Nf, Nt)`.
 Coordinates scale as `exp(log_coordinate_scale(domain))` relative to the time
 samples: 1 for time, `sqrt(dt)` for WDM (any window), `dt * sqrt(N)` for Fourier (in the
-real coordinates `Re X_0`, `sqrt(2) Re/Im X_k`, `Re X_{N/2}`).
+real coordinates `Re X_0`, `sqrt(2) Re/Im X_k`, `Re X_{N/2}` for even `N`).
 
 `transform` is NumPy only: a JAX array is copied to host NumPy, and `transform` cannot be
 traced under `jax.jit` or `jax.grad` (JAX raises its `TracerArrayConversionError`, a
@@ -87,7 +87,7 @@ X[[0, -1]] = X[[0, -1]].real                  # odd N: X[0] only
 assert np.allclose(transform({"A": X}, freq, time)["A"], x)
 ```
 
-### Units
+## Units
 
 A WDM value is always a Wilson coefficient `w = W x` of the time record (`W W^T = dt I`),
 whichever path produced it: `transform`, the maps `TimeToWDM` and `FourierToWDM` (both
@@ -104,8 +104,9 @@ and covariances describe these coefficients. A Fourier value `z` carries the uni
 
 `FourierDomain(N, dt, k0, n, "sigma0", sigma0=s)` stores the value `s` (positive and
 finite; it is part of the domain's equality and hash), and the other units take no
-`sigma0`. Every map honours the label: `FourierToWDM(src, wdm).apply(z)` equals
-`TimeToWDM(time, wdm).apply(x)` on the same cells for every `units` value, and
+`sigma0`. Every map honours the label: on a `WDMDomain` `dst` of interior bands (which
+`FourierToWDM` requires), `FourierToWDM(src, dst).apply(z)` equals
+`TimeToWDM(time, dst).apply(x)` for every `units` value, and
 `FourierZeroPad` and `FourierCrop` return the rfft of the zero-padded or cropped record in
 the source's units (`sigma0` included).
 

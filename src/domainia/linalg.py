@@ -21,7 +21,7 @@ in ``domainia.covariance``; this module keeps the array kernels they call.
 Layouts of a block-tridiagonal matrix:
 
 * ``"ragged"``: Python lists of per-band blocks, a host loop.  Runs eagerly on either
-  backend (never under ``jit``); the NumPy golden default, bitwise the ported code.
+  backend (never under ``jit``); the NumPy golden default, bit for bit as the ported code.
 * ``"padded"``: ``(nb, B, B)`` arrays with identity dummy slots (:class:`BandLayout`),
   a ``be.scan`` over the bands; jit/vmap-able, the JAX default.
 
@@ -395,8 +395,8 @@ def blocktri_whiten_packed(f: BlockTriFactor, b: Any, *, be: Backend | None = No
 
 
 def blocktri_solve_packed(f: BlockTriFactor, b: Any, *, be: Backend | None = None) -> Any:
-    """Padded layout only: ``Lambda^-1 b`` for ``b (nb, B, k)``: :func:`blocktri_whiten_packed`,
-    then a reverse ``be.scan`` of the back substitution."""
+    """Padded layout only: ``Lambda^-1 b`` for ``b (nb, B, k)``.  It is
+    :func:`blocktri_whiten_packed`, then a reverse ``be.scan`` of the back substitution."""
     if f.layout != "padded":
         raise ValueError("blocktri_solve_packed needs the padded layout")
     be = _be(be, f.Ls, b)
@@ -509,10 +509,11 @@ def pcg(apply_A: Callable[[Any], Any], apply_M: Callable[[Any], Any], B: Any, *,
     """Solve ``A x_r = b_r`` for every row of ``B (R, N)`` by preconditioned CG.
 
     One body for both ported code paths: a frozen-row ``while_loop`` (rows that converge or
-    fail are frozen, ``p = 0``), whose ``R = 1`` run is the early-exit loop bit for bit
-    (same alpha/beta order, row dots by ``vecdot`` = ``numpy.dot``, norms
-    ``sqrt(vecdot)`` = ``numpy.linalg.norm``).  After the loop the true residual is
-    checked: ``|b - A x| <= true_rtol |b|``, ``true_rtol = max(5 tol, 1e-12)`` by default.
+    fail are frozen, ``p = 0``), whose ``R = 1`` run is the WDM Paper II toy models'
+    early-exit loop bit for bit (same alpha/beta order, row dots by ``vecdot`` =
+    ``numpy.dot``, norms ``sqrt(vecdot)`` = ``numpy.linalg.norm``).  After the loop the true
+    residual is checked: ``|b - A x| <= true_rtol |b|``, ``true_rtol = max(5 tol, 1e-12)`` by
+    default.
 
     ``apply_A``/``apply_M`` map ``(R, N) -> (R, N)``.  ``on_fail="raise"`` (eager only)
     raises ``RuntimeError``; ``on_fail="nan"`` (jit-able) returns NaN rows

@@ -52,7 +52,8 @@ def _wilson_units(N: int, dt: float) -> float:
 
 
 #: ``(layer, case) -> f(N, dt)`` with ``got = f * recorded``: the families whose units changed
-#: in the follow-up spec (section 1.7).  The recording used ``"rfft"`` units (``u = 1``).
+#: on purpose (every WDM value is now a Wilson coefficient).  The recording used ``"rfft"``
+#: units (``u = 1``).
 #: ``inverse_bands`` has ``f = 1``: its input ``wb = forward_bands(xr, ...)`` is recomputed on
 #: every run, so the new ``sqrt(2 dt / N)`` of ``wb`` and ``sqrt(N / (2 dt))`` of
 #: ``inverse_bands`` cancel, to rounding (compared by tolerance, not bits).

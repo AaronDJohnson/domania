@@ -1,4 +1,4 @@
-"""C4: wdm.noise and wdm.stationary against the frozen oracle.
+"""C4: domainia.wilson.noise and domainia.wilson.stationary against the frozen oracle.
 
 Bit for bit up to v0.11.0.  The Hz window of v0.12.0 (Paper I eq:Meyer-def: phi flat
 value 1/sqrt(Delta F), stationary prefactor 1/N, against the oracle's omega-normalised

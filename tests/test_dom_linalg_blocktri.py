@@ -1,6 +1,6 @@
 """D-A4: diagonal, dense-Cholesky and block-tridiagonal factors against dense linear
 algebra and, bit for bit, against the oracle formulas they port (NumPy).  The diagonal and
-dense factors are the one family of ``domainia.covariance`` (S4 merge, E-C2)."""
+dense factors are the one family of ``domainia.covariance``."""
 
 from __future__ import annotations
 
@@ -149,9 +149,8 @@ def test_chol_failure_is_flagged():
 
 
 def test_one_ok_rule_finite_and_positive():
-    """S4 merge decision: a factor is ok when its defining diagonal (``v``; ``diag L``) is
-    finite and positive.  S2's linalg copy took ``all(v > 0)`` and so passed a ``+inf``
-    variance (``ok`` True) where the covariance family said False."""
+    """A factor is ok when its defining diagonal (``v``; ``diag L``) is finite and
+    positive: ``all(v > 0)`` alone would pass a ``+inf`` variance (``ok`` True)."""
     with np.errstate(divide="ignore", invalid="ignore"):
         assert not bool(DiagFactor.build(np.array([1.0, np.inf, 2.0]), NUMPY).ok)
         assert not bool(DiagFactor.build(np.array([1.0, np.nan, 2.0]), NUMPY).ok)

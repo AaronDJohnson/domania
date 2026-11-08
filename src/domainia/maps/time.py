@@ -166,7 +166,7 @@ class TimeToFourier(LinearMap):
     """``x -> rfft(x)[keep]``: the retained complex bins, ``fmin <= f < f_Nyq`` with DC and
     Nyquist dropped (kind ``"analysis"``).
 
-    ``apply`` returns the complex bins exactly as the oracle computes them
+    ``apply`` returns the complex bins exactly as the ported toy models compute them
     (``np.fft.rfft(r)[keep]``), because the Whittle density's ``2/N |R|^2`` order is
     bitwise only on them.  Their real orthonormal coordinates are
     ``sqrt(2/N) (Re R_k, -Im R_k)``, bin by bin, with rows :meth:`orthonormal_rows`.

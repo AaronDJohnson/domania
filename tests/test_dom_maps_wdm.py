@@ -71,7 +71,7 @@ def test_push_equals_W_sigma_WT(grid):
 
 
 def test_push_of_an_exact_covariance_matches_wdm_exact_covariance():
-    """domainia.wilson.evolutionary.exact_covariance (dense W Sigma W^T) is the S1 oracle."""
+    """domainia.wilson.evolutionary.exact_covariance (dense W Sigma W^T) is the reference."""
     Nf, Nt, dt = 8, 16, 0.5
     g, _, M = _maps(Nf, Nt, dt)
     Sn = lambda f, t: (np.maximum(f, 0.05) / 1.0) ** (-1.0 + 0.8 * (t / (g.N * dt) - 0.5))  # noqa: E731

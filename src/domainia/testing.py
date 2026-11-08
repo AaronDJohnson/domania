@@ -112,7 +112,7 @@ def eq54_covariance(s_I: Array, s_G_src: Array, h: CArray, *, margin: int) -> CA
     :math:`\kappa = -\mathrm{margin} \ldots G + \mathrm{margin} - 1` (grid units).
 
     ``s_G_src`` has ``G + 2 margin`` entries; ``h`` is :math:`\hat h` at the lags
-    ``-(G + margin) .. G + margin``.  Ported verbatim.
+    ``-(G + margin) .. G + margin``.
     """
     s_I = np.asarray(s_I, dtype=float)
     G = s_I.size

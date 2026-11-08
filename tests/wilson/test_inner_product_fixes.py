@@ -1,4 +1,4 @@
-"""C5: the b5973b7 fixes and the ``cells`` convention of wdm.inner_product."""
+"""C5: the b5973b7 fixes and the ``cells`` convention of domainia.wilson.inner_product."""
 
 from __future__ import annotations
 

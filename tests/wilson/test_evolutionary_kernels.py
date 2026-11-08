@@ -1,4 +1,5 @@
-"""C8: the stateless WDM Paper II kernels (wdm.evolutionary, wdm.special, wdm.noise).
+"""C8: the stateless WDM Paper II kernels (domainia.wilson.evolutionary,
+domainia.wilson.special, domainia.wilson.noise).
 
 Every kernel is checked against its source: the frozen wdm_dev oracle
 (``wdm_dev_ev``), the block builder of the WDM Paper II toy models in a lineage-A

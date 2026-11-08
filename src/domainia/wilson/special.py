@@ -29,7 +29,7 @@ def bessel_i(P: int, a: Any, be: Backend | None = None) -> Any:
 def chebyshev_basis(N: int, P: int) -> NDArray[np.floating]:
     """Chebyshev polynomials ``T_p(u_i)``, ``(P, N)``, ``u_i = 2 (i/N - 1/2)``.
 
-    Ported verbatim (host constant).
+    A host constant.
 
     Examples
     --------

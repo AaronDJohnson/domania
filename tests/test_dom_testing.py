@@ -73,8 +73,8 @@ def test_eq45_differs_from_exact_at_second_order_with_drift():
 def test_blocktri_dense_of_the_fast_blocks_is_the_direct_sum(cut):
     """Adapted from the toy models' test_fast_blocks_equal_the_direct_sum (here the 8 x 16
     grid and one noise point, through blocktri_dense; the toy models used an 8 x 64 grid and
-    three points).  The padded-grid case is S1's packages/wdm/tests/test_evolutionary_kernels.py::
-    test_bessel_blocks_match_the_direct_sum_and_gram."""
+    three points).  The padded-grid case is
+    tests/wilson/test_evolutionary_kernels.py::test_bessel_blocks_match_the_direct_sum_and_gram."""
     cells = CellSet.all_active(GRID)
     if cut:
         cells = cells.drop_columns(*cut)
