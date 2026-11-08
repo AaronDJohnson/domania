@@ -1,7 +1,13 @@
 # domainia 2.0 follow-ups: units in place, covariance operators, fixes
 
-Date: 2026-11-04. Status: approved design (approach A, 2026-11-04), awaiting spec review.
+Date: 2026-11-04. Status: approved design (approach A, 2026-11-04). Spec review
+(2026-11-07) folded in; awaiting the user's review of the written spec.
 Branch `domainia-2.0` at 73ec04a, not pushed. Nothing in this spec pushes.
+
+**Test pin lists.** Each section names the tests it is known to break. The lists are a
+starting point, not a census: the plan greps for every pattern a section changes (`.scale`
+on a `WDMDomain`, `"sigma0"`, `forward_bands`, `inverse_bands`, `FourierToWDM(`,
+`push_rows`, the moved error messages) and updates every hit.
 
 ## Goal
 
@@ -44,9 +50,14 @@ Three changes to the unreleased 2.0 branch:
 * **float32 on NumPy:**
   * `forward_time`, `forward`, `inverse`, `inverse_time` and their `_many` forms already
     return float32/complex64.
-  * Their intermediates are not single precision. float64 sign and `kappa` arrays multiply
-    the single-precision arrays, so the FFTs run in complex128 and the result is rounded
-    once when stored.
+  * Their intermediates are not all single precision (measured in spec review with a
+    recording backend):
+    * `forward_time`, `forward_time_many`, `forward` and `forward_many` already feed
+      `rfft` float32 and `ifft` complex64. The leak is after the FFT: float64 `kappa` and
+      sign arrays multiply the output (`_gather_bands`, `transform.py:425` and `:431`), so
+      that product is float64 and is rounded once when stored.
+    * `inverse`, `inverse_many`, `inverse_time`, `inverse_time_many`, `forward_bands` and
+      `inverse_bands` run complex128 FFTs.
   * `forward_bands` returns float64 for complex64 input, and `inverse_bands` returns
     complex128 for float32 input.
   * The docstrings at `wilson/transform.py:65-66` and `:166-167` claim "entirely in single
@@ -96,14 +107,23 @@ Every map honours this label. No map rescales silently.
     `sigma0=None`. Both cases raise `ValueError` naming the field.
   * `sigma0` is part of equality and the hash.
 * New property `rfft_scale`, the `u` of the table.
-* Every place that derives a `FourierDomain` from another uses
-  `dataclasses.replace(src, k0=…, n=…)`, so `sigma0` travels with it. These are
-  `BinSelect` (`maps/base.py:404`), `FourierToWDM.window` (`maps/fourier.py:285`), and any
-  other site that `grep -n "FourierDomain(" src` finds.
+* Every place that derives a `FourierDomain` from another uses `dataclasses.replace`, so
+  `units` and `sigma0` travel with it:
+  * `BinSelect` (`maps/base.py:403`): `replace(src, k0=…, n=…)`;
+  * `FourierToWDM.window` (`maps/fourier.py:284-285`):
+    `replace(self.src, N=g.N, dt=g.dt, k0=geo["g0"], n=geo["G"])`. The record comes from
+    `dst`'s grid, not from `src`: for a map returned by `after()`, `src` is on the outer
+    record (`src.N ≠ g.N`). `replace(src, k0=…, n=…)` alone would break
+    `tests/test_dom_maps_fourier_wdm.py:137-140`, and in the pad case (`:151`) `k0 + n`
+    would exceed `N//2 + 1` and the constructor would raise;
+  * any other site that `grep -n "FourierDomain(" src` finds, by the same rule.
 * The "same units" checks in `FourierZeroPad`, `FourierCrop` and `BinSelect` compare
   `(units, sigma0)`.
 * `TabulatedSpectrum.on` and `.at` stay unit-blind, because a PSD does not depend on the
   data's Fourier normalisation. Their docstring says so.
+* **Tests to update** (they build `FourierDomain(..., "sigma0")` without `sigma0`):
+  `tests/test_dom_domains.py:28`, `tests/test_dom_spectra.py:13-29`,
+  `tests/test_dom_maps_base.py:112`.
 
 ### 1.3 The band kernels return Wilson units (`domainia.wilson.transform`)
 
@@ -127,6 +147,12 @@ Every map honours this label. No map rescales silently.
   * `test_forward_bands_is_the_transform_times_sqrt_N_over_2dt` (line 243), renamed
     `…_is_the_transform_on_the_bands`;
   * `test_inverse_bands_is_the_adjoint` (line 256).
+* **Also** in `tests/wilson/test_window_threading.py`: `:457-468`
+  (`forward(z)[bands] / sqrt(2 dt/N)`) and `:473-487` (the adjoint identity, which picks
+  up `2 dt/N`).
+* `FourierToWDM.fft` calls `forward_bands`, so this section changes the fft
+  implementation while §1.4 changes the dense one. The two land in one task (see Order),
+  or `test_fft_impl_matches_dense` is red in between.
 
 ### 1.4 `FourierToWDM`
 
@@ -149,6 +175,9 @@ Every map honours this label. No map rescales silently.
     white noise when σ² = 1), `push_rows(M′, all)` equals `σ² dt I` on the cells to 1e-13.
     This was measured at 6e-16 for bands 1..Nf−1 and 2..Nf−2. It is the covariance of the
     Wilson coefficients of white noise, `W σ² I Wᵀ`.
+* **Pins to update** (old record scale): `tests/test_dom_windows.py:128-135` and
+  `:160-186` (rows, and the push `(N/(2 dt)) W Σ Wᵀ`);
+  `tests/test_dom_maps_fourier_wdm.py:114-121` (push `M′ = 2I → I`) and `:155`.
 
 ### 1.5 `FourierZeroPad` and `FourierCrop`
 
@@ -192,6 +221,9 @@ Every map honours this label. No map rescales silently.
   * `tests/wilson/test_window_threading.py:267`;
   * `tests/test_dom_maps_base.py:204`;
   * the scale cases in `tests/test_dom_domains.py`;
+  * `tests/test_dom_maps_base.py:63-74` (`WDMDomain(cut.cells, 2.0)`, positional: under
+    the new signature `2.0` would land in `window`) and `:188-198`;
+  * `tests/test_translate.py:64`;
   * any `.scale` read on a `WDMDomain` that `grep` finds in `tests/wilson/test_windows.py`.
 
 ### 1.7 The Meyer baseline
@@ -205,9 +237,16 @@ other key stays `np.array_equal`:
 | `domainia::FourierToWDM.fft`           | `sqrt(2 dt/N)`              |
 | `domainia::FourierToWDM.adjoint`       | `sqrt(2 dt/N)` (κ once)     |
 | `wilson::transform.forward_bands`      | `sqrt(2 dt/N)`              |
-| `wilson::transform.inverse_bands`      | `sqrt(N/(2 dt))`            |
+| `wilson::transform.inverse_bands`      | `1` (tolerance, not bits)   |
 
 The baseline cases use `"rfft"` units, so `u = 1`.
+
+`inverse_bands` gets `f = 1` because its input is not recorded: `tests/wilson/meyer_cases.py:80`
+recomputes `wb = forward_bands(xr, …)` on every run. After §1.3, `wb` carries `sqrt(2 dt/N)`
+and `inverse_bands` carries `sqrt(N/(2 dt))`, so the two cancel. Spec review emulated the
+new kernels against the npz: with `f = 1`, four of the six grid/`dt` pairs are bit-equal
+and the 32x8 pairs differ by ≤ 2e-16. The case therefore stays in `RESCALED` with `f = 1`
+(compared by tolerance), not in the bit-exact set.
 
 * `tests/wilson/test_meyer_baseline.py` gets a table `RESCALED = {(layer, case): f(N, dt)}`.
 * `_mismatches` compares those keys for the same dtype and for
@@ -230,13 +269,22 @@ The baseline cases use `"rfft"` units, so `u = 1`.
 
 ### 2.2 Public real coordinates (`domainia.translate`)
 
-* **`to_coordinates(channel_data, domain) -> ndarray`**
-  * It returns `(K, N)` float64, with rows in the dict's order.
+* **`to_coordinates(channel_data, domain, channel_names=None) -> ndarray`**
+  * It returns `(K, N)` float64.
+  * Row order: `channel_names` when given, else the dict's order. With `channel_names`,
+    the dict's channels must be exactly that set (`ValueError` otherwise), and the rows
+    follow `channel_names` whatever order the dict was built in.
   * It validates its input exactly as `transform` does, with the same errors, on the same
     full-record domains.
 * **`from_coordinates(R, domain, channel_names) -> dict`**
   * It returns the canonical layout: inactive WDM cells exactly 0, and Fourier end bins
-    exactly real.
+    exactly real. The dict's order is `channel_names`.
+* **Channel order is pinned to `channel_names`.** `DenseOperator`, `CovarianceOperator`
+  and `operator_matrix` always pass their `channel_names` to `to_coordinates`. Today
+  `TranslatedOperator` checks only the channel set (`translate.py:354`, `:366`) and
+  `transform` keeps the caller's insertion order. Without the pin, `{"E": …, "A": …}`
+  passed to an `("A", "E")` operator would meet the wrong matrix blocks. A test passes a
+  reversed dict to each operator class and to a translated one.
 * **Coordinates:**
   * Time: the samples.
   * Fourier, with `X = dt · rfft(x)` and `h = (N − 1) // 2`:
@@ -256,7 +304,8 @@ The baseline cases use `"rfft"` units, so `u = 1`.
 matrix as an `Operator`.
 
 * **Layout.** `matrix` is `(K·N, K·N)` on the stacked coordinates. The stacking is
-  channel-major: `r` concatenates the rows of `to_coordinates`.
+  channel-major in `channel_names` order: `r` concatenates the rows of
+  `to_coordinates(values, domain, channel_names)`.
 * **Validation:**
   * the shape, and finite entries;
   * symmetry to 1e-12 relative. It then stores `(C + Cᵀ)/2`, read-only.
@@ -299,10 +348,17 @@ covariance's factor `solve` takes: `(n,)` for a single covariance, `(C, n_c)` fo
   * `EvolutionaryCovariance`: delegates to its `impl`.
   * `ChannelStack`: each child, with `split(nu)`.
   * Base class: `_matrix @ b`. A class with neither raises `TypeError`.
+* **`ChannelStack._matrix` (new).** Today `ChannelStack(...).dense(nu)` raises
+  `NotImplementedError` (`stack.py` has no `_matrix`). It gains one: the block-diagonal of
+  the children's `_matrix`, each at its own `split(nu)` slice, in channel order. The
+  `(C, n_c)` layout of `b` flattens row-major (channel-major), so
+  `multiply(nu, b).reshape(-1) == dense(nu) @ b.reshape(-1)`. The children must share `n_c`
+  for the `(C, n_c)` layout, as `StackFactor.solve` (`xp.stack`) already requires.
 * It is not named `matvec`: `PushedCovariance` duck-types `matvec(X, be)`, a
   fixed-noise-state signature.
 * NumPy is required. A JAX `be` is passed through, but this spec does not test it.
-* **Acceptance:** `multiply` equals `dense(nu) @ b` to 1e-12 for every class above.
+* **Acceptance:** `multiply` equals `dense(nu) @ b` to 1e-12 for every class above
+  (flattened as above for `ChannelStack`).
 
 ### 2.6 `CovarianceOperator` (`domainia.operators`)
 
@@ -324,7 +380,7 @@ presents it as an `Operator`.
   * `cov.factor(nu)` is computed eagerly on NumPy at construction, and `ok` false raises
     `ValueError` ("not positive definite at nu").
 * **Layout.**
-  * Values go to `to_coordinates` `(K, N)`, then to
+  * Values go to `to_coordinates(values, domain, channel_names)` `(K, N)`, then to
     `R[:, support.cells.packed_positions()]`, giving `(K, s)`.
   * That array is flattened channel-major for a single covariance and kept as rows for a
     `ChannelStack`.
@@ -354,6 +410,17 @@ presents it as an `Operator`.
     including the pseudo-determinant for a partial support.
 * `PushedCovariance._matvec`'s error message names `CovarianceOperator` as the route.
 
+### 2.8 Package surface for §2
+
+* `domainia.translate.__all__` gains `to_coordinates` and `from_coordinates`.
+* The new module `domainia.operators` has
+  `__all__ = ["CovarianceOperator", "DenseOperator", "operator_matrix"]`.
+* `domainia.__all__` gains the module `operators` and those five names, following how it
+  already re-exports `translate`'s names. `tests/test_package.py` pins `PUBLIC` exactly
+  and is updated with them.
+* `operators.py` joins `SCANNED` in `tests/wilson/test_window_threading.py`, or
+  `test_the_scan_covers_every_module_but_filter_and_windows` fails.
+
 ### 2.7 Taking the window from a `WDMDomain`
 
 * `EvolutionaryCovariance`, `BandAveragedVariance` and `MidpointVariance` accept a
@@ -364,6 +431,9 @@ presents it as an `Operator`.
 * `EvolutionaryCovariance` drops the error "for a WDMDomain pass domain.cells".
 * A `CellSet` with the default window keeps today's numbers, so the Meyer baseline is
   unchanged.
+* The `WDMDomain` form is for callers. Call sites in `src/` keep passing `window=`
+  explicitly, so the window scan in `tests/wilson/test_window_threading.py`, which flags a
+  consumer call without `window=`, stays as it is.
 
 ## 3. Single precision throughout
 
@@ -376,18 +446,24 @@ presents it as an `Operator`.
     expression is regrouped. The Meyer baseline is the gate.
 * **Dtypes by entry point:**
 
-  | entry point                         | input → output | today            |
-  |-------------------------------------|----------------|------------------|
-  | `forward_time`, `forward_time_many` | f32 → f32      | f32, f64 inside  |
-  | `forward`, `forward_many`           | c64 → f32      | f32, c128 inside |
-  | `inverse`, `inverse_many`           | f32 → c64      | c64, c128 inside |
-  | `inverse_time`, `inverse_time_many` | f32 → f32      | f32, c128 inside |
-  | `forward_bands`                     | c64 → f32      | **f64**          |
-  | `inverse_bands`                     | f32 → c64      | **c128**         |
+  | entry point                         | input → output | today                                      |
+  |-------------------------------------|----------------|--------------------------------------------|
+  | `forward_time`, `forward_time_many` | f32 → f32      | f32; FFTs single, f64 product after the FFT |
+  | `forward`, `forward_many`           | c64 → f32      | f32; FFTs single, f64 product after the FFT |
+  | `inverse`, `inverse_many`           | f32 → c64      | c64, c128 FFTs                             |
+  | `inverse_time`, `inverse_time_many` | f32 → f32      | f32, c128 FFTs                             |
+  | `forward_bands`                     | c64 → f32      | **f64**, c128 FFTs                         |
+  | `inverse_bands`                     | f32 → c64      | **c128**, c128 FFTs                        |
+
+* For the forward family the change is the post-FFT product only (`transform.py:425`,
+  `:431`).
 
 * **Tests:**
   * A recording backend wraps the NumPy backend's `fft` namespace and asserts that every
-    FFT input in a float32 run is single precision.
+    FFT input in a float32 run is single precision. It is already green for the forward
+    family; it starts red only for the inverse family and the band kernels.
+  * The forward family therefore needs its own red test, on the post-FFT product: the
+    dtype of the array handed to `_set_rounded` in a float32 run. The plan picks the hook.
   * A test checks the dtype table above.
   * `ORACLE_RTOL[float32] = 2e-6` still holds against the oracle. The float32 bits move,
     at about 1e-7.
@@ -406,7 +482,8 @@ presents it as an `Operator`.
 * **Tests and docs to update:**
   * `tests/wilson/test_noise_stationary.py:100-101` move to a `TypeError` parametrisation.
   * In `tests/wilson/vendored/test_filter.py:106`, `2.5` moves to a `TypeError` case;
-    `0` and `-1` stay `ValueError`.
+    `0` and `-1` stay `ValueError`, and their `match="d must be an integer"` becomes the
+    range message (`"d must be >= 1"`), which the old pattern would not match.
   * The "Raises" sections of the touched docstrings.
 * **Unchanged:**
   * `tests/wilson/vendored/test_grid.py:114-116` passes only ints.
@@ -440,8 +517,18 @@ presents it as an `Operator`.
      check reads meta only;
    * `dataclasses.replace` changing a key field raises `ValueError` ("built for another
      src/dst: construct a new map");
-   * constants supplied without `built_for` raise `ValueError`.
-4. **Spec wording.** In the 2.0 spec, line 228 "domainia's own outputs make the endpoints
+   * constants supplied without `built_for` raise `ValueError`;
+   * internal constructions that supply constants pass `built_for` too. Known site:
+     `WDMToTime.adjoint` (`maps/time.py:144`) builds
+     `TimeToWDM(self.dst, self.src, m_idx=…, n_idx=…)`, so it passes
+     `built_for=(self.dst, self.src)`. The plan greps `src/` for every other constructor
+     call that passes constants (`m_idx=`, `pos=`, …).
+
+   The guard runs after each map's existing `src`/`dst` validation, so a mismatched
+   window or grid keeps its current message. `tests/test_dom_windows.py:241`
+   (`Restrict(..., pos=…)` with a window mismatch) keeps passing unchanged.
+   (`tests/test_dom_maps_base.py:67`, the scale case, changes with §1.6.)
+4. **Spec wording.** In the 2.0 spec, line 229 "domainia's own outputs make the endpoints
    exactly real" becomes "`transform`'s outputs make the endpoints exactly real".
 5. **sdist.** Add `[tool.hatch.build.targets.sdist] exclude = ["docs/superpowers"]`.
    hatchling is not installed in the test env, so a `tomllib` test asserts the exclude.
@@ -449,15 +536,24 @@ presents it as an `Operator`.
 ## 6. Dead code and duplicates
 
 Remove each item only after a grep shows no reader in `src/`, `tests/` or `README.md`.
-Otherwise keep it, and record why in the plan errata.
+Otherwise keep it, and record why in the plan errata. A test whose only job is to pin the
+item itself is not a reader: it is removed with the item.
 
 * `Covariance.batchable`;
 * the `Covariance.complete_constants` hook, if no subclass overrides it;
-* `GenericPSD.capabilities`;
-* `BandAveragedVariance.t`, the unused pytree data leaf;
-* `covariance.evolutionary.keep_mask`, replaced by `CellSet.keep_mask()`;
-* `_oracle_paths`, duplicated in `tests/wilson/test_evolutionary_kernels.py` and
-  `test_grid_bands.py`: move it to `tests/wilson/conftest.py`.
+* `GenericPSD.capabilities` (`spectra.py:79`). Its only reader is the pin at
+  `tests/test_dom_spectra.py:37`, which goes with it;
+* `BandAveragedVariance.t` and `MidpointVariance.t`, unused pytree data leaves.
+  `BandAveragedVariance.on()` stays: `as_evaluator` (`covariance/base.py:153`) recognises
+  the variance classes by `hasattr(obj, "on")`;
+* `_oracle_paths`, duplicated in `tests/wilson/test_evolutionary_kernels.py:44` and
+  `test_grid_bands.py:46`: move it to `tests/wilson/conftest.py`.
+
+**Kept:** `covariance.evolutionary.keep_mask` (`evolutionary.py:44`). It is not a
+duplicate of `CellSet.keep_mask()`: it also raises unless the cells are active and in band
+order, which `EvolutionaryCovariance` relies on (`evolutionary.py:165`), and it has readers
+in `covariance/__init__.py`, `tests/test_dom_cov_api.py:28` and
+`tests/test_dom_evolutionary_cov.py:10`, `:105`.
 
 ## 7. Text sweep (last task)
 
@@ -483,8 +579,8 @@ Otherwise keep it, and record why in the plan errata.
 
 ## Order
 
-* **Units:** §1.2 → §1.3 with §1.7 → §1.4 → §1.5 → §1.6.
-* **Operators:** §2.2 → §2.3/§2.4 → §2.5 → §2.6 → §2.7.
+* **Units:** §1.2 → §1.3 and §1.4 together, with §1.7 → §1.5 → §1.6.
+* **Operators:** §2.2 → §2.3/§2.4 → §2.5 → §2.6 with §2.8 → §2.7.
 * **Then:** §3 → §4 → §5 → §6 → §7.
 
 ## Non-goals
