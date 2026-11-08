@@ -248,8 +248,11 @@ integrality, or a string that is not one of the choices.
 ### 2.2 Helpers *(my call)*
 
 A new private module `src/domainia/wilson/_checks.py` holds the integer, real-scalar, flag,
-string-option, `isinstance` (against the class passed in) and index-array helpers, plus
-`validate_dt` and `validate_finite`. It imports only NumPy, so both `wilson` and the core can
+string-option, `isinstance` (against the class passed in), index-array and array-dtype
+helpers, plus `validate_dt` and `validate_finite`. The array-dtype helper refuses, with
+`TypeError`, a dtype outside the kinds a place allows (e.g. "real numeric": no complex,
+bool, str or object); §1.2's real-taking maps, §2.3's value arrays and §3.5's "never
+complex" checks all use it. It imports only NumPy, so both `wilson` and the core can
 use it without a cycle. `require_window`, `transform._check_finite` and `sanitize_psd` stay
 where they are (they need `Window`, `is_tracer`, and their doctested names).
 
