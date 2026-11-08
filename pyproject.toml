@@ -23,6 +23,10 @@ test = ["pytest>=8"]
 [tool.hatch.build.targets.wheel]
 packages = ["src/domainia"]
 
+[tool.hatch.build.targets.sdist]
+# The design specs and implementation plans are working documents, not part of the release.
+exclude = ["docs/superpowers"]
+
 [tool.pytest.ini_options]
 # One config for the whole repo.  tests/ has no __init__.py (its modules import the
 # sibling helpers dom_db_inputs.py by name); tests/wilson is a package whose conftest

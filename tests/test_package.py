@@ -29,6 +29,13 @@ def test_the_version_is_2_0_0_everywhere():
     assert tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["version"] == "2.0.0"
 
 
+def test_the_sdist_leaves_out_the_working_documents():
+    """The specs and plans under docs/superpowers stay out of the sdist.  hatchling is not
+    installed in the test env, so this reads the build config rather than building."""
+    hatch = tomllib.loads((REPO / "pyproject.toml").read_text())["tool"]["hatch"]
+    assert "docs/superpowers" in hatch["build"]["targets"]["sdist"]["exclude"]
+
+
 def test_the_public_names():
     assert set(domainia.__all__) == PUBLIC
     assert all(hasattr(domainia, name) for name in domainia.__all__)
