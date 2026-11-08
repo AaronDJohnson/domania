@@ -63,9 +63,19 @@ either assumed or hard-coded the normalized one anyway.
 Precision
 ---------
 Single precision propagates: a ``float32`` series (or ``complex64`` spectrum)
-is transformed entirely in single precision and returns ``float32``.  Anything
-else, integers included, promotes to double.  It is opt-in by dtype rather
-than by flag, so the precision of a result is readable off its own ``.dtype``.
+is transformed in single precision and returns ``float32``.  Every constant
+that multiplies a working array (the sign patterns, ``kappa``, ``lam``, the
+window samples, the edge-band ``sqrt(2)``, the band phases) is cast to the
+working dtype first, so every FFT receives a single-precision array, on NumPy
+and on JAX.  Anything else, integers included, promotes to double.  It is
+opt-in by dtype rather than by flag, so the precision of a result is readable
+off its own ``.dtype``.
+
+float64 runs are bit for bit what they were before the casts (a cast to
+float64 is a no-op, and no float64 expression is regrouped; the Meyer baseline,
+``tests/wilson/test_meyer_baseline.py``, is the gate).  float32 runs differ
+from the frozen oracle at single-precision rounding, because the oracle formed
+some products in double before storing them.
 
 **This is a memory feature, not a speed one**, and the docstrings say so
 because the obvious guess is wrong.  Measured end to end it is 0.87-1.19x --
@@ -76,7 +86,8 @@ drops to ~2e-7 relative, from ~4e-16.
 Where it reaches, and where it stops
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 * **The transform** -- ``forward``/``inverse`` and their ``_time`` and
-  ``_many`` forms -- follows the input dtype.
+  ``_many`` forms, and the band kernels ``forward_bands``/``inverse_bands`` --
+  follows the input dtype.
 * **The variance builders** ``whittle_variance``, ``band_averaged_variance``
   and ``evolutionary_variance`` follow the *PSD's* dtype, so a ``float32`` PSD
   paired with a ``float32`` series keeps the whole coefficient/variance
@@ -164,7 +175,8 @@ def _working_dtypes(a: NDArray[np.generic]) -> tuple[np.dtype, np.dtype]:
     """``(real, complex)`` working dtypes implied by an input array.
 
     Single precision propagates: a ``float32`` series or ``complex64`` spectrum
-    is transformed entirely in single precision and comes back ``float32``.
+    is transformed in single precision (every constant is cast to the working
+    dtype before it multiplies a working array) and comes back ``float32``.
     Anything else -- including integer input -- promotes to double.
 
     This is opt-in by dtype rather than by flag, which keeps the default exact
@@ -187,26 +199,25 @@ def _check_finite(values: NDArray[np.generic], context: str) -> None:
 
 
 def _set_rounded(a: Array, idx: object, v: Array, be: Backend) -> Array:
-    """``a[idx] = v`` with ``v`` first rounded to ``a.dtype`` (``copy=False``).
+    """``a[idx] = v`` with ``v`` cast to ``a.dtype`` (``copy=False``).
 
-    NumPy rounds a float64 ``v`` once on store into a float32 ``a``; casting
-    first is that same rounding, so the result is bit-identical.  On JAX it
-    keeps the scatter dtype-safe: a float32 transform would otherwise store
-    float64 values, which jax 0.9 warns about (``FutureWarning``: "scatter
-    inputs have incompatible types") and a later JAX will reject.
+    The transforms form ``v`` in the working dtype (their constants are cast
+    first), so the cast is a no-op for them.  It stays as the guard that keeps
+    the scatter dtype-safe on JAX: storing float64 values into a float32 array
+    warns in jax 0.9 (``FutureWarning``: "scatter inputs have incompatible
+    types"), and a later JAX will reject it.
     """
     return be.set(a, idx, be.asarray(v, dtype=a.dtype), copy=False)
 
 
 def _add_rounded(a: Array, idx: object, v: Array, be: Backend) -> Array:
-    """``a[idx] += v`` for a duplicate-free ``idx``, rounded once into ``a.dtype``.
+    """``a[idx] += v`` for a duplicate-free ``idx``, stored in ``a.dtype``.
 
-    NumPy's in-place ``+=`` adds in the promoted dtype and rounds once on
-    store; this spells it out -- gather, add, round, set -- so it is
-    bit-identical on NumPy for float32 and float64 alike, and dtype-safe on
-    JAX (see :func:`_set_rounded`).  Rounding ``v`` to ``a.dtype`` *before* the
-    add would round twice and change the float32 bits (120 of 160 random
-    float32 inverse cases differed from the oracle).
+    Gather, add, cast, set: the functional form of NumPy's in-place ``+=``,
+    so float64 bits are the in-place statement's.  The inverse transforms hand
+    it a ``v`` already in ``a``'s dtype, so a float32 run adds in single
+    precision and the cast is a no-op; the cast keeps the scatter dtype-safe
+    on JAX (see :func:`_set_rounded`).
     """
     return be.set(a, idx, be.asarray(a[idx] + v, dtype=a.dtype), copy=False)
 
@@ -297,10 +308,8 @@ def _prepare_edges_for_inverse(
     """
     work = wmn.astype(rdtype)          # NumPy: always a fresh copy, so copy=False below is safe
     mask = active_mask(Nf, Nt)
-    root2 = np.sqrt(2)
-    # ``work[..., 0, :] *= mask[0] * root2`` as a functional update; on NumPy
-    # it is the same in-place multiply (float64 product, rounded once into the
-    # working dtype), so the rounding is unchanged.
+    root2 = rdtype.type(np.sqrt(2))   # mask[m] * root2 is then in the working dtype too
+    # ``work[..., 0, :] *= mask[0] * root2`` as a functional update.
     work = _set_rounded(work, (..., 0, slice(None)), work[..., 0, :] * (mask[0] * root2), be)
     work = _set_rounded(work, (..., Nf, slice(None)), work[..., Nf, :] * (mask[Nf] * root2), be)
     return work
@@ -335,7 +344,9 @@ def _scatter_interior_bands(
     m_par = m_int & 1
     n_par = n_arr & 1
     even_int = m_par[:, None] == n_par[None, :]
-    sign_int = 1.0 - 2.0 * ((1 - m_par)[:, None] * n_par[None, :])
+    # In the working dtype, so a float32 G (and so the FFT) stays complex64;
+    # the callers pass ``phi_c`` and ``lam`` in that dtype too.
+    sign_int = (1.0 - 2.0 * ((1 - m_par)[:, None] * n_par[None, :])).astype(wmn_work.dtype)
     xp = be.xp
     scaled_int = wmn_work[..., 1:Nf, :] * sign_int
     # g = w' * C_mn * (-1)^{(m+1)n}: real where (m+n) even, imaginary otherwise.
@@ -370,7 +381,7 @@ def _scatter_edge_bands(
     n_arr = np.arange(Nt)
     for m in (0, Nf):
         even, sign = _parity(m, n_arr)
-        scaled = wmn_work[..., m, :] * sign
+        scaled = wmn_work[..., m, :] * sign.astype(wmn_work.dtype)
         g = xp.where(even, scaled, 0.0) + 1j * xp.where(even, 0.0, scaled)
         Wm = be.fft.fft(g, axis=-1)
         ell = n_arr + (m - 1) * (Nt // 2)
@@ -403,7 +414,9 @@ def _gather_bands(x_rfft: CArray, Nf: int, Nt: int, dt: float, be: Backend = NUM
     xp = be.xp
     rdtype, cdtype = _working_dtypes(x_rfft)
     phi_c = sample_window(window, Nf, Nt, dt).astype(rdtype)          # host constant
-    kappa = np.sqrt(2.0) / Nf
+    # Every constant below is in the working dtype, so a float32 run stays float32
+    # after the FFT (for float64 the casts are no-ops).
+    kappa = rdtype.type(np.sqrt(2.0) / Nf)
     n_arr = np.arange(Nt)
     out: Array = xp.zeros((*x_rfft.shape[:-1], Nf + 1, Nt), dtype=rdtype)
 
@@ -419,21 +432,19 @@ def _gather_bands(x_rfft: CArray, Nf: int, Nt: int, dt: float, be: Backend = NUM
     # Re(C_mn^* y_m[n]): even -> Re(y_m); odd -> Re(-i y_m) = Im(y_m).
     re_or_im_int = xp.where(even_int, Y.real, Y.imag)
     # (-1)^{(m+1)n}; exponent parity = ((m+1) & 1) * (n & 1).
-    sign_int = 1.0 - 2.0 * ((1 - m_par)[:, None] * n_par[None, :])
-    # ``out[..., 1:Nf, :] = (kappa * sign_int) * re_or_im_int``: same grouping,
-    # computed in float64 and rounded once into the working dtype, exactly as before.
+    sign_int = (1.0 - 2.0 * ((1 - m_par)[:, None] * n_par[None, :])).astype(rdtype)
+    # ``out[..., 1:Nf, :] = (kappa * sign_int) * re_or_im_int``, in the working dtype.
     out = _set_rounded(out, (..., slice(1, Nf), slice(None)), kappa * sign_int * re_or_im_int, be)
 
     for m in (0, Nf):
         y_m = be.fft.ifft(_build_slab(x_rfft, m, Nf, Nt, cdtype, be) * phi_c, axis=-1)
         even, sign = _parity(m, n_arr)
         out = _set_rounded(out, (..., m, slice(None)),
-                           kappa * sign * xp.where(even, y_m.real, y_m.imag), be)
+                           kappa * sign.astype(rdtype) * xp.where(even, y_m.real, y_m.imag), be)
 
     # Unit-norm edge basis functions. Not optional: see the module docstring.
-    # ``out[..., 0, :] /= np.sqrt(2)``: the in-place divide computes in float64
-    # (np.sqrt(2) is a float64 scalar) and rounds once on store -- as here.
-    root2 = np.sqrt(2)
+    # ``out[..., 0, :] /= sqrt(2)``, with sqrt(2) in the working dtype.
+    root2 = rdtype.type(np.sqrt(2))
     out = _set_rounded(out, (..., 0, slice(None)), out[..., 0, :] / root2, be)
     out = _set_rounded(out, (..., Nf, slice(None)), out[..., Nf, :] / root2, be)
     return out
@@ -700,7 +711,7 @@ def inverse(
     phi_c = sample_window(window, Nf, Nt, dt).astype(rdtype)
     wmn_work = _prepare_edges_for_inverse(wmn, Nf, Nt, rdtype, be)
 
-    lam = 1.0 / (np.sqrt(2.0) * dt)
+    lam = rdtype.type(1.0 / (np.sqrt(2.0) * dt))
     X = be.xp.zeros(N // 2 + 1, dtype=cdtype)
     X = _scatter_interior_bands(X, wmn_work, Nf, Nt, phi_c, lam, be)
     X = _scatter_edge_bands(X, wmn_work, Nf, Nt, N, phi_c, lam, be)
@@ -767,7 +778,7 @@ def inverse_many(
     phi_c = sample_window(window, Nf, Nt, dt).astype(rdtype)
     wmn_work = _prepare_edges_for_inverse(wmn, Nf, Nt, rdtype, be)
 
-    lam = 1.0 / (np.sqrt(2.0) * dt)
+    lam = rdtype.type(1.0 / (np.sqrt(2.0) * dt))
     X = be.xp.zeros((wmn.shape[0], N // 2 + 1), dtype=cdtype)
     X = _scatter_interior_bands(X, wmn_work, Nf, Nt, phi_c, lam, be)
     X = _scatter_edge_bands(X, wmn_work, Nf, Nt, N, phi_c, lam, be)
@@ -1129,11 +1140,12 @@ def forward_bands(z: CArray, k0: int, bands: NDArray[np.integer], Nf: int, Nt: i
     z = be.asarray(z)
     ell = _band_windows(bands, k0, z.shape[-1], Nt)
     _check_finite(z, "forward_bands: z")
+    rdtype, cdtype = _working_dtypes(z)
     phi = sample_window(window, Nf, Nt, dt)
-    phase = _band_phase(bands, Nt, phi)
-    Y = be.fft.ifft(phi * z[..., ell], axis=-1)
+    phase = _band_phase(bands, Nt, phi).astype(cdtype)
+    Y = be.fft.ifft(phi.astype(rdtype) * z[..., ell], axis=-1)
     # Wilson units: the unit-norm-atom cells times sqrt(2 dt / N) (band_atoms' docstring).
-    return be.xp.real(phase * Y) * np.sqrt(2.0 * dt / n_samples(Nf, Nt))
+    return be.xp.real(phase * Y) * rdtype.type(np.sqrt(2.0 * dt / n_samples(Nf, Nt)))
 
 
 def inverse_bands(w: Array, k0: int, n_bins: int, bands: NDArray[np.integer], Nf: int,
@@ -1184,11 +1196,12 @@ def inverse_bands(w: Array, k0: int, n_bins: int, bands: NDArray[np.integer], Nf
         raise ValueError(f"w must end in ({bands.size}, {Nt}); got {w.shape}")
     _check_finite(w, "inverse_bands: w")
     ell = _band_windows(bands, k0, n_bins, Nt)
+    rdtype, cdtype = _working_dtypes(w)
     phi = sample_window(window, Nf, Nt, dt)
     phase = _band_phase(bands, Nt, phi)
-    V = phi * be.fft.fft(np.conj(phase) * w, axis=-1) / Nt
-    out = be.xp.zeros((*w.shape[:-2], n_bins), dtype=complex)
+    V = phi.astype(rdtype) * be.fft.fft(np.conj(phase).astype(cdtype) * w, axis=-1) / Nt
+    out = be.xp.zeros((*w.shape[:-2], n_bins), dtype=cdtype)
     for b in range(bands.size):
         out = be.add_at(out, (..., ell[b]), V[..., b, :], copy=False)
     # rfft units: N / (2 dt) times the adjoint of forward_bands' sqrt(2 dt / N).
-    return out * np.sqrt(n_samples(Nf, Nt) / (2.0 * dt))
+    return out * rdtype.type(np.sqrt(n_samples(Nf, Nt) / (2.0 * dt)))
