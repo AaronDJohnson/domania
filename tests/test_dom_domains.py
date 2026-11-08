@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import copy
 import inspect
+import pickle
 
 import numpy as np
 import pytest
@@ -157,6 +159,20 @@ def test_identity_is_value_based_and_cheap():
     c = CellSet(wdm.Grid(8, 16, 1.0), m_in, n_in)
     assert m_in.flags.writeable and n_in.flags.writeable              # caller's arrays untouched
     assert not c.m_array.flags.writeable and c.m == (1, 1, 2, 2)
+
+
+@pytest.mark.parametrize("roundtrip", [lambda c: pickle.loads(pickle.dumps(c)), copy.copy,
+                                       copy.deepcopy], ids=["pickle", "copy", "deepcopy"])
+def test_a_cell_set_survives_pickle_and_copy_as_an_equal_read_only_set(roundtrip):
+    """``__reduce__`` rebuilds from ``(grid, m, n)``.  Before it, pickle and deepcopy gave
+    writeable index arrays and ``copy.copy`` shared the original's."""
+    cells = CellSet.all_active(wdm.Grid(8, 16, 0.5)).drop_columns(2, 1)
+    back = roundtrip(cells)
+    assert back is not cells and back == cells and hash(back) == hash(cells)
+    for got, orig in ((back.m_array, cells.m_array), (back.n_array, cells.n_array)):
+        assert not got.flags.writeable
+        assert np.array_equal(got, orig) and not np.shares_memory(got, orig)
+    assert np.array_equal(back.packed_positions(), cells.packed_positions())
 
 
 def test_wdm_domain_and_channels():

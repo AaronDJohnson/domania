@@ -231,6 +231,11 @@ class CellSet:
         object.__setattr__(self, "_hash", hash((self.grid, self.m, self.n)))
 
     # -- identity -------------------------------------------------------------
+    def __reduce__(self) -> tuple:
+        """Rebuild from ``(grid, m, n)``: a pickled or copied set runs ``__post_init__`` again,
+        so it gets its own read-only ``m_array``/``n_array`` and recomputes its hash."""
+        return type(self), (self.grid, self.m, self.n)
+
     def __hash__(self) -> int:
         return self._hash  # type: ignore[attr-defined]
 
