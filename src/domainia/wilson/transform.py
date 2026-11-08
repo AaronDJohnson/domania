@@ -72,8 +72,10 @@ opt-in by dtype rather than by flag, so the precision of a result is readable
 off its own ``.dtype``.
 
 float64 runs are bit for bit what they were before the casts (a cast to
-float64 is a no-op, and no float64 expression is regrouped; the Meyer baseline,
-``tests/wilson/test_meyer_baseline.py``, is the gate).  float32 runs differ
+float64 is a no-op, and no float64 expression is regrouped).  The Meyer
+baseline, ``tests/wilson/test_meyer_baseline.py``, pins them bit for bit
+except the rescaled families (``forward_bands``, ``inverse_bands``,
+``FourierToWDM``), which it compares by tolerance.  float32 runs differ
 from the frozen oracle at single-precision rounding, because the oracle formed
 some products in double before storing them.
 

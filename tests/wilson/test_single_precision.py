@@ -2,7 +2,9 @@
 
 A float32 / complex64 input runs in single precision: every FFT receives a single-precision
 array, and every product stored into the output is formed in the working dtype.  float64 runs
-are bit for bit unchanged (``tests/wilson/test_meyer_baseline.py``).
+are bit for bit unchanged by the casts.  ``tests/wilson/test_meyer_baseline.py`` pins them bit
+for bit except the rescaled families (``forward_bands``, ``inverse_bands``, ``FourierToWDM``),
+which it compares by tolerance.
 """
 
 from __future__ import annotations
@@ -121,6 +123,25 @@ def test_every_product_stored_in_a_float32_run_is_single_precision(name, rng, mo
     assert seen and all(dt in SINGLE for dt in seen), seen
 
 
+def test_inverse_bands_accumulates_in_single_precision(backend, rng, monkeypatch):
+    """What ``inverse_bands`` hands to ``be.add_at`` in a float32 run is complex64.
+
+    It is the same ``be.add_at`` call on both backends.  Without the post-FFT
+    ``phi.astype(rdtype)`` the band values are complex128, and ``add_at`` rounds them into
+    the complex64 output (silently in ``np.add.at``), so the output dtype, the recorded FFT
+    inputs and the float64 comparison stay green."""
+    run = _cases(np.float32, rng, to=backend.asarray)["inverse_bands"]   # before the spy
+    seen: list[np.dtype] = []
+
+    def spy(self, a, idx, v, *, _add_at=type(backend).add_at, **kw):
+        seen.append(np.dtype(v.dtype))
+        return _add_at(self, a, idx, v, **kw)
+
+    monkeypatch.setattr(type(backend), "add_at", spy)
+    run(backend)
+    assert seen and all(dt == np.complex64 for dt in seen), seen
+
+
 @pytest.mark.parametrize("precision", [np.float32, np.float64])
 @pytest.mark.parametrize("name", list(OUTPUT_DTYPE))
 def test_output_dtypes_follow_the_table(name, precision, rng):
@@ -129,7 +150,8 @@ def test_output_dtypes_follow_the_table(name, precision, rng):
 
 @pytest.mark.parametrize("name", list(OUTPUT_DTYPE))
 def test_float32_runs_match_float64_to_single_precision_rounding(name):
-    """Same inputs (rounded to float32 once), two precisions: the casts change rounding only."""
+    """The same draws at both precisions, rounded to float32 for the float32 run and left
+    unrounded for the float64 one: the two results agree to single-precision rounding."""
     lo = np.asarray(_cases(np.float32, np.random.default_rng(5))[name](NUMPY))
     hi = np.asarray(_cases(np.float64, np.random.default_rng(5))[name](NUMPY))
     assert np.max(np.abs(lo - hi)) <= 2e-6 * np.max(np.abs(hi))

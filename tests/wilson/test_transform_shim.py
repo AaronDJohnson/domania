@@ -30,7 +30,7 @@ DTYPES = [np.float64, np.float32]
 #: max|got - ref| over max|ref| against the omega-era oracle, by working precision.
 ORACLE_RTOL = {
     np.dtype(np.float64): 1e-14,     # Hz window (v0.12.0): measured 4.2e-16 fwd, 5.4e-16 inv
-    np.dtype(np.float32): 2e-6,      # single precision throughout: measured 3.2e-7 fwd, 3.1e-7 inv
+    np.dtype(np.float32): 2e-6,      # single precision throughout: measured ~3e-7 fwd and inv
 }
 
 
