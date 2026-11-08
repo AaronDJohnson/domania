@@ -8,7 +8,7 @@ from .base import CholFactor, Covariance, DiagFactor, Evaluator, Factor, QuadFor
 from .blocktri import BlockTriCovFactor, BlockTridiagonalCovariance
 from .dense import DenseCovariance, dense_factor
 from .diagonal import DiagonalCovariance
-from .evolutionary import EvolutionaryCovariance, keep_mask
+from .evolutionary import EvolutionaryCovariance
 from .stack import ChannelStack, StackFactor
 
 __all__ = [
@@ -27,6 +27,5 @@ __all__ = [
     "StackFactor",
     "as_evaluator",
     "dense_factor",
-    "keep_mask",
     "quad_form",
 ]

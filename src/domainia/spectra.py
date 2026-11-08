@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, ClassVar
+from typing import Any, Callable
 
 import numpy as np
 from domainia.wilson.backend import Backend
@@ -80,8 +80,6 @@ class GenericPSD:
     exact covariances, tests)."""
 
     fn: Callable[[Any, Any, Any], Any]
-
-    capabilities: ClassVar[frozenset[str]] = frozenset({"interp", "direct"})
 
     def __call__(self, f: Any, t: Any, nu: Any, be: Backend | None = None) -> Any:
         return self.fn(f, t, nu)

@@ -35,30 +35,10 @@ from .base import Covariance
 from .blocktri import BlockTridiagonalCovariance, blocks_to_dense, to_layout
 from .dense import DenseCovariance
 
-__all__ = ["BUILDERS", "EvolutionaryCovariance", "keep_mask"]
+__all__ = ["BUILDERS", "EvolutionaryCovariance"]
 
 Builder = Literal["interp", "direct"]
 BUILDERS: tuple[str, ...] = ("interp", "direct")
-
-
-def keep_mask(cells: Any) -> np.ndarray:
-    """Boolean mask over ``wilson.grid.packed_cells`` of ``cells.grid`` selecting ``cells``.
-
-    Raises unless ``cells`` lists active cells in band order (increasing packed position),
-    the order of every Eq. (45) block and of ``eq45_plan``'s kept cells.
-    """
-    g = cells.grid
-    m_all, n_all = packed_cells(g.Nf, g.Nt)
-    index = {(int(a), int(b)): i for i, (a, b) in enumerate(zip(m_all, n_all, strict=True))}
-    try:
-        pos = np.array([index[int(a), int(b)] for a, b in zip(cells.m, cells.n, strict=True)], int)
-    except KeyError as err:
-        raise ValueError(f"cell {err.args[0]} is not an active cell of {g}") from None
-    if pos.size and np.any(np.diff(pos) <= 0):
-        raise ValueError("cells must be listed in band order (increasing packed position)")
-    keep = np.zeros(m_all.size, bool)
-    keep[pos] = True
-    return keep
 
 
 class _ChebBlocks:
@@ -161,7 +141,7 @@ class EvolutionaryCovariance(Covariance):
             raise ValueError(f"chol_impl must be 'numpy' or 'scipy'; got {chol_impl!r}")
         self.psd, self.cells, self.builder, self.assembly = psd, cells, builder, assembly
         self.n = len(cells.m)
-        keep = keep_mask(cells)
+        keep = cells.keep_mask()
         m_all, _ = packed_cells(cells.grid.Nf, cells.grid.Nt)
         sizes = tuple(int(np.sum(keep & (m_all == mm))) for mm in range(cells.grid.Nf + 1))
         blocks: Any = (_ChebBlocks(psd, cells.grid, keep, P, t_max, window) if builder == "interp"

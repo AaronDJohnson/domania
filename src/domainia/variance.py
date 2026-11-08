@@ -27,7 +27,7 @@ from domainia.wilson.backend import Backend, pytree_dataclass
 from domainia.wilson.windows import Window
 
 from .domains import CellSet, _cells_and_window
-from .maps.base import _BUILD, on_backend
+from .maps.base import on_backend
 from .spectra import GenericPSD
 
 __all__ = ["BandAveragedVariance", "MidpointVariance"]
@@ -46,7 +46,7 @@ def _require_generic(psd: Any, what: str) -> None:
                         "domainia.spectra.GenericPSD")
 
 
-@pytree_dataclass(data=("t",), meta=("psd", "cells", "window"))
+@pytree_dataclass(data=(), meta=("psd", "cells", "window"))
 @dataclass(frozen=True, eq=False)
 class BandAveragedVariance:
     """Eq. 36: ``0.5 <S(f, t_n)>`` over the window squared around each cell's band.
@@ -61,21 +61,19 @@ class BandAveragedVariance:
 
     psd: Any
     cells: CellSet
-    t: Any = field(default=_BUILD, kw_only=True)
     window: Window | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
-        if self.t is not _BUILD:
-            return
         _require_generic(self.psd, "band-averaged")
         cells, window = _cells_and_window(self.cells, self.window)
         object.__setattr__(self, "cells", cells)
         object.__setattr__(self, "window", window)
-        object.__setattr__(self, "t", _cell_arrays(cells)[2])
 
     def on(self, be: Backend) -> "BandAveragedVariance":
-        """The constants moved to ``be``."""
-        return on_backend(self, be, ("t",))
+        """The variance for ``be``: it has no array leaves (the PSD runs on the host), so this
+        only checks ``be`` (``require_x64`` for JAX).  ``as_evaluator`` recognises a variance
+        by this method."""
+        return on_backend(self, be, ())
 
     def __call__(self, nu: Any, *, channel: int = 0, be: Backend | None = None) -> Any:
         g = self.cells.grid
@@ -85,7 +83,7 @@ class BandAveragedVariance:
         return full[m, n]
 
 
-@pytree_dataclass(data=("t",), meta=("psd", "cells"))
+@pytree_dataclass(data=(), meta=("psd", "cells"))
 @dataclass(frozen=True, eq=False)
 class MidpointVariance:
     """Eq. 39: ``0.5 S(f_m, t_n)``.  ``cells`` is a ``CellSet`` or a ``WDMDomain`` (stored as
@@ -95,19 +93,17 @@ class MidpointVariance:
 
     psd: Any
     cells: CellSet
-    t: Any = field(default=_BUILD, kw_only=True)
 
     def __post_init__(self) -> None:
-        if self.t is not _BUILD:
-            return
         _require_generic(self.psd, "midpoint")
         cells, _ = _cells_and_window(self.cells)
         object.__setattr__(self, "cells", cells)
-        object.__setattr__(self, "t", _cell_arrays(cells)[2])
 
     def on(self, be: Backend) -> "MidpointVariance":
-        """The constants moved to ``be``."""
-        return on_backend(self, be, ("t",))
+        """The variance for ``be``: it has no array leaves (the PSD runs on the host), so this
+        only checks ``be`` (``require_x64`` for JAX).  ``as_evaluator`` recognises a variance
+        by this method."""
+        return on_backend(self, be, ())
 
     def __call__(self, nu: Any, *, channel: int = 0, be: Backend | None = None) -> Any:
         g = self.cells.grid

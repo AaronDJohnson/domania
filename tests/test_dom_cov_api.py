@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import subprocess
 import sys
@@ -22,10 +23,12 @@ import domainia.covariance as cov
 from domainia import wilson as wdm
 from domainia.domains import CellSet
 from domainia.spectra import GenericPSD
+from domainia.variance import BandAveragedVariance, MidpointVariance
+from domainia.wilson.backend import NUMPY
 
 EXPORTS = {"BlockTriCovFactor", "BlockTridiagonalCovariance", "ChannelStack", "CholFactor", "Covariance",
            "DenseCovariance", "DiagFactor", "DiagonalCovariance", "Evaluator", "EvolutionaryCovariance", "Factor",
-           "QuadForm", "StackFactor", "as_evaluator", "dense_factor", "keep_mask", "quad_form"}
+           "QuadForm", "StackFactor", "as_evaluator", "dense_factor", "quad_form"}
 SRC = Path(__file__).resolve().parents[1] / "src"
 
 
@@ -122,3 +125,23 @@ def test_evolutionary_covariance_refuses_an_unknown_chol_impl():
     for kw in ({}, {"assembly": "dense"}, {"builder": "direct", "assembly": "dense"}):
         with pytest.raises(ValueError, match="chol_impl must be 'numpy' or 'scipy'"):
             cov.EvolutionaryCovariance(FLAT, CELLS, chol_impl="lapack", **kw)
+
+
+def test_the_unread_hooks_are_gone():
+    """``Covariance.batchable``, ``Covariance.complete_constants``, ``GenericPSD.capabilities``
+    and the variances' ``t`` leaves had no reader, so they are removed."""
+    assert not hasattr(cov.Covariance, "batchable")
+    assert not hasattr(cov.Covariance, "complete_constants")
+    assert not hasattr(GenericPSD, "capabilities")
+    for cls in (BandAveragedVariance, MidpointVariance):
+        assert "t" not in {f.name for f in dataclasses.fields(cls)}
+
+
+@pytest.mark.parametrize("cls", [BandAveragedVariance, MidpointVariance], ids=lambda c: c.__name__)
+def test_as_evaluator_still_takes_the_variances(cls):
+    """``as_evaluator`` recognises a variance by its ``on`` method, which stays."""
+    v = cls(FLAT, CELLS)
+    ev = cov.as_evaluator(v, channel=0)
+    assert ev.host_constants() is v
+    nu = np.zeros(1)
+    np.testing.assert_array_equal(ev.evaluate(ev.host_constants(), nu, NUMPY), v(nu))

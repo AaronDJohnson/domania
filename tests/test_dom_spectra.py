@@ -38,4 +38,3 @@ def test_tabulated_spectrum_slices_by_absolute_bin_and_refuses_outside():
 def test_generic_psd_binds():
     g = GenericPSD(lambda f, t, nu: nu[0] * f + t)
     assert g(2.0, 1.0, (3.0,)) == 7.0 and g.bind((3.0,))(2.0, 1.0) == 7.0
-    assert g.capabilities == {"interp", "direct"}

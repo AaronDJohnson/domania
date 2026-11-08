@@ -496,4 +496,4 @@ def test_the_window_is_static_under_jit():
     psd, _ = _stationary_psd()
     v = BandAveragedVariance(psd, CELLS, window=ALT_WINDOW).on(JB)
     leaves, tree = jax.tree_util.tree_flatten(v)
-    assert len(leaves) == 1 and jax.tree_util.tree_unflatten(tree, leaves).window is ALT_WINDOW
+    assert leaves == [] and jax.tree_util.tree_unflatten(tree, leaves).window is ALT_WINDOW

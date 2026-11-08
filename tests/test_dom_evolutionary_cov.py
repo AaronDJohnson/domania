@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from domainia import wilson
-from domainia.covariance import EvolutionaryCovariance, keep_mask
+from domainia.covariance import EvolutionaryCovariance
 from domainia.covariance.blocktri import blocks_to_dense, to_layout
 from domainia.domains import CellSet, WDMDomain
 from domainia.spectra import GenericPSD
@@ -100,10 +100,3 @@ def test_cells_must_be_a_cell_set_or_a_wdm_domain():
     assert ev.cells == cells and isinstance(ev.cells, CellSet)
     with pytest.raises(TypeError, match=r"^cells must be a CellSet or a WDMDomain; got Grid$"):
         EvolutionaryCovariance(PSD, cells.grid)
-
-
-def test_keep_mask_selects_the_cells_in_band_order():
-    cells = _cells().drop_columns(2, 2)
-    keep = keep_mask(cells)
-    assert int(keep.sum()) == cells.size
-    np.testing.assert_array_equal(np.flatnonzero(keep), cells.packed_positions())

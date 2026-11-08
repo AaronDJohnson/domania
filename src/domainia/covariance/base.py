@@ -295,12 +295,6 @@ class Covariance:
     #: and any non-WDM source domain for a covariance that carries a window.
     window: Window | None = None
 
-    @property
-    def batchable(self) -> bool:
-        """Whether a sampler may stack this covariance's noise states into one ``vmap``:
-        every child's, by default."""
-        return all(c.batchable for c in self.children().values())
-
     def host_constants(self) -> Any:
         return {}
 
@@ -356,9 +350,8 @@ class Covariance:
 
     def constants(self, be: Backend | None = None) -> Any:
         """The constants on ``be``: built once in host NumPy, cached per backend (JAX:
-        ``require_x64()``, then one ``jax.device_put``), then completed on ``be`` by
-        :meth:`complete_constants`.  They are cached for the object's lifetime: build a new
-        covariance for a new configuration, never mutate one."""
+        ``require_x64()``, then one ``jax.device_put``).  They are cached for the object's
+        lifetime: build a new covariance for a new configuration, never mutate one."""
         be = be or NUMPY
         cache = self.__dict__.setdefault("_constants_cache", {})
         if be.name not in cache:
@@ -368,15 +361,9 @@ class Covariance:
                 import jax
 
                 own = jax.device_put(own)
-            own = self.complete_constants(own, be)
             kids = {k: c.constants(be) for k, c in self.children().items()}
             cache[be.name] = {**own, **kids} if kids else own
         return cache[be.name]
-
-    def complete_constants(self, C: Any, be: Backend) -> Any:
-        """Constants derived ON ``be`` from the device-put host constants ``C`` (default:
-        none)."""
-        return C
 
     def factor(self, nu: Any, be: Backend | None = None, *, jit: bool | None = None) -> Any:
         """Factorise at the noise state ``nu`` (``A_n`` is never inside ``nu``).

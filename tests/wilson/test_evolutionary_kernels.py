@@ -26,6 +26,8 @@ from domainia.wilson.grid import active_mask
 from domainia.wilson.matrix import active_W
 from domainia.wilson.noise import evolutionary_band_variance
 
+from .conftest import _oracle_paths
+
 NF, NT, DT = 8, 16, 0.5
 N = NF * NT
 T_REC = N * DT
@@ -34,25 +36,6 @@ F_NYQ = 0.5 / DT
 LINEAGE_A = ("toy_models/vendor/wdm/src", "wdm_paper_2/toy_models/src")
 #: max|got - ref| over max|ref| against the omega-era sources (float64).
 ORACLE_RTOL = 1e-14
-
-
-#: The out-of-repo oracle trees live under the directory this variable names; unset, or
-#: without the expected subdirectory, the tests that need them skip.
-ORACLE_ROOT_ENV = "DOMAINIA_ORACLE_ROOT"
-
-
-def _oracle_paths(*subpaths: str) -> list[Path]:
-    """``$DOMAINIA_ORACLE_ROOT/<subpath>`` for each ``subpath``; skips the test unless the
-    variable is set and every path exists."""
-    root = os.environ.get(ORACLE_ROOT_ENV)
-    if not root:
-        pytest.skip(f"{ORACLE_ROOT_ENV} is not set: point it at the directory holding "
-                    + " and ".join(subpaths))
-    paths = [Path(root).expanduser().resolve() / s for s in subpaths]
-    missing = [s for s, p in zip(subpaths, paths, strict=True) if not p.exists()]
-    if missing:
-        pytest.skip(f"{ORACLE_ROOT_ENV}={root} has no " + " and no ".join(missing))
-    return paths
 
 
 def _gap(got, ref, scale=None):
