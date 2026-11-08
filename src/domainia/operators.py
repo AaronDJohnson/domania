@@ -48,7 +48,8 @@ class DenseOperator:
     ``numpy.linalg.eigh`` decomposes it once.  An eigenvalue below ``-tol`` raises
     ``ValueError`` (``C`` is not positive semi-definite); the eigenpairs with
     ``lambda > tol`` are kept (``V``, ``Lambda``).  ``tol = max |lambda| K N eps`` (the
-    default of ``numpy.linalg.matrix_rank``), or ``rtol max |lambda|`` when ``rtol`` is
+    default of ``numpy.linalg.matrix_rank``; ``eps`` is float32's for a float32 ``matrix`` and
+    float64's otherwise), or ``rtol max |lambda|`` when ``rtol`` is
     given.
 
     * ``apply``: ``C r``; ``solve``: ``V Lambda^-1 V^T r``; ``project``: ``V V^T r``;
@@ -75,10 +76,9 @@ class DenseOperator:
         if isinstance(self.matrix, np.ma.MaskedArray):
             raise TypeError("matrix: masked arrays are refused (numpy.asarray drops the mask)")
         C = np.asarray(self.matrix)
-        eps = float(np.finfo(C.dtype).eps) if C.dtype.kind == "f" and C.dtype.itemsize < 8 \
-            else float(np.finfo(np.float64).eps)
         if C.dtype.kind not in "iuf":
             raise TypeError(f"matrix must be a real numeric array; got dtype {C.dtype}")
+        eps = float(np.finfo(np.float32 if C.dtype == np.float32 else np.float64).eps)
         if C.shape != (n, n):
             raise ValueError(f"matrix has shape {C.shape}; {len(names)} channel(s) of {N} "
                              f"coordinates need shape ({n}, {n})")

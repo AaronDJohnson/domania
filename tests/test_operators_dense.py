@@ -193,3 +193,13 @@ def test_operator_matrix_refuses_a_str_channel_names():
 
     with pytest.raises(TypeError, match="channel_names must be a tuple"):
         operator_matrix(Fake())
+
+
+def test_a_float16_matrix_keeps_float64_eps():
+    """float16's eps (1e-3) would cut every direction below ``max|lambda| K N eps`` (here 6%);
+    only float32 narrows the tolerance."""
+    n = 2 * N
+    w = np.linspace(1.0, 30.0, n)                                    # condition number 30
+    Q = np.linalg.qr(_rng.standard_normal((n, n)))[0]
+    C = ((Q * w) @ Q.T).astype(np.float16)
+    assert DenseOperator(C, TIME, NAMES).degrees_of_freedom == n
