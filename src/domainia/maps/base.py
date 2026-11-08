@@ -278,9 +278,7 @@ class PushedCovariance:
 @pytree_dataclass(data=(), meta=("src",))
 @dataclass(frozen=True, eq=False)
 class Identity(LinearMap):
-    """The identity on ``src`` (the sinusoid pad model's samples, spec §4.8).  A scaled
-    ``WDMDomain`` passes through unchanged (nothing to apply): the caller handles
-    ``scale``."""
+    """The identity on ``src`` (the sinusoid pad model's samples, spec §4.8)."""
 
     src: Any
 
@@ -368,8 +366,6 @@ class Restrict(LinearMap):
     pos: Any = field(default=_BUILD, kw_only=True)
 
     def __post_init__(self) -> None:
-        self.src.require_unit_scale("Restrict")
-        self.dst.require_unit_scale("Restrict")
         if self.src.window != self.dst.window:
             raise ValueError(f"src and dst use different windows ({self.src.window.name} vs "
                              f"{self.dst.window.name}): restrict within one basis")

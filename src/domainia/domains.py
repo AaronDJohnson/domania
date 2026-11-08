@@ -12,10 +12,10 @@ Every domain is a frozen, hashable dataclass, so it can be the static part of a
 * :class:`CellSet`: a set of active WDM cells of one ``wilson.Grid``, always in **band
   order** (``m`` ascending, then ``n``), i.e. a subsequence of
   ``wilson.grid.packed_cells(Nf, Nt)``.
-* :class:`WDMDomain`: a cell set with a constant ``scale`` (the GB cells are
-  ``Re(C z)`` with unit-norm atoms on ``z = rfft / sigma0``; the sinusoid uses 1) and the
-  Wilson ``window`` of its basis (default ``domainia.wilson.MEYER``, the WDM transform).
-  ``.full(...)``: the full-record domain of :mod:`domainia.translate`.
+* :class:`WDMDomain`: a cell set and the Wilson ``window`` of its basis (default
+  ``domainia.wilson.MEYER``, the WDM transform).  A value on it is the Wilson coefficient
+  ``w = W x`` of the time record, whichever map produced it.  ``.full(...)``: the
+  full-record domain of :mod:`domainia.translate`.
 * :class:`ChannelAxis`: named channels (``("A", "E")`` for the GB); empty for one
   channel without a channel axis.
 """
@@ -351,27 +351,23 @@ class CellSet:
 
 @dataclass(frozen=True)
 class WDMDomain:
-    """A cell set, the constant ``scale`` that relates its cells to the Wilson
-    coefficients, and the Wilson ``window`` of the basis (default :data:`MEYER`: WDM).
+    """A cell set and the Wilson ``window`` of the basis (default :data:`MEYER`: WDM).
+
+    A value on the domain is the Wilson coefficient ``w = W x`` of the time record in that
+    window (``W W^T = dt I``), on every path that produces one: ``transform``,
+    ``TimeToWDM`` and ``FourierToWDM`` (whatever the bins' units).
 
     The window is part of the domain's identity (equality and hashing), so two maps or
     covariances built for different windows never compose silently.  It must be a hashable
     :class:`~domainia.wilson.Window` instance (``TypeError`` otherwise).
-
-    No map applies ``scale``, so ``TimeToWDM``, ``WDMToTime``, ``FourierToWDM``
-    and ``Restrict`` refuse ``scale != 1`` (:meth:`require_unit_scale`) rather than treat it
-    as 1 silently.  ``Identity`` accepts a scaled domain (it has nothing to apply): a caller
-    that passes one through ``Identity`` must handle ``scale`` itself.
     """
 
     cells: CellSet
-    scale: float = 1.0
     window: Window = MEYER
 
     def __post_init__(self) -> None:
         if not isinstance(self.cells, CellSet):
             raise TypeError(f"cells must be a CellSet; got {type(self.cells).__name__}")
-        object.__setattr__(self, "scale", _positive_float("scale", self.scale))
         require_window(self.window)
         try:
             hash(self.window)
@@ -382,19 +378,13 @@ class WDMDomain:
 
     @classmethod
     def full(cls, grid: wilson.Grid, window: Window = MEYER) -> WDMDomain:
-        """Every active cell of ``grid``, scale 1, Wilson ``window``: the WDM domain of
+        """Every active cell of ``grid`` in the Wilson ``window``: the WDM domain of
         :func:`domainia.translate.transform` (dense ``(Nf + 1, Nt)`` layout there)."""
         return cls(CellSet.all_active(grid), window=window)
 
     @property
     def size(self) -> int:
         return self.cells.size
-
-    def require_unit_scale(self, user: str) -> None:
-        """Raise ``ValueError`` unless ``scale == 1.0``: ``user`` (a map) does not apply it."""
-        if self.scale != 1.0:
-            raise ValueError(f"WDMDomain.scale = {self.scale!r} is not honoured by {user}: no map "
-                             "applies a cell scale, so only scale = 1.0 is supported")
 
 
 @dataclass(frozen=True)

@@ -58,7 +58,7 @@ CONSUMERS = frozenset({
     "dense_W", "wdm_congruence", "eq45_dense", "_dense_atoms",
     # The window-taking constructors must receive ``window=`` by keyword: building one without
     # it drops the window.  Known limits of this name-based rule: a positional window
-    # (``WDMDomain(cells, 1.0, window)``) is flagged, a conservative false positive; a
+    # (``WDMDomain(cells, window)``) is flagged, a conservative false positive; a
     # ``cls(...)`` inside a classmethod and a call to such a classmethod (``WDMDomain.full(...)``)
     # are not seen, a false negative that the value tests in tests/test_dom_windows.py and
     # tests/test_translate.py cover.
@@ -260,11 +260,11 @@ def test_the_scan_covers_every_module_but_filter_and_windows():
     ("wilson.filter.phi_fft_order(Nf, Nt, dt)", True),
     # The window-taking constructors of the domainia layer.
     ("WDMDomain(cells, window=window)", False),
-    ("D.WDMDomain(cells, 2.0, window=self.dst.window)", False),
+    ("D.WDMDomain(cells, window=self.dst.window)", False),
     ("EvolutionaryCovariance(psd, cells, builder='direct', window=self.window)", False),
     ("BandAveragedVariance(psd, cells, window=window)", False),
     ("WDMDomain(cells)", True),
-    ("domains.WDMDomain(cells, scale=2.0)", True),
+    ("domains.WDMDomain(cells, ALT_WINDOW)", True),           # positional: flagged
     ("EvolutionaryCovariance(psd, cells, builder='direct')", True),
     ("BandAveragedVariance(psd, cells)", True),
     ("WDMDomain(cells, window=wilson.MEYER)", True),

@@ -267,7 +267,6 @@ class FourierToWDM(LinearMap):
             return
         if self.impl not in ("dense", "fft"):
             raise ValueError(f"impl must be 'dense' or 'fft'; got {self.impl!r}")
-        self.dst.require_unit_scale("FourierToWDM")
         g = self.dst.cells.grid
         if (self.src.N, self.src.dt) != (g.N, g.dt):
             raise ValueError(f"bins of an N={self.src.N} record cannot feed cells of an N={g.N} grid")

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import inspect
+
 import numpy as np
 import pytest
 
@@ -160,10 +162,12 @@ def test_identity_is_value_based_and_cheap():
 def test_wdm_domain_and_channels():
     cells = CellSet.all_active(wdm.Grid(8, 16, 1.0))
     d = WDMDomain(cells)
-    assert (d.size, d.scale) == (128, 1.0)
-    assert WDMDomain(cells, 2.0) != d
-    with pytest.raises(ValueError):
-        WDMDomain(cells, 0.0)
+    assert d.size == 128 and not hasattr(d, "scale")
+    assert list(inspect.signature(WDMDomain).parameters) == ["cells", "window"]
+    with pytest.raises(TypeError, match="Window"):
+        WDMDomain(cells, 2.0)                       # the second field is the window now
+    with pytest.raises(TypeError):
+        WDMDomain(cells, scale=2.0)                 # the field is gone (spec section 1.6)
     ch = ChannelAxis(("A", "E"))
     assert ch.size == 2 and ChannelAxis().size == 0
     with pytest.raises(ValueError, match="unique"):

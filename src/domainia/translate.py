@@ -58,10 +58,7 @@ def _record(domain: Any, role: str) -> tuple[int, float]:
         g = domain.cells.grid
         if domain.cells.size != g.N:
             raise ValueError(f"{role}: translate handles only WDMDomain.full(grid, window) (every "
-                             f"active cell, scale 1); got {domain.cells.size} of {g.N} cells")
-        if domain.scale != 1.0:
-            raise ValueError(f"{role}: translate handles only WDMDomain.full(grid, window) (every "
-                             f"active cell, scale 1); got scale={float(domain.scale)!r}")
+                             f"active cell); got {domain.cells.size} of {g.N} cells")
         return g.N, g.dt
     raise TypeError(f"{role} must be a full-record domain (TimeDomain, FourierDomain.full or "
                     f"WDMDomain.full); got {type(domain).__name__}")
@@ -238,8 +235,7 @@ def log_coordinate_scale(domain: Domain) -> float:
 
     0 for time, ``log(dt) / 2`` for WDM (any admissible window), ``log(dt) + log(N) / 2`` for
     Fourier (odd ``N`` too).  Raises like :func:`transform` for a domain it does not handle:
-    ``ValueError`` for a partial Fourier or WDM domain (or a scaled WDM one), ``TypeError``
-    for anything else.
+    ``ValueError`` for a partial Fourier or WDM domain, ``TypeError`` for anything else.
     """
     N, dt = _record(domain, "domain")
     if isinstance(domain, TimeDomain):

@@ -59,14 +59,11 @@ def test_restrict_selects_in_dst_order_and_is_its_own_adjoint():
 
 
 def test_restrict_checks_its_domains_even_when_pos_is_given():
-    """The scale and grid checks read the domains only, so they run on every construction
-    route (``pos`` given: ``on``, ``tree_unflatten``, ``dataclasses.replace``)."""
+    """The grid check reads the domains only, so it runs on every construction route
+    (``pos`` given: ``on``, ``tree_unflatten``, ``dataclasses.replace``).  The window check
+    is tests/test_dom_windows.py's."""
     full, cut = _cells()
     R = Restrict(full, cut)
-    with pytest.raises(ValueError, match=r"scale = 2.0 is not honoured.*Restrict"):
-        Restrict(full, WDMDomain(cut.cells, 2.0), pos=R.pos)
-    with pytest.raises(ValueError, match=r"scale = 2.0 is not honoured.*Restrict"):
-        dataclasses.replace(R, src=WDMDomain(full.cells, 2.0))
     other = WDMDomain(CellSet.all_active(wdm.Grid(8, 16, 0.25)).drop_columns(2, 1))
     for kw in ({}, {"pos": R.pos}):
         with pytest.raises(ValueError, match="not a subset of src: its cells live on another grid"):
@@ -187,33 +184,6 @@ def test_a_push_needs_a_linear_map_and_a_covariance():
         with pytest.raises(TypeError, match=r"matvec.*dense"):
             PushedCovariance(Identity(time), cov)
     assert Identity(time).push(S).cov is S                       # either method is enough
-
-
-def test_a_scaled_wdm_domain_is_refused_by_every_map():
-    """``WDMDomain.scale`` is applied by no map: a scale other than 1 is refused at
-    construction instead of being silently treated as 1.  The domain itself (a label) and
-    the identity on it stay valid."""
-    from domainia.maps import FourierToWDM, TimeToWDM, WDMToTime
-
-    full, cut = _cells()
-    full2, cut2 = WDMDomain(full.cells, 2.0), WDMDomain(cut.cells, 2.0)
-    time = TimeDomain(GRID.N, GRID.dt)
-    bins = FourierDomain(GRID.N, GRID.dt, 0, GRID.N // 2 + 1, "rfft")
-    bands = CellSet.bands(GRID, (1, 2, 3))
-    msg = r"WDMDomain.scale = 2.0 is not honoured"
-    with pytest.raises(ValueError, match=msg + r".*TimeToWDM"):
-        TimeToWDM(time, full2)
-    with pytest.raises(ValueError, match=msg + r".*WDMToTime"):
-        WDMToTime(full2, time)
-    with pytest.raises(ValueError, match=msg + r".*FourierToWDM"):
-        FourierToWDM(bins, WDMDomain(bands, 2.0))
-    for src, dst in ((full2, cut), (full, cut2), (full2, cut2)):
-        with pytest.raises(ValueError, match=msg + r".*Restrict"):
-            Restrict(src, dst)
-    assert Identity(full2).dst == full2         # nothing to apply; the caller handles scale
-    for m in (TimeToWDM(time, full), WDMToTime(full, time), FourierToWDM(bins, WDMDomain(bands)),
-              Restrict(full, cut)):
-        assert isinstance(m, LinearMap)                        # scale 1 is unchanged
 
 
 @pytest.mark.jax

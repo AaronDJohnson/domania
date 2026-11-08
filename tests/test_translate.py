@@ -61,7 +61,7 @@ def _with(a, idx, value):
 
 def test_the_full_domains():
     assert FOURIER == FourierDomain(N, DT, 0, N // 2 + 1, "dt_rfft")
-    assert WDM == WDMDomain(CellSet.all_active(GRID)) and WDM.window is MEYER and WDM.scale == 1.0
+    assert WDM == WDMDomain(CellSet.all_active(GRID)) and WDM.window is MEYER
     assert WDM_ALT.window is ALT_WINDOW and WDM_ALT != WDMDomain.full(wilson.Grid(16, 8, DT))
 
 
@@ -170,7 +170,6 @@ REFUSALS = {
     "fourier-units": ({"A": _FOUR}, FourierDomain(N, DT, 0, N // 2 + 1, "rfft"), TIME, ValueError,
                       "FourierDomain.full"),
     "partial-wdm": (X, TIME, WDMDomain(CellSet.bands(GRID, (2, 3))), ValueError, "WDMDomain.full"),
-    "wdm-scale": (X, TIME, WDMDomain(CellSet.all_active(GRID), scale=2.0), ValueError, "scale"),
     "N": (X, TIME, FourierDomain.full(N + 2, DT), ValueError, "N="),
     "dt": (X, TIME, WDMDomain.full(wilson.Grid(NF, NT, 2 * DT)), ValueError, "dt="),
     "t0": (X, TIME, TimeDomain(N, DT, t0=1.0), ValueError, "t0"),
