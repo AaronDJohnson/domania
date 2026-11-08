@@ -201,6 +201,17 @@ def test_psd_round_trips(grid):
     assert np.max(np.abs(stat.psd_from_lambda_blocks(d, o, n, Nf, Nt, dt) / S - 1)) < 1e-12
 
 
+@pytest.mark.parametrize("dt", [1.0, 1e-33])
+def test_psd_from_K_drops_bins_relative_to_the_window_peak(dt):
+    """|phi|^2 peaks at 1/dF = 2 dt Nf, which is 1.6e-32 at dt = 1e-33: below the old
+    absolute threshold 1e-30, so every bin was dropped and psd_from_K returned zeros."""
+    Nf, Nt = 8, 16
+    K, _ = stat.build_K_full_active(Nf, Nt, dt, lambda f: 1e-3 * np.ones_like(f))
+    got = stat.psd_from_K(K, Nf, Nt, dt)
+    assert got.shape == (Nf * Nt // 2 + 1,)
+    assert np.max(np.abs(got / 1e-3 - 1)) < 1e-12
+
+
 def _complex_psd_forms(Nf, Nt, dt, imag):
     """Every accepted PSD form, made complex: callable, rfft / full 1D, both 2D sizes."""
     N = Nf * Nt

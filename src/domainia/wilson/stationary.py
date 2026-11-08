@@ -753,12 +753,15 @@ def psd_from_K(
     N = n_samples(Nf, Nt)
     n_rfft = N // 2 + 1
     phi_c = sample_window(window, Nf, Nt, dt)
-    eps = 1e-30
 
     # One batched FFT for every band, then a single vectorised
     # "largest window value wins" reduction over all (bin, band) candidates.
     V_all = (np.fft.fft(np.asarray(K_diag), axis=-1) / Nt).real  # (Nf+1, Nt)
     phi2 = phi_c * phi_c
+    # Window values at or below eps count as zero.  Relative to the peak, because
+    # |phi|^2 scales with 1/dF = 2 dt Nf: an absolute 1e-30 dropped every bin once
+    # 2 dt Nf fell below it (dt = 1e-33 gave an all-zero PSD).
+    eps = 1e-30 * np.max(phi2)
 
     k_loc_half = np.arange(Nt // 2)
     k_loc_full = np.arange(Nt)
