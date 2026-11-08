@@ -503,8 +503,10 @@ def forward(
 
     Raises
     ------
+    TypeError
+        If ``Nf`` or ``Nt`` is not an integer, or ``dt`` is not a real number.
     ValueError
-        If ``Nf`` or ``Nt`` is not a positive even integer, if ``x_rfft``
+        If ``Nf`` or ``Nt`` is not positive and even, if ``x_rfft``
         does not have length ``N//2 + 1``, or if it holds a ``nan`` or
         ``inf`` (see :func:`domainia.wilson.validate_finite` -- one bad bin would
         otherwise silently make every output coefficient ``nan``).
@@ -682,6 +684,8 @@ def inverse(
 
     Raises
     ------
+    TypeError
+        If ``Nf`` or ``Nt`` is not an integer, or ``dt`` is not a real number.
     ValueError
         If the grid is invalid, if ``wmn`` is complex or wrongly shaped, or
         if it holds a ``nan`` or ``inf`` (see :func:`domainia.wilson.validate_finite`).
@@ -856,6 +860,8 @@ def forward_time(
 
     Raises
     ------
+    TypeError
+        If ``Nf`` or ``Nt`` is not an integer, or ``dt`` is not a real number.
     ValueError
         If the grid is invalid, if ``x`` does not have ``Nf*Nt`` samples, or
         if it holds a ``nan`` or ``inf``.  Gapped detector data often arrives

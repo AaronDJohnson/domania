@@ -106,16 +106,16 @@ class Grid:
 
 
 def _require_int(name: str, value: object) -> int:
-    """Return ``value`` as an ``int``, raising ``ValueError`` if it is not one
-    (``bool`` is rejected too).  Verbatim from lisa/wdm b5973b7."""
+    """Return ``value`` as an ``int``, raising ``TypeError`` if it is not one
+    (``bool`` is rejected too)."""
     if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
-        raise ValueError(f"{name} must be an integer, got {type(value).__name__}")
+        raise TypeError(f"{name} must be an integer, got {type(value).__name__}")
     return int(value)
 
 
 def _require_even_positive_int(name: str, value: object) -> int:
     """Return ``value`` as an ``int``, requiring it to be positive and even.
-    Verbatim from lisa/wdm b5973b7 (same messages as :func:`validate_grid`)."""
+    Same messages and exceptions as :func:`validate_grid`."""
     val = _require_int(name, value)
     if val <= 0:
         raise ValueError(f"{name} must be positive, got {val}")
@@ -125,7 +125,7 @@ def _require_even_positive_int(name: str, value: object) -> int:
 
 
 def validate_grid(Nf: int, Nt: int) -> None:
-    """Raise ``ValueError`` if ``Nf`` or ``Nt`` are not positive even integers.
+    """Raise unless ``Nf`` and ``Nt`` are positive even integers.
 
     Parameters
     ----------
@@ -136,8 +136,10 @@ def validate_grid(Nf: int, Nt: int) -> None:
 
     Raises
     ------
+    TypeError
+        If either argument is not an integer (``bool`` included).
     ValueError
-        If either argument is not a positive even integer.
+        If either argument is not positive and even.
 
     Examples
     --------
@@ -146,10 +148,13 @@ def validate_grid(Nf: int, Nt: int) -> None:
     >>> wdm.validate_grid(9, 16)
     Traceback (most recent call last):
     ValueError: Nf must be even, got 9
+    >>> wdm.validate_grid(8.0, 16)
+    Traceback (most recent call last):
+    TypeError: Nf must be an integer, got float
     """
     for name, val in (("Nf", Nf), ("Nt", Nt)):
         if isinstance(val, bool) or not isinstance(val, (int, np.integer)):
-            raise ValueError(f"{name} must be an integer, got {type(val).__name__}")
+            raise TypeError(f"{name} must be an integer, got {type(val).__name__}")
         if val <= 0:
             raise ValueError(f"{name} must be positive, got {val}")
         if val % 2 != 0:
@@ -157,7 +162,7 @@ def validate_grid(Nf: int, Nt: int) -> None:
 
 
 def validate_dt(dt: float) -> None:
-    """Raise ``ValueError`` unless ``dt`` is a positive finite number.
+    """Raise unless ``dt`` is a positive finite real number.
 
     A negative or zero sampling interval produces a nonsensical frequency grid
     (``delta_F`` flips sign or diverges) without raising anywhere, so the
@@ -170,6 +175,10 @@ def validate_dt(dt: float) -> None:
 
     Raises
     ------
+    TypeError
+        If ``dt`` is ``None``, a ``bool``, a string or complex (scalar or array):
+        ``float()`` would take ``True`` as 1.0 and ``"0.5"`` as 0.5 silently, and
+        drop the imaginary part of a NumPy complex scalar.
     ValueError
         If ``dt`` is not positive and finite.
 
@@ -180,7 +189,13 @@ def validate_dt(dt: float) -> None:
     >>> wdm.validate_dt(0.0)
     Traceback (most recent call last):
     ValueError: dt must be a positive finite number, got 0.0
+    >>> wdm.validate_dt(True)
+    Traceback (most recent call last):
+    TypeError: dt must be a real number, got bool
     """
+    kind = getattr(getattr(dt, "dtype", None), "kind", None)
+    if dt is None or isinstance(dt, (bool, str, bytes, complex)) or kind in ("b", "c", "S", "U"):
+        raise TypeError(f"dt must be a real number, got {type(dt).__name__}")
     value = float(dt)
     if not np.isfinite(value) or value <= 0.0:
         raise ValueError(f"dt must be a positive finite number, got {dt!r}")
@@ -333,6 +348,11 @@ def n_samples(Nf: int, Nt: int) -> int:
     int
         $N = N_f \\cdot N_t$.
 
+    Raises
+    ------
+    TypeError
+        If ``Nf`` or ``Nt`` is not an integer (``bool`` included).
+
     Examples
     --------
     >>> import numpy as np; from domainia import wilson as wdm
@@ -343,7 +363,7 @@ def n_samples(Nf: int, Nt: int) -> int:
         if isinstance(val, bool) or not isinstance(val, (int, np.integer)):
             # int() would silently truncate: n_samples(8.7, 16.2) == 128, and
             # bool is an int subclass, so n_samples(True, 16) would give 16.
-            raise ValueError(f"{name} must be an integer, got {type(val).__name__}")
+            raise TypeError(f"{name} must be an integer, got {type(val).__name__}")
     return int(Nf) * int(Nt)
 
 
@@ -364,8 +384,10 @@ def delta_F(Nf: int, dt: float) -> float:
 
     Raises
     ------
+    TypeError
+        If ``Nf`` is not an integer, or ``dt`` is not a real number.
     ValueError
-        If ``Nf`` is not a positive even integer, if ``dt`` is not positive
+        If ``Nf`` is not positive and even, if ``dt`` is not positive
         and finite, or if $2\\,\\delta t N_f$ is so small or so large that the
         width is not a positive finite double (lisa/wdm b5973b7: an ``inf`` or
         ``0.0`` width made :func:`domainia.wilson.forward_time` return exact zeros).

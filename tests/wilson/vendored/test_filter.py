@@ -100,8 +100,13 @@ def test_smoothness_order_d_changes_the_window(simple_grid, d):
     )
 
 
-@pytest.mark.parametrize("bad_d", [0, -1, 2.5])
+@pytest.mark.parametrize("bad_d", [0, -1])
 def test_invalid_smoothness_order_raises(bad_d):
     """``betainc(0, 0, x)`` is NaN, so a bad ``d`` must not slip through."""
-    with pytest.raises(ValueError, match="d must be an integer"):
+    with pytest.raises(ValueError, match="d must be >= 1"):
         nu_d(np.array([0.5]), d=bad_d)
+
+
+def test_non_integer_smoothness_order_raises_type_error():
+    with pytest.raises(TypeError, match="d must be an integer, got float"):
+        nu_d(np.array([0.5]), d=2.5)

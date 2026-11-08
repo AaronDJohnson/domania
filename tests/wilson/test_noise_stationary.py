@@ -97,8 +97,6 @@ def test_colored_noise_and_empirical_variance_are_the_oracle_to_rounding():
     (1, 1.0, "N must be even, got 1"),
     (0, 1.0, "N must be positive, got 0"),
     (-8, 1.0, "N must be positive, got -8"),
-    (True, 1.0, "N must be an integer, got bool"),
-    (8.0, 1.0, "N must be an integer, got float"),
     (8, 0.0, "dt must be a positive finite number"),
     (8, -1.0, "dt must be a positive finite number"),
     (8, np.inf, "dt must be a positive finite number"),
@@ -119,6 +117,26 @@ def test_colored_noise_rejects_bad_N_and_dt(N, dt, match):
     rng = np.random.default_rng(0)
     state = rng.bit_generator.state
     with pytest.raises(ValueError, match=match):
+        noise.colored_noise(N, dt, psd, rng)
+    assert rng.bit_generator.state == state
+
+
+@pytest.mark.parametrize(("N", "dt", "match"), [
+    (True, 1.0, "N must be an integer, got bool"),
+    (8.0, 1.0, "N must be an integer, got float"),
+    (8, True, "dt must be a real number, got bool"),
+    (8, "0.5", "dt must be a real number, got str"),
+    (8, None, "dt must be a real number, got NoneType"),
+])
+def test_colored_noise_rejects_wrong_kinds_with_type_error(N, dt, match):
+    """A wrong kind of ``N`` or ``dt`` is a ``TypeError`` (``dt=True`` used to pass as 1.0),
+    raised before the PSD is evaluated or the generator is touched."""
+    def psd(f):
+        raise AssertionError("PSD evaluated before the input checks")
+
+    rng = np.random.default_rng(0)
+    state = rng.bit_generator.state
+    with pytest.raises(TypeError, match=match):
         noise.colored_noise(N, dt, psd, rng)
     assert rng.bit_generator.state == state
 

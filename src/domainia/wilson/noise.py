@@ -357,8 +357,11 @@ def colored_noise(
 
     Raises
     ------
+    TypeError
+        If ``N`` is not an integer (``bool`` included), or ``dt`` is not a real
+        number.
     ValueError
-        If ``N`` is not a positive even integer, or ``dt`` is not positive and
+        If ``N`` is not positive and even, or ``dt`` is not positive and
         finite.  Both are checked before the PSD is evaluated or ``rng`` is
         drawn from.  An odd ``N`` has no Nyquist bin, yet bin ``N//2`` would
         be drawn real-only as if it were one, and the noise would not be
@@ -367,7 +370,7 @@ def colored_noise(
     # Public entry point: same checks as validate_grid/validate_dt, on N itself.
     # They only raise, so valid input takes the oracle's path bit for bit.
     if isinstance(N, bool) or not isinstance(N, (int, np.integer)):
-        raise ValueError(f"N must be an integer, got {type(N).__name__}")
+        raise TypeError(f"N must be an integer, got {type(N).__name__}")
     if N <= 0:
         raise ValueError(f"N must be positive, got {N}")
     if N % 2 != 0:

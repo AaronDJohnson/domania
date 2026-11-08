@@ -54,15 +54,24 @@ def nu_d(x: Array, d: int = 4) -> Array:
     ndarray
         $I_x(d, d)$ evaluated element-wise.
 
+    Raises
+    ------
+    TypeError
+        If ``d`` is not an integer (``bool`` included).
+    ValueError
+        If ``d < 1``.
+
     Examples
     --------
     >>> import numpy as np; from domainia import wilson as wdm
     >>> wdm.filter.nu_d(np.array([0.0, 0.5, 1.0]))
     array([0. , 0.5, 1. ])
     """
-    if not isinstance(d, (int, np.integer)) or d < 1:
+    if isinstance(d, bool) or not isinstance(d, (int, np.integer)):
+        raise TypeError(f"d must be an integer, got {type(d).__name__}")
+    if d < 1:
         # betainc(0, 0, x) is NaN, so a bad d silently yields a NaN filter.
-        raise ValueError(f"d must be an integer >= 1, got {d!r}")
+        raise ValueError(f"d must be >= 1, got {d}")
     return betainc(d, d, np.clip(x, 0.0, 1.0))
 
 
@@ -94,6 +103,8 @@ def phi_centered(Nf: int, Nt: int, dt: float, d: int = 4) -> Array:
 
     Raises
     ------
+    TypeError
+        If ``Nf``, ``Nt`` or ``d`` is not an integer, or ``dt`` is not a real number.
     ValueError
         If the grid or ``dt`` is invalid, or if $\\Delta F = 1/(2\\,\\delta t N_f)$
         is not a positive finite double (see :func:`domainia.wilson.delta_F`).
