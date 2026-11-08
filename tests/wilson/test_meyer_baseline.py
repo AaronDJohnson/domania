@@ -1,6 +1,6 @@
 """The default window reproduces the Meyer baseline recorded at d991ac4 bit for bit.
 
-Except the ``meyer_cases.RESCALED`` families: units (follow-up spec, section 1).  Their
+Except the ``meyer_cases.RESCALED`` families, which changed units on purpose.  Their
 values are now Wilson coefficients, ``got = f(N, dt) * recorded`` to 1e-13, with the same
 dtype; every other array is still ``np.array_equal``.  ``meyer_cases.mismatches`` is the one
 comparator, shared with ``meyer_cases.py --check``.
@@ -36,7 +36,7 @@ def baseline() -> dict[str, np.ndarray]:
 
 
 def test_the_rescaled_families_are_exactly_the_spec_table(baseline):
-    """Five families (spec section 1.7), each present on every grid and dt of the baseline."""
+    """Five families, each present on every grid and dt of the baseline."""
     assert set(RESCALED) == {("domainia", "FourierToWDM.dense"), ("domainia", "FourierToWDM.fft"),
                              ("domainia", "FourierToWDM.adjoint"),
                              ("wilson", "transform.forward_bands"),

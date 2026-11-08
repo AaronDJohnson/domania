@@ -14,8 +14,8 @@ can never re-record it.  Re-recording means checking out 24c4e55 and running its
 
 The gate is ``tests/wilson/test_meyer_baseline.py``: it recomputes every case through
 ``domainia.wilson`` and compares with :func:`mismatches`: ``np.array_equal`` (same dtype)
-on every array except the :data:`RESCALED` families.  Those changed units on purpose (the
-follow-up spec, section 1: every WDM value is a Wilson coefficient) and are compared as
+on every array except the :data:`RESCALED` families.  Those changed units on purpose
+(every WDM value is now a Wilson coefficient) and are compared as
 ``got = f * recorded`` to 1e-13.  ``python tests/wilson/meyer_cases.py --check`` is the
 same replay as a script, with the same comparator.  The arrays are bit-exact only in the
 recording environment (the ``wdmrel`` env's NumPy pocketfft and BLAS on the machine that

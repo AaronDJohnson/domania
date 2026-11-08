@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from domainia import wilson as wdm
+from domainia import wilson
 from domainia.wilson.backend import NUMPY
 from domainia.wilson.evolutionary import eq45_blocks_cheb, eq45_coeffs_bessel, eq45_plan
 from domainia import linalg as la
@@ -21,7 +21,7 @@ pytestmark = pytest.mark.jax
 
 NF, NT, DT = 8, 16, 1.0 / 16
 F_MIN, F_REF = 0.5, 1.0
-GRID = wdm.Grid(NF, NT, DT)
+GRID = wilson.Grid(NF, NT, DT)
 TESTS = Path(__file__).resolve().parent
 
 

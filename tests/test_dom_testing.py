@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from domainia import wilson as wdm
+from domainia import wilson
 from domainia.wilson.evolutionary import (eq45_blocks_cheb, eq45_coeffs_bessel, eq45_plan, exact_covariance,
                               time_domain_covariance)
 from domainia import testing as T
@@ -15,7 +15,7 @@ from domainia.domains import CellSet
 NF, NT, DT = 8, 16, 1.0 / 16
 N = NF * NT
 F_MIN, F_REF = 0.5, 1.0
-GRID = wdm.Grid(NF, NT, DT)
+GRID = wilson.Grid(NF, NT, DT)
 
 
 def L_of(f):
@@ -36,7 +36,8 @@ def test_dense_W_rows_are_the_atoms(rng):
     cells = CellSet.all_active(GRID)
     W = T.dense_W(cells)
     x = rng.standard_normal(N)
-    assert np.max(np.abs(W @ x - wdm.grid.pack(wdm.forward_time(x, NF, NT, DT), NF, NT))) < 1e-12
+    packed = wilson.grid.pack(wilson.forward_time(x, NF, NT, DT), NF, NT)
+    assert np.max(np.abs(W @ x - packed)) < 1e-12
     assert np.max(np.abs(W @ W.T - DT * np.eye(N))) < 1e-14
     sub = cells.drop_columns(3, 1)
     assert np.array_equal(T.dense_W(sub), W[sub.packed_positions()])
@@ -62,7 +63,7 @@ def test_eq45_differs_from_exact_at_second_order_with_drift():
     cells = CellSet.all_active(GRID)
     C = T.eq45_dense(cells, drift(-2.0, 1.2))
     exact = exact_covariance(NF, NT, DT, drift(-2.0, 1.2))
-    interior = ~np.isin(cells.n_array, wdm.grid.edge_columns(NT, 3, 1))
+    interior = ~np.isin(cells.n_array, wilson.grid.edge_columns(NT, 3, 1))
     d = np.diag(exact)[interior]
     assert np.max(np.abs(np.diag(C)[interior] / d - 1)) < 0.05
 

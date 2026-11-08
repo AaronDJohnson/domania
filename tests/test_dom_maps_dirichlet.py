@@ -44,7 +44,7 @@ def test_crop_reproduces_the_cropped_record_rfft():
 
 @pytest.mark.parametrize("N", [256, 255])
 def test_full_record_bins_pad_and_crop_to_the_exact_rfft(N):
-    """Spec section 1.5: the self-conjugate source bins (DC, and Nyquist for even N) count
+    """The self-conjugate source bins (DC, and Nyquist for even N) count
     once, so pad and crop of every bin of a record with non-zero DC and Nyquist content are
     the rfft of the padded or cropped series.  The output end bins are real to rounding."""
     x = np.random.default_rng(N).standard_normal(N) + 0.75             # non-zero DC
@@ -85,7 +85,8 @@ def test_maps_match_direct_transforms():
 
 
 def test_functions_are_the_oracle_kernels():
-    """pad_maps/crop_maps keep the oracle signature (D-C's mask_rows calls crop_maps on chunks)."""
+    """pad_maps/crop_maps take the output and input bins as arrays, so a caller can build the
+    rows in chunks."""
     A, B = pad_maps(NS, 320, np.arange(5, 85), np.arange(20, 61))
     Z = FourierZeroPad(SRC, FourierDomain(320, 1.0, 5, 80, "rfft"))
     assert np.array_equal(A, Z.A) and np.array_equal(B, Z.B)

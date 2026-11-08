@@ -1,4 +1,4 @@
-"""Dense oracles for tests and small grids (spec section 4; NumPy only, never on a
+"""Dense oracles for tests and small grids (NumPy only, never on a
 likelihood path).  Every oracle here is ``O(N^2)`` memory or worse: keep ``N`` <~ 2048.
 
 * :func:`dense_W`, :func:`wdm_congruence`: the WDM rows of a cell set

@@ -1,7 +1,7 @@
-"""Array kernels of the WDM II factorisations (spec sections 3.4 and 4).
+"""Array kernels of the WDM Paper II factorisations.
 
 Every routine is a line-for-line port of one oracle code path and keeps that oracle's
-library call at each call site (spec section 0, rule 1).  The Cholesky implementation
+library call at each call site.  The Cholesky implementation
 is pinned per site through ``Backend.cholesky(A, impl=...)``:
 
 ==========================  ==========  ===============================================
@@ -13,13 +13,12 @@ routine                     ``impl``    oracle
 :func:`pcg`                 --          WT ``fastcov.pcg``, WG ``BandFullCovarianceGPU._solve``
 ==========================  ==========  ===============================================
 
-**One factor family (S4 deferral (a)).**  The factor objects with methods -- diagonal and
+**One factor family.**  The factor objects with methods -- diagonal and
 dense Cholesky (``domainia.covariance.base.DiagFactor`` / ``CholFactor``) and the
 block-tridiagonal factor in cell order (``covariance.blocktri.BlockTriCovFactor``) -- live
-in ``domainia.covariance``; this module keeps the array kernels they call.  The duplicate
-free-function copies S2 had here (``diag_factor`` ... ``factor_solve``) are gone.
+in ``domainia.covariance``; this module keeps the array kernels they call.
 
-Layouts of a block-tridiagonal matrix (spec section 3.2):
+Layouts of a block-tridiagonal matrix:
 
 * ``"ragged"``: Python lists of per-band blocks, a host loop.  Runs eagerly on either
   backend (never under ``jit``); the NumPy golden default, bitwise WT.
@@ -29,7 +28,7 @@ Layouts of a block-tridiagonal matrix (spec section 3.2):
 Factors are pytrees (:func:`wilson.backend.pytree_dataclass`): they stack along a rung
 axis and pass through ``jax.jit``/``vmap``.  A factor whose Cholesky failed carries
 ``ok = False`` (NaN entries on the padded layout, a truncated factor on the ragged
-one); callers map that to ``-inf`` (spec section 4.7, PD policy).  The JAX Cholesky
+one); callers map that to ``-inf``.  The JAX Cholesky
 reads the lower triangle only (``symmetrize_input=False``, see ``wilson.backend``); WG
 called ``jnp.linalg.cholesky`` with JAX's default, which differs by <= 7.4e-14 relative
 on inputs that are not bitwise symmetric (JAX is never claimed bitwise).
@@ -586,7 +585,7 @@ def pcg(apply_A: Callable[[Any], Any], apply_M: Callable[[Any], Any], B: Any, *,
 
 
 def device_constants(tree: Any) -> Any:
-    """Move a pytree of host constants to the JAX device once (spec section 3.3).
+    """Move a pytree of host constants to the JAX device once.
 
     Calls :func:`wilson.backend.jax_backend` first, so it raises ``RuntimeError`` when
     ``jax_enable_x64`` is off and registers every pending pytree class.

@@ -1,4 +1,4 @@
-"""C2: the backend shim (spec section 3.1)."""
+"""C2: the backend shim."""
 
 from __future__ import annotations
 
@@ -255,18 +255,19 @@ def test_require_x64_raises_when_off():
 _X64_OFF = (
     "import numpy as np, jax, jax.numpy as jnp\n"
     "assert not jax.config.read('jax_enable_x64')\n"
-    "from domainia import wilson as wdm\n"
+    "from domainia import wilson\n"
     "from domainia.wilson.backend import NUMPY, get_backend, jax_backend\n"
     "x = np.random.default_rng(0).standard_normal(128)\n"
-    "w = wdm.forward_time(x, 8, 16, 0.5)\n"
+    "w = wilson.forward_time(x, 8, 16, 0.5)\n"
     "assert type(w) is np.ndarray and w.dtype == np.float64, (type(w), w.dtype)\n"
     "assert get_backend(x) is NUMPY\n"
     "cases = {\n"
     "    'jax_backend()': lambda: jax_backend(),\n"
-    "    'forward_time(be=jax_backend())': lambda: wdm.forward_time(x, 8, 16, 0.5, be=jax_backend()),\n"
+    "    'forward_time(be=jax_backend())':\n"
+    "        lambda: wilson.forward_time(x, 8, 16, 0.5, be=jax_backend()),\n"
     "    'get_backend(jnp array)': lambda: get_backend(jnp.ones(3)),\n"
     "    'get_backend(backend=jax)': lambda: get_backend(backend='jax'),\n"
-    "    'forward_time(jnp array)': lambda: wdm.forward_time(jnp.asarray(x), 8, 16, 0.5),\n"
+    "    'forward_time(jnp array)': lambda: wilson.forward_time(jnp.asarray(x), 8, 16, 0.5),\n"
     "}\n"
     "for name, call in cases.items():\n"
     "    try:\n"

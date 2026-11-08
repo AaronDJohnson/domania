@@ -4,7 +4,7 @@
   imports JAX.
 * Every factor class satisfies the ``Factor`` protocol.
 * Under JAX every factor is a pytree: it flattens, round-trips, and two factors stack
-  along a rung axis into one ``vmap`` (spec §3.3).
+  along a rung axis into one ``vmap``.
 * ``EvolutionaryCovariance`` refuses the arguments it would ignore (fail closed).
 """
 
@@ -20,7 +20,7 @@ import numpy as np
 import pytest
 
 import domainia.covariance as cov
-from domainia import wilson as wdm
+from domainia import wilson
 from domainia.domains import CellSet
 from domainia.spectra import GenericPSD
 from domainia.variance import BandAveragedVariance, MidpointVariance
@@ -112,7 +112,7 @@ def test_factors_are_pytrees_that_stack(jax_be):
 
 
 FLAT = GenericPSD(lambda f, t, nu: 1.0 + 0.0 * f * t)
-CELLS = CellSet.all_active(wdm.Grid(8, 16, 0.5))
+CELLS = CellSet.all_active(wilson.Grid(8, 16, 0.5))
 
 
 def test_evolutionary_covariance_refuses_a_layout_with_dense_assembly():

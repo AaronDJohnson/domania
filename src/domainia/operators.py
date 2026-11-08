@@ -1,5 +1,4 @@
-"""Covariances as :class:`domainia.translate.Operator` s, and the matrix of any operator
-(spec section 2).
+"""Covariances as :class:`domainia.translate.Operator` s, and the matrix of any operator.
 
 * :class:`DenseOperator`: an explicit covariance matrix on the stacked real coordinates of
   a full-record domain.

@@ -1,11 +1,9 @@
-"""Maps out of band-limited Fourier bins: zero padding, cropping, WDM cells (GB, spec §4.2).
+"""Maps out of band-limited Fourier bins: zero padding, cropping, WDM cells.
 
-Ported from the GB toy-model oracle (frozen): ``_geometric`` verbatim, ``pad_maps`` and
-``crop_maps`` with the self-conjugate source bins counted once, the cell matrices of
-``Grid.dense_atoms`` and ``_cells`` (with ``wdm_full.analyse`` and ``wdm_bands._phase``),
-and the data map ``cells``.  The atoms are ``wilson.transform.band_atoms`` (GB
-``geometry.band_atoms`` to rounding; bit-identical until the Hz window of v0.12.0, S1
-Task C6).
+The Dirichlet kernels (:func:`pad_maps`, :func:`crop_maps`) and the cell matrices of
+:class:`FourierToWDM` (its dense atoms and :meth:`FourierToWDM.after`) are ported from
+the galactic-binary toy model, which does not ship; the kernels count the self-conjugate
+source bins once.  The atoms are ``wilson.transform.band_atoms``.
 """
 
 from __future__ import annotations

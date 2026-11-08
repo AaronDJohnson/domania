@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 from dom_db_inputs import jax_or_skip
 
-from domainia import wilson as wdm
+from domainia import wilson
 from domainia.covariance import CholFactor, DenseCovariance, DiagFactor, DiagonalCovariance, Factor
 from domainia.domains import CellSet
 from domainia.spectra import GenericPSD
@@ -107,7 +107,7 @@ def test_jit_takes_the_constants_as_an_argument(jax_be):
 
 
 def _generic_variances():
-    cells = CellSet.all_active(wdm.Grid(8, 16, 0.5))
+    cells = CellSet.all_active(wilson.Grid(8, 16, 0.5))
     psd = GenericPSD(lambda f, t, nu: (1.0 + np.abs(f)) ** -1.0 * (1.0 + nu[0] * np.asarray(t) / 64.0))
     return cells, [Var(psd, cells) for Var in (BandAveragedVariance, MidpointVariance)]
 

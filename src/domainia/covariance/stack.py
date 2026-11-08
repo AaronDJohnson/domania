@@ -1,4 +1,4 @@
-"""``ChannelStack``: independent channels (GB A and E), one covariance each (spec §4.6)."""
+"""``ChannelStack``: independent channels (GB A and E), one covariance each."""
 
 from __future__ import annotations
 

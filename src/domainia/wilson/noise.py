@@ -85,8 +85,8 @@ def evaluate_psd_on_band_grid(Nf: int, dt: float, Sn_func: PsdFunc) -> Array:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
-    >>> Sn = wdm.evaluate_psd_on_band_grid(
+    >>> import numpy as np; from domainia import wilson
+    >>> Sn = wilson.evaluate_psd_on_band_grid(
     ...     8, 1.0, lambda f: 1e-3 * np.ones_like(f)
     ... )
     >>> Sn.shape, float(Sn[0])
@@ -121,8 +121,8 @@ def whittle_variance_from_array(Nt: int, Sn_band: Array) -> Array:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
-    >>> var = wdm.whittle_variance_from_array(16, np.full(9, 1e-3))
+    >>> import numpy as np; from domainia import wilson
+    >>> var = wilson.whittle_variance_from_array(16, np.full(9, 1e-3))
     >>> var.shape, float(var[0, 0])   # S_n / 2
     ((9, 16), 0.0005)
     """
@@ -164,8 +164,8 @@ def whittle_variance(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
-    >>> var = wdm.whittle_variance(8, 16, 1.0, lambda f: 1e-3 * np.ones_like(f))
+    >>> import numpy as np; from domainia import wilson
+    >>> var = wilson.whittle_variance(8, 16, 1.0, lambda f: 1e-3 * np.ones_like(f))
     >>> var.shape
     (9, 16)
     >>> float(var[1, 0])  # S_n(f_m) / 2
@@ -221,14 +221,14 @@ def band_averaged_variance(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> steep = lambda f: 1e-3 * (1.0 + 1e2 / (f + 1 / (2 * dt * Nf)) ** 2)
-    >>> var = wdm.band_averaged_variance(Nf, Nt, dt, steep)
+    >>> var = wilson.band_averaged_variance(Nf, Nt, dt, steep)
     >>> var.shape
     (9, 16)
     >>> # exact: reproduces the diagonal of the WDM covariance
-    >>> truth = np.diag(wdm.matrix.build_C_wdm_active(Nf, Nt, dt, steep))
+    >>> truth = np.diag(wilson.matrix.build_C_wdm_active(Nf, Nt, dt, steep))
     >>> bool(abs(var[1, 0] - truth[Nt // 2]) / truth[Nt // 2] < 1e-12)
     True
     """
@@ -308,13 +308,13 @@ def evolutionary_variance(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> def Sn(f, t):
     ...     return 1e-3 * (1 + 0.1 * t[None, :] / t[-1]) * np.ones(
     ...         (f.size, t.size)
     ...     )
-    >>> var = wdm.evolutionary_variance(Nf, Nt, dt, Sn)
+    >>> var = wilson.evolutionary_variance(Nf, Nt, dt, Sn)
     >>> var.shape, bool(var[4, 0] != var[4, -1])   # varies in time
     ((9, 16), True)
     """
@@ -432,9 +432,9 @@ def empirical_variance(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> flat = lambda f: 1e-3 * np.ones_like(f)
-    >>> mc = wdm.empirical_variance(8, 16, 1.0, flat, 200, seed=0)
+    >>> mc = wilson.empirical_variance(8, 16, 1.0, flat, 200, seed=0)
     >>> mc.shape
     (9, 16)
     """
@@ -475,7 +475,7 @@ def evolutionary_band_variance(Nf: int, Nt: int, dt: float, Sn: PsdFtFunc, *,
     .. math::  \sigma^2_{mn} = \frac12\,
                \frac{\sum_j \tilde\phi^2(f_j - f_m)\,S(f_j, t_n)}{\sum_j \tilde\phi^2(f_j - f_m)},
 
-    WDM II Eq. 36 (eq:wdm_variance_band_average; the edge-band factor is not
+    WDM Paper II, Eq. 36 (eq:wdm_variance_band_average; the edge-band factor is not
     applied -- inactive edge cells carry the same value, as in
     :func:`evolutionary_variance`).  ``Sn(f, t)`` is elementwise and broadcasting
     (argument order ``(f, t)``).  In the stationary limit this is

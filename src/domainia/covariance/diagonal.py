@@ -1,4 +1,4 @@
-"""``DiagonalCovariance``: a per-cell variance as a covariance (spec §4.4)."""
+"""``DiagonalCovariance``: a per-cell variance as a covariance."""
 
 from __future__ import annotations
 

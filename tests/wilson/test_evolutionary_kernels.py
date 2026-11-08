@@ -1,4 +1,4 @@
-"""C8: the stateless WDM II kernels (wdm.evolutionary, wdm.special, wdm.noise).
+"""C8: the stateless WDM Paper II kernels (wdm.evolutionary, wdm.special, wdm.noise).
 
 Every kernel is checked against its source: the frozen wdm_dev oracle
 (``wdm_dev_ev``), the WT ``TriCovariance`` in a lineage-A subprocess, dense

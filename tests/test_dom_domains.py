@@ -1,4 +1,4 @@
-"""D-A2: domains and cell sets (spec section 4.1; counts from spec sections 4.8-4.9)."""
+"""D-A2: domains and cell sets."""
 
 from __future__ import annotations
 
@@ -9,10 +9,10 @@ import pickle
 import numpy as np
 import pytest
 
-from domainia import wilson as wdm
+from domainia import wilson
 from domainia.domains import CellSet, ChannelAxis, FourierDomain, TimeDomain, WDMDomain
 
-SIN = wdm.Grid(64, 256, 2.0**-10)
+SIN = wilson.Grid(64, 256, 2.0**-10)
 
 
 def test_time_domain():
@@ -41,7 +41,7 @@ def test_fourier_domain():
 
 
 def test_fourier_units_carry_sigma0_and_the_rfft_scale():
-    """``rfft_scale`` is ``u`` with ``numpy.fft.rfft(x) = u z`` (spec section 1.1), and
+    """``rfft_scale`` is ``u`` with ``numpy.fft.rfft(x) = u z``, and
     ``sigma0`` is part of the domain's identity."""
     assert FourierDomain(64, 0.5, 0, 33, "sigma0", sigma0=2.0).rfft_scale == 2.0
     assert FourierDomain(64, 0.5, 0, 33, "rfft").rfft_scale == 1.0
@@ -70,15 +70,15 @@ def test_fourier_units_carry_sigma0_and_the_rfft_scale():
 
 
 def test_all_active_is_the_packed_order():
-    cells = CellSet.all_active(wdm.Grid(8, 16, 1.0))
-    m, n = wdm.grid.packed_cells(8, 16)
+    cells = CellSet.all_active(wilson.Grid(8, 16, 1.0))
+    m, n = wilson.grid.packed_cells(8, 16)
     assert np.array_equal(cells.m_array, m) and np.array_equal(cells.n_array, n)
     assert np.array_equal(cells.packed_positions(), np.arange(128))
     assert cells.keep_mask().all()
 
 
 def test_sinusoid_counts():
-    """Spec section 4.8: 16384 cells, cut (6, 5) keeps 15681, edge-exact (8, 7) has 959
+    """The sinusoid grid: 16384 cells, cut (6, 5) keeps 15681, edge-exact (8, 7) has 959
     rows over a 15425-cell interior."""
     cells = CellSet.all_active(SIN)
     assert cells.size == 16384
@@ -87,17 +87,17 @@ def test_sinusoid_counts():
     edge = cells.columns(8, 7)
     interior = cells.complement(edge)
     assert (edge.size, interior.size) == (959, 15425)
-    assert set(edge.n) == set(wdm.grid.edge_columns(256, 8, 7))
+    assert set(edge.n) == set(wilson.grid.edge_columns(256, 8, 7))
     assert cells.complement(interior) == edge
-    pad = CellSet.all_active(wdm.Grid(64, 272, 2.0**-10))
+    pad = CellSet.all_active(wilson.Grid(64, 272, 2.0**-10))
     assert pad.size == 17408
 
 
 def test_gb_counts_from_the_prepared_grids():
-    """Spec section 4.9: 3 bands x NT cells per channel; cut (5, 4) and 27 edge rows."""
+    """The galactic-binary grids: 3 bands x NT cells per channel; cut (5, 4) and 27 edge rows."""
     for N, NT, bands in ((1576800, 240, (65, 66, 67)), (3153600, 438, (71, 72, 73)),
                          (6307200, 900, (69, 70, 71))):
-        grid = wdm.Grid(N // NT, NT, 5.0)
+        grid = wilson.Grid(N // NT, NT, 5.0)
         cells = CellSet.bands(grid, bands)
         assert cells.size == 3 * NT
         assert cells.drop_columns(5, 4).size == 3 * NT - 27
@@ -108,11 +108,11 @@ def test_gb_counts_from_the_prepared_grids():
 
 
 def test_positions_and_masks_agree():
-    grid = wdm.Grid(8, 16, 0.5)
+    grid = wilson.Grid(8, 16, 0.5)
     cells = CellSet.all_active(grid)
     sub = cells.drop_columns(3, 1)
     pos = sub.packed_positions()
-    m, n = wdm.grid.packed_cells(8, 16)
+    m, n = wilson.grid.packed_cells(8, 16)
     assert np.array_equal(m[pos], sub.m_array) and np.array_equal(n[pos], sub.n_array)
     assert np.array_equal(np.flatnonzero(sub.keep_mask()), pos)
     assert CellSet.from_mask(grid, sub.keep_mask()) == sub
@@ -122,13 +122,13 @@ def test_positions_and_masks_agree():
 
 
 def test_dc_and_nyquist_bands_have_half_the_cells():
-    cells = CellSet.bands(wdm.Grid(8, 16, 1.0), (0, 1, 8))
+    cells = CellSet.bands(wilson.Grid(8, 16, 1.0), (0, 1, 8))
     assert cells.band_sizes() == ((0, 8), (1, 16), (8, 8))
     assert set(cells.n_array[cells.m_array == 0]) == set(range(0, 16, 2))
 
 
 def test_validation():
-    g = wdm.Grid(8, 16, 1.0)
+    g = wilson.Grid(8, 16, 1.0)
     with pytest.raises(ValueError, match="not active"):
         CellSet(g, (0,), (1,))                                          # DC, odd n
     with pytest.raises(ValueError, match="band order"):
@@ -156,7 +156,7 @@ def test_identity_is_value_based_and_cheap():
     assert a != CellSet.all_active(SIN)
     assert "size=15681" in repr(a)
     m_in, n_in = np.array([1, 1, 2, 2]), np.array([0, 1, 0, 1])
-    c = CellSet(wdm.Grid(8, 16, 1.0), m_in, n_in)
+    c = CellSet(wilson.Grid(8, 16, 1.0), m_in, n_in)
     assert m_in.flags.writeable and n_in.flags.writeable              # caller's arrays untouched
     assert not c.m_array.flags.writeable and c.m == (1, 1, 2, 2)
 
@@ -166,7 +166,7 @@ def test_identity_is_value_based_and_cheap():
 def test_a_cell_set_survives_pickle_and_copy_as_an_equal_read_only_set(roundtrip):
     """``__reduce__`` rebuilds from ``(grid, m, n)``.  Before it, pickle and deepcopy gave
     writeable index arrays and ``copy.copy`` shared the original's."""
-    cells = CellSet.all_active(wdm.Grid(8, 16, 0.5)).drop_columns(2, 1)
+    cells = CellSet.all_active(wilson.Grid(8, 16, 0.5)).drop_columns(2, 1)
     back = roundtrip(cells)
     assert back is not cells and back == cells and hash(back) == hash(cells)
     for got, orig in ((back.m_array, cells.m_array), (back.n_array, cells.n_array)):
@@ -176,14 +176,14 @@ def test_a_cell_set_survives_pickle_and_copy_as_an_equal_read_only_set(roundtrip
 
 
 def test_wdm_domain_and_channels():
-    cells = CellSet.all_active(wdm.Grid(8, 16, 1.0))
+    cells = CellSet.all_active(wilson.Grid(8, 16, 1.0))
     d = WDMDomain(cells)
     assert d.size == 128 and not hasattr(d, "scale")
     assert list(inspect.signature(WDMDomain).parameters) == ["cells", "window"]
     with pytest.raises(TypeError, match="Window"):
         WDMDomain(cells, 2.0)                       # the second field is the window now
     with pytest.raises(TypeError):
-        WDMDomain(cells, scale=2.0)                 # the field is gone (spec section 1.6)
+        WDMDomain(cells, scale=2.0)                 # the field is gone
     ch = ChannelAxis(("A", "E"))
     assert ch.size == 2 and ChannelAxis().size == 0
     with pytest.raises(ValueError, match="unique"):

@@ -1,4 +1,4 @@
-"""Special functions shared by the WDM II kernels (dual backend).
+"""Special functions shared by the WDM Paper II kernels (dual backend).
 
 * :func:`bessel_i` -- modified Bessel functions ``I_p(a)``, ``p = 0..P-1``:
   ``scipy.special.ive(p, a) * exp(|a|)`` on NumPy (the WT expression), the
@@ -33,8 +33,8 @@ def chebyshev_basis(N: int, P: int) -> NDArray[np.floating]:
 
     Examples
     --------
-    >>> from domainia import wilson as wdm
-    >>> wdm.special.chebyshev_basis(4, 3)
+    >>> from domainia import wilson
+    >>> wilson.special.chebyshev_basis(4, 3)
     array([[ 1. ,  1. ,  1. ,  1. ],
            [-1. , -0.5,  0. ,  0.5],
            [ 1. , -0.5, -1. , -0.5]])

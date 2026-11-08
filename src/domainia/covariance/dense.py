@@ -1,4 +1,4 @@
-"""``DenseCovariance``: an assembled matrix factorised by a pinned Cholesky (spec §4.4)."""
+"""``DenseCovariance``: an assembled matrix factorised by a pinned Cholesky."""
 
 from __future__ import annotations
 

@@ -1,4 +1,5 @@
-"""domainia.translate.transform: {channel: array} between full-record domains (spec section 3)."""
+"""domainia.translate.transform: {channel: array} between full-record domains
+(domainia 2.0 spec, section 3)."""
 
 from __future__ import annotations
 

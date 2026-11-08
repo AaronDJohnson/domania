@@ -1,4 +1,4 @@
-"""Where a data vector lives (spec section 4.1).
+"""Where a data vector lives.
 
 Every domain is a frozen, hashable dataclass, so it can be the static part of a
 ``jax.jit`` key and the metadata of a data pytree (:mod:`domainia.data`).

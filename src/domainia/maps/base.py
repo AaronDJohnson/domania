@@ -1,10 +1,10 @@
-"""Linear maps between domains and the lazy congruence they push (spec §4.2).
+"""Linear maps between domains and the lazy congruence they push.
 
 A map is a frozen dataclass registered as a JAX pytree (``wilson.backend.pytree_dataclass``):
 its host-built constants (index tables, atom matrices, Dirichlet kernels) are the pytree
 *data*, its domains and sizes the static *meta*.  Pass a map to ``jax.jit`` as an
 argument, never close over it, and call :meth:`LinearMap.on` once to move its constants
-to the device (spec §3.3, the host-constant rule §0.4).
+to the device.
 
 Every constructor builds its constants in host NumPy float64 when they are not given
 (the ``_BUILD`` sentinel), and records the fields they derive from in ``built_for`` (static
@@ -28,8 +28,8 @@ kind        apply                       push(cov) (``PushedCovariance``)
 ==========  ==========================  ================================================
 
 A covariance without ``matvec`` -- every covariance on WDM cells -- cannot be pushed through
-a real or analysis map: ``PushedCovariance.rows``/``matvec`` raise a ``TypeError`` (spec
-section 4.2's WDM -> time push ``W^T Lambda W / dt^2`` is not available).  Fix the
+a real or analysis map: ``PushedCovariance.rows``/``matvec`` raise a ``TypeError`` (the
+WDM -> time push ``W^T Lambda W / dt^2`` is not available).  Fix the
 covariance at a noise state as a :class:`domainia.operators.CovarianceOperator` and see it
 from time through :func:`domainia.translate.translate_operator` instead.
 """
@@ -116,9 +116,9 @@ def domain_size(dom: Any) -> int:
 
 def on_backend(obj: Any, be: Backend, fields: tuple[str, ...]) -> Any:
     """``obj`` with its constant ``fields`` (NumPy arrays, tuples of them, or nested maps)
-    moved to ``be`` by ``be.asarray`` -- the host-constant rule (spec §0.4): build once on
+    moved to ``be`` by ``be.asarray``: build once on
     the host, then ``device_put``.  NumPy returns ``obj`` itself.  Any other backend first
-    calls ``require_x64()`` (spec §3.3): a ``Backend`` object kept from earlier would
+    calls ``require_x64()``: a ``Backend`` object kept from earlier would
     otherwise turn the float64 constants into float32 silently when x64 is off."""
     if be.name == "numpy":
         return obj
@@ -250,8 +250,8 @@ class PushedCovariance:
 
     def _matvec(self) -> Any:
         """``cov.matvec``, or a TypeError: a covariance on WDM cells (``DiagonalCovariance``,
-        ``EvolutionaryCovariance``, ...) has no fixed-noise-state ``matvec``, so spec section
-        4.2's WDM -> time push ``W^T Lambda W / dt^2`` is not available; the error names the
+        ``EvolutionaryCovariance``, ...) has no fixed-noise-state ``matvec``, so the
+        WDM -> time push ``W^T Lambda W / dt^2`` is not available; the error names the
         route: :class:`domainia.operators.CovarianceOperator`, then
         :func:`domainia.translate.translate_operator`."""
         fn = getattr(self.cov, "matvec", None)
@@ -301,7 +301,7 @@ class PushedCovariance:
 @pytree_dataclass(data=(), meta=("src",))
 @dataclass(frozen=True, eq=False)
 class Identity(LinearMap):
-    """The identity on ``src`` (the sinusoid pad model's samples, spec §4.8)."""
+    """The identity on ``src`` (the sinusoid pad model's samples)."""
 
     src: Any
 
@@ -419,7 +419,7 @@ class Restrict(LinearMap):
 @pytree_dataclass(data=(), meta=("src", "dst"))
 @dataclass(frozen=True, eq=False)
 class BinSelect(LinearMap):
-    """The bins of the sub-window ``dst`` of ``src`` (store -> window -> nominal, spec §4.9).
+    """The bins of the sub-window ``dst`` of ``src`` (store -> window -> nominal).
 
     ``BinSelect(src, (k0, n))`` takes absolute bins ``[k0, k0 + n)`` of ``src``'s record.
     """

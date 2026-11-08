@@ -1,5 +1,5 @@
 """domainia.operators.DenseOperator and operator_matrix: an explicit covariance matrix as an
-Operator, and any Operator as its matrix (spec sections 2.3, 2.4)."""
+Operator, and any Operator as its matrix."""
 
 from __future__ import annotations
 

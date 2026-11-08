@@ -6,14 +6,14 @@ import dataclasses
 
 import numpy as np
 import pytest
-from domainia import wilson as wdm
+from domainia import wilson
 from dom_db_inputs import DenseCov, jax_or_skip
 
 from domainia.domains import CellSet, FourierDomain, TimeDomain, WDMDomain
 from domainia.maps import (BinSelect, Compose, Identity, LinearMap, PushedCovariance, Restrict,
                            domain_size)
 
-GRID = wdm.Grid(8, 16, 0.5)
+GRID = wilson.Grid(8, 16, 0.5)
 
 
 @dataclasses.dataclass(frozen=True, eq=False)
@@ -49,7 +49,7 @@ def test_restrict_selects_in_dst_order_and_is_its_own_adjoint():
     R = Restrict(full, cut)
     assert isinstance(R, LinearMap) and R.kind == "real" and R.shape == (len(cut.cells.m), 128)
     x = np.random.default_rng(0).standard_normal((3, 128))
-    keep = ~np.isin(np.asarray(full.cells.n), wdm.grid.edge_columns(16, 2, 1))
+    keep = ~np.isin(np.asarray(full.cells.n), wilson.grid.edge_columns(16, 2, 1))
     assert np.array_equal(R.apply(x), x[:, keep])
     y = np.random.default_rng(1).standard_normal((3, R.shape[0]))
     assert np.sum(R.apply(x) * y) == pytest.approx(np.sum(x * R.adjoint(y)), rel=1e-14)
@@ -64,7 +64,7 @@ def test_restrict_checks_its_domains_even_when_pos_is_given():
     is tests/test_dom_windows.py's."""
     full, cut = _cells()
     R = Restrict(full, cut)
-    other = WDMDomain(CellSet.all_active(wdm.Grid(8, 16, 0.25)).drop_columns(2, 1))
+    other = WDMDomain(CellSet.all_active(wilson.Grid(8, 16, 0.25)).drop_columns(2, 1))
     for kw in ({}, {"pos": R.pos}):
         with pytest.raises(ValueError, match="not a subset of src: its cells live on another grid"):
             Restrict(full, other, **kw)
@@ -147,7 +147,7 @@ def test_maps_are_frozen_dataclasses():
 
 
 def test_push_without_matvec_is_a_type_error_naming_translate_operator():
-    """Spec section 4.2's WDM -> time push (W^T Lambda W / dt^2) needs a fixed-noise-state
+    """The WDM -> time push (W^T Lambda W / dt^2) needs a fixed-noise-state
     ``matvec`` that no cell covariance has: a clear TypeError, not a bare AttributeError,
     from ``rows`` and ``matvec`` of a real or analysis push, naming the operator route
     (``CovarianceOperator``, then ``translate_operator``)."""
@@ -202,7 +202,7 @@ def test_maps_are_pytrees_passed_to_jit():
     back = jax.jit(lambda m, v: m.adjoint(v))(R, out)
     assert isinstance(back, jax.Array)
     assert np.array_equal(np.asarray(back), Restrict(full, cut).adjoint(np.asarray(out)))
-    # a kept JAX backend object must not move float64 constants with x64 off (spec §3.3)
+    # a kept JAX backend object must not move float64 constants with x64 off
     jax.config.update("jax_enable_x64", False)
     try:
         with pytest.raises(RuntimeError, match="float64"):

@@ -39,7 +39,7 @@ def _units_record(units: str) -> FourierDomain:
 
 
 def _in_units(R: np.ndarray, units: str) -> np.ndarray:
-    """``z`` in ``units`` from ``R = numpy.fft.rfft(x)`` (spec section 1.1's table)."""
+    """``z`` in ``units`` from ``R = numpy.fft.rfft(x)`` (the Fourier units table)."""
     return {"rfft": R, "dt_rfft": DT * R, "sigma0": R / SIGMA0}[units]
 
 
@@ -72,7 +72,7 @@ def _pad_case(rng):
 @pytest.mark.parametrize("impl", ["dense", "fft"])
 @pytest.mark.parametrize("units", ["rfft", "dt_rfft", "sigma0"])
 def test_cells_are_the_time_cells_in_every_unit(units, impl):
-    """Spec section 1.4: the cells are the Wilson coefficients of the record, whatever units
+    """The cells are the Wilson coefficients of the record, whatever units
     the bins are in."""
     x = synthetic_record(N, 3)
     got = FourierToWDM(_units_record(units), WDMDomain(_cells()), impl).apply(
@@ -161,7 +161,7 @@ def test_adjoint_is_the_real_inner_product_adjoint():
 def test_push_of_white_record_bins_is_the_white_cell_covariance(bands):
     """For ``z = rfft(x)`` of white noise of variance ``sigma2``, ``E[z z^H] = N sigma2 I`` on the
     bins, and the cells ``W x`` have covariance ``W sigma2 I W^T = sigma2 dt I``: the push
-    ``1/2 Re(C M' C^H)`` takes ``M' = N sigma2 I`` to ``sigma2 dt I`` (spec section 1.4)."""
+    ``1/2 Re(C M' C^H)`` takes ``M' = N sigma2 I`` to ``sigma2 dt I``."""
     sigma2 = 1.7
     cells = CellSet.bands(GRID, bands)
     m = FourierToWDM(_record(), WDMDomain(cells))
@@ -225,7 +225,7 @@ def test_after_a_zero_pad_is_the_padded_record_transform():
 
 @pytest.mark.parametrize("units", ["rfft", "dt_rfft", "sigma0"])
 def test_pad_then_wdm_is_the_padded_record_transform(units):
-    """The headline units test (spec section 1.5): every bin of a white 128-sample record
+    """The headline units test: every bin of a white 128-sample record
     (non-zero DC and Nyquist), in any units, zero padded to 160 samples and analysed on the
     padded grid's cells, is the padded record's Wilson coefficients, through ``after`` and
     through ``Compose``."""

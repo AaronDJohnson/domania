@@ -1,4 +1,4 @@
-"""Linear maps between domains (spec §4.2)."""
+"""Linear maps between domains."""
 
 from .base import (BinSelect, Compose, Identity, LinearMap, PushedCovariance, Restrict,
                    SupportsDense, SupportsMatvec, domain_size, on_backend)

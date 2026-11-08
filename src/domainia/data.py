@@ -1,4 +1,4 @@
-"""Data vectors on a domain (spec section 4.1).
+"""Data vectors on a domain.
 
 Each class is a JAX pytree (:func:`wilson.backend.pytree_dataclass`) whose only leaf is
 ``values``; ``domain`` and ``channels`` are static metadata, so a batch of data

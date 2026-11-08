@@ -1,17 +1,17 @@
-"""D-A2: data vectors are pytrees with static domains (spec section 4.1)."""
+"""D-A2: data vectors are pytrees with static domains."""
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
 
-from domainia import wilson as wdm
+from domainia import wilson
 from domainia.data import FourierBins, TimeSeries, WDMCells
 from domainia.domains import CellSet, ChannelAxis, FourierDomain, TimeDomain, WDMDomain
 
 TD = TimeDomain(32, 0.5)
 FD = FourierDomain(32, 0.5, 2, 5, "rfft")
-WD = WDMDomain(CellSet.all_active(wdm.Grid(4, 8, 0.5)))
+WD = WDMDomain(CellSet.all_active(wilson.Grid(4, 8, 0.5)))
 AE = ChannelAxis(("A", "E"))
 
 

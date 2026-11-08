@@ -247,8 +247,8 @@ def test_restrict_checks_the_windows_on_every_construction_route():
 
 
 def test_a_map_refuses_a_covariance_built_for_another_window():
-    """Spec section 2: a covariance built for one window raises ValueError on a domain with
-    another.  ``push`` is where a covariance meets a map's (WDM) source domain."""
+    """domainia 2.0 spec, section 2: a covariance built for one window raises ValueError on
+    a domain with another.  ``push`` is where a covariance meets a map's (WDM) source domain."""
     psd, _ = _stationary_psd()
     meyer, alt = WDMDomain(CELLS), WDMDomain(CELLS, window=ALT_WINDOW)
     cut = CELLS.drop_columns(2, 2)
@@ -379,7 +379,7 @@ def test_band_averaged_variance_uses_its_window():
 
 
 def test_the_cell_set_consumers_take_a_wdm_domain_and_its_window():
-    """Spec section 2.7: built on a ``WDMDomain`` they use its cells and its window, so a
+    """Built on a ``WDMDomain`` they use its cells and its window, so a
     non-Meyer domain cannot fall back to Meyer; ``MidpointVariance`` reads the cells only."""
     psd, nu = _stationary_psd()
     cut = CELLS.drop_columns(2, 1)

@@ -1,5 +1,5 @@
 """Covariance.multiply: ``Sigma(nu) b`` in the layout of the factor's ``solve``, for every
-covariance class, and ChannelStack's dense form (spec section 2.5)."""
+covariance class, and ChannelStack's dense form."""
 
 from __future__ import annotations
 

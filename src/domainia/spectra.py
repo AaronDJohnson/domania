@@ -23,7 +23,7 @@ class TabulatedSpectrum:
     """``values[c, j]`` at absolute rfft bin ``domain.k0 + j`` of ``domain``'s record.
 
     ``values`` is a read-only float64 copy (the caller's array is never aliased), as
-    D-A's ``CellSet`` keeps its indices.
+    ``CellSet`` keeps its indices.
 
     :meth:`on` and :meth:`at` are unit-blind: they read the record (``N``, ``dt``) and the bin
     range, never ``units`` or ``sigma0``, because a PSD does not depend on the data's Fourier

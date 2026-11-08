@@ -13,7 +13,7 @@ positive definite), ``solve(b)`` (:math:`C^{-1}b`),
 ``whiten(b)`` (:math:`L^{-1}b` with :math:`|L^{-1}b|^2 = b^{\mathsf T}C^{-1}b`),
 ``quad(b, form=...)`` and ``n_u`` (0 for every covariance here).
 
-**A factor holds per-state arrays only** (spec section 3.3, S4 deferral (b)).  Every array
+**A factor holds per-state arrays only**.  Every array
 that depends on the grid alone -- band layouts, the Eq. 45 plan -- stays in the
 covariance's constants ``C`` and is passed to the factor's methods: ``F.solve(b, C=C)``,
 ``F.whiten(b, C=C)``, ``F.quad(b, C=C)``, with ``C = cov.constants(be)`` (a combinator
@@ -23,10 +23,10 @@ returns (outside every pytree: not a leaf, dropped by ``tree_map``/``jit``), so
 ``cov.factor(nu).quad(b)`` works without it; a caller that caches or stacks factors (or
 builds them inside a jitted function) passes ``C`` explicitly.
 
-Structure / Constants / Factor (spec §3.3).  The configuration a subclass keeps on itself
+Structure / Constants / Factor.  The configuration a subclass keeps on itself
 is static (ints, tuples, strings).  Every array a factorisation reads comes from
 ``constants(be)`` and reaches the jitted function as an ARGUMENT, never closed over:
-``host_constants()`` builds it once in host NumPy float64 (spec §0 rule 4) and
+``host_constants()`` builds it once in host NumPy float64 and
 ``constants(be)`` caches it per backend (JAX: ``require_x64()``, then one
 ``jax.device_put``).  Choosing jit or eager is dispatch, not arithmetic: the arithmetic is
 one code path per named strategy.
@@ -129,7 +129,7 @@ class _FixedEvaluator:
 @dataclass(frozen=True, eq=False)
 class _PytreeCallableEvaluator:
     """A self-contained pytree callable ``obj(nu, *, be, **kwargs)`` -- the ``domainia.variance``
-    classes (D-B).  The object is its own constants: ``host_constants`` returns it, so JAX
+    classes.  The object is its own constants: ``host_constants`` returns it, so JAX
     device-puts its array leaves once and the jitted factorisation receives it as an
     argument (never closed over)."""
 
@@ -373,7 +373,7 @@ class Covariance:
         ``jax.jit(lambda C, nu, pre: self._factor(C, nu, be, key=key, pre=pre))``, the
         constants and the :meth:`prepare` output (staged rows) passed as its arguments.
         NumPy, ``jit=False`` or a non-jittable covariance: eager, in the same order (the
-        reference path).  S4 deferral (c): before, a keyed combinator ran eagerly on JAX.
+        reference path).
         """
         be = be or get_backend(nu)
         C = self.constants(be)

@@ -1,4 +1,4 @@
-"""Admissible Wilson windows: Meyer(d), RampWindow, SampledWindow (spec section 2)."""
+"""Admissible Wilson windows: Meyer(d), RampWindow, SampledWindow (domainia 2.0 spec, section 2)."""
 
 from __future__ import annotations
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from domainia import wilson as wdm
+from domainia import wilson
 from dom_db_inputs import DenseCov
 from domainia.wilson.matrix import active_W
 
@@ -15,7 +15,7 @@ SMALL = [(8, 16, 0.5), (16, 32, 1.7)]
 
 
 def _maps(Nf, Nt, dt, lead=0, trail=0):
-    g = wdm.Grid(Nf, Nt, dt)
+    g = wilson.Grid(Nf, Nt, dt)
     cells = CellSet.all_active(g)
     if lead or trail:
         cells = cells.drop_columns(lead, trail)
@@ -74,8 +74,8 @@ def test_push_of_an_exact_covariance_matches_wdm_exact_covariance():
     Nf, Nt, dt = 8, 16, 0.5
     g, _, M = _maps(Nf, Nt, dt)
     Sn = lambda f, t: (np.maximum(f, 0.05) / 1.0) ** (-1.0 + 0.8 * (t / (g.N * dt) - 0.5))  # noqa: E731
-    Sigma = wdm.evolutionary.time_domain_covariance(g.N, dt, Sn)
-    ref = wdm.evolutionary.exact_covariance(Nf, Nt, dt, Sn)
+    Sigma = wilson.evolutionary.time_domain_covariance(g.N, dt, Sn)
+    ref = wilson.evolutionary.exact_covariance(Nf, Nt, dt, Sn)
     got = M.push(DenseCov(Sigma)).dense()
     assert np.max(np.abs(got - ref)) <= 1e-12 * np.max(np.abs(ref))
 
@@ -95,6 +95,6 @@ def test_wdm_to_time_is_the_inverse_on_complete_sets(grid):
 
 
 def test_mismatched_grid_is_refused():
-    g = wdm.Grid(8, 16, 0.5)
+    g = wilson.Grid(8, 16, 0.5)
     with pytest.raises(ValueError, match="does not match"):
         TimeToWDM(TimeDomain(g.N, 1.0), WDMDomain(CellSet.all_active(g)))

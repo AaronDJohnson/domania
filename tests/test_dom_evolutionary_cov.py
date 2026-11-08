@@ -1,4 +1,4 @@
-"""EvolutionaryCovariance (WDM II Eq. 45) for a callable PSD: builders, assemblies and
+"""EvolutionaryCovariance (WDM Paper II, Eq. 45) for a callable PSD: builders, assemblies and
 the stationary limit (replaces test_dom_eq45)."""
 
 from __future__ import annotations

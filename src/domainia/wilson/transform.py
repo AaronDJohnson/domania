@@ -513,10 +513,10 @@ def forward(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> x = np.random.default_rng(0).standard_normal(Nf * Nt)
-    >>> w = wdm.forward(np.fft.rfft(x), Nf, Nt, dt)
+    >>> w = wilson.forward(np.fft.rfft(x), Nf, Nt, dt)
     >>> w.shape
     (9, 16)
     >>> bool(np.isclose(np.sum(w**2), dt * np.sum(x**2)))  # Parseval
@@ -578,13 +578,13 @@ def forward_many(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> xs = np.random.default_rng(0).standard_normal((5, Nf * Nt))
-    >>> W = wdm.forward_many(np.fft.rfft(xs, axis=-1), Nf, Nt, dt)
+    >>> W = wilson.forward_many(np.fft.rfft(xs, axis=-1), Nf, Nt, dt)
     >>> W.shape
     (5, 9, 16)
-    >>> bool(np.allclose(W[2], wdm.forward(np.fft.rfft(xs[2]), Nf, Nt, dt)))
+    >>> bool(np.allclose(W[2], wilson.forward(np.fft.rfft(xs[2]), Nf, Nt, dt)))
     True
     """
     validate_grid(Nf, Nt)
@@ -629,10 +629,10 @@ def forward_time_many(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> xs = np.random.default_rng(0).standard_normal((4, Nf * Nt))
-    >>> wdm.forward_time_many(xs, Nf, Nt, dt).shape
+    >>> wilson.forward_time_many(xs, Nf, Nt, dt).shape
     (4, 9, 16)
     """
     validate_grid(Nf, Nt)
@@ -692,11 +692,11 @@ def inverse(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> x = np.random.default_rng(0).standard_normal(Nf * Nt)
-    >>> w = wdm.forward(np.fft.rfft(x), Nf, Nt, dt)
-    >>> bool(np.allclose(wdm.inverse(w, Nf, Nt, dt), np.fft.rfft(x)))
+    >>> w = wilson.forward(np.fft.rfft(x), Nf, Nt, dt)
+    >>> bool(np.allclose(wilson.inverse(w, Nf, Nt, dt), np.fft.rfft(x)))
     True
     """
     validate_grid(Nf, Nt)
@@ -756,11 +756,11 @@ def inverse_many(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> xs = np.random.default_rng(0).standard_normal((4, Nf * Nt))
-    >>> W = wdm.forward_time_many(xs, Nf, Nt, dt)
-    >>> wdm.inverse_many(W, Nf, Nt, dt).shape
+    >>> W = wilson.forward_time_many(xs, Nf, Nt, dt)
+    >>> wilson.inverse_many(W, Nf, Nt, dt).shape
     (4, 65)
     """
     validate_grid(Nf, Nt)
@@ -819,11 +819,11 @@ def inverse_time_many(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> xs = np.random.default_rng(0).standard_normal((4, Nf * Nt))
-    >>> W = wdm.forward_time_many(xs, Nf, Nt, dt)
-    >>> bool(np.allclose(wdm.inverse_time_many(W, Nf, Nt, dt), xs, atol=1e-12))
+    >>> W = wilson.forward_time_many(xs, Nf, Nt, dt)
+    >>> bool(np.allclose(wilson.inverse_time_many(W, Nf, Nt, dt), xs, atol=1e-12))
     True
     """
     N = n_samples(Nf, Nt)
@@ -870,13 +870,13 @@ def forward_time(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> x = np.random.default_rng(0).standard_normal(Nf * Nt)
-    >>> wdm.forward_time(x, Nf, Nt, dt).shape
+    >>> wilson.forward_time(x, Nf, Nt, dt).shape
     (9, 16)
     >>> x[5] = np.nan                      # one gap-filled sample
-    >>> wdm.forward_time(x, Nf, Nt, dt)    # doctest: +ELLIPSIS
+    >>> wilson.forward_time(x, Nf, Nt, dt)    # doctest: +ELLIPSIS
     Traceback (most recent call last):
     ValueError: forward_time: x: 1 of 128 entries are not finite...
     """
@@ -923,14 +923,15 @@ def inverse_time(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> x = np.random.default_rng(0).standard_normal(Nf * Nt)
-    >>> w = wdm.forward_time(x, Nf, Nt, dt)
-    >>> bool(np.allclose(wdm.inverse_time(w, Nf, Nt, dt), x, atol=1e-12))
+    >>> w = wilson.forward_time(x, Nf, Nt, dt)
+    >>> bool(np.allclose(wilson.inverse_time(w, Nf, Nt, dt), x, atol=1e-12))
     True
-    >>> w8 = wdm.forward_time(x, Nf, Nt, dt, window=wdm.Meyer(8))       # another window
-    >>> bool(np.allclose(wdm.inverse_time(w8, Nf, Nt, dt, window=wdm.Meyer(8)), x, atol=1e-12))
+    >>> w8 = wilson.forward_time(x, Nf, Nt, dt, window=wilson.Meyer(8))       # another window
+    >>> bool(np.allclose(wilson.inverse_time(w8, Nf, Nt, dt, window=wilson.Meyer(8)), x,
+    ...                  atol=1e-12))
     True
     """
     N = n_samples(Nf, Nt)

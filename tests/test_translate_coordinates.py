@@ -1,5 +1,5 @@
 """domainia.translate.to_coordinates / from_coordinates: the real coordinates of the Operator
-contract, one row per channel, in channel_names order (spec section 2.2)."""
+contract, one row per channel, in channel_names order."""
 
 from __future__ import annotations
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from domainia import wilson as wdm
+from domainia import wilson
 from dom_db_inputs import SIN_DT, SIN_NF, SIN_NT, SIN_PAD_COLUMNS, DenseCov
 
 from domainia.domains import CellSet, TimeDomain, WDMDomain
@@ -35,7 +35,7 @@ def test_push_of_a_stationary_covariance_is_the_whittle_diagonal():
     n, dt = 128, 0.5
     F = TimeToFourier(TimeDomain(n, dt), fmin=0.2)
     Sn = lambda f, t: np.maximum(f, 0.05) ** -1.5 + 0.0 * t  # noqa: E731
-    Sigma = wdm.evolutionary.time_domain_covariance(n, dt, Sn)
+    Sigma = wilson.evolutionary.time_domain_covariance(n, dt, Sn)
     P = F.push(DenseCov(Sigma)).dense()
     fk = np.fft.rfftfreq(n, dt)[F.dst.k0:F.dst.k0 + F.dst.n]
     assert np.max(np.abs(np.real(np.diag(P)) / (n * Sn(fk, 0.0) / (2 * dt)) - 1)) <= 1e-13
@@ -71,10 +71,10 @@ def test_sinusoid_pad_record_is_bitwise_the_oracle_extension():
     ``g.forward_many(ext)`` with ``ext[:, :n] = X`` (matrix.py:640-643)."""
     td = TimeDomain(N, DT)
     Z = ZeroPadTime(td, SIN_PAD_COLUMNS * SIN_NF)
-    g = wdm.Grid(SIN_NF, SIN_NT + SIN_PAD_COLUMNS, DT)
+    g = wilson.Grid(SIN_NF, SIN_NT + SIN_PAD_COLUMNS, DT)
     M = Compose(TimeToWDM(Z.dst, WDMDomain(CellSet.all_active(g))), Z)
     X = np.random.default_rng(2).standard_normal((3, N))
     ext = np.zeros((3, g.N))
     ext[:, :N] = X
-    ref = wdm.forward_time_many(ext, g.Nf, g.Nt, DT)[:, wdm.active_mask(g.Nf, g.Nt)]
+    ref = wilson.forward_time_many(ext, g.Nf, g.Nt, DT)[:, wilson.active_mask(g.Nf, g.Nt)]
     assert np.array_equal(M.apply(X), ref)

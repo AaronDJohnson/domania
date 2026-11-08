@@ -288,12 +288,12 @@ def whittle(w_a: Array, w_b: Array, var: Array, Nf: int, *, cells: Cells = "acti
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> x = np.random.default_rng(0).standard_normal(Nf * Nt)
-    >>> w = wdm.forward_time(x, Nf, Nt, dt)
-    >>> var = wdm.whittle_variance(Nf, Nt, dt, lambda f: 1e-3 * np.ones_like(f))
-    >>> bool(wdm.inner_product.whittle(w, w, var, Nf) > 0)
+    >>> w = wilson.forward_time(x, Nf, Nt, dt)
+    >>> var = wilson.whittle_variance(Nf, Nt, dt, lambda f: 1e-3 * np.ones_like(f))
+    >>> bool(wilson.inner_product.whittle(w, w, var, Nf) > 0)
     True
     """
     return _diagonal_inner(w_a, w_b, var, Nf, cells)
@@ -324,13 +324,13 @@ def band_averaged(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> x = np.random.default_rng(0).standard_normal(Nf * Nt)
-    >>> w = wdm.forward_time(x, Nf, Nt, dt)
+    >>> w = wilson.forward_time(x, Nf, Nt, dt)
     >>> flat = lambda f: 1e-3 * np.ones_like(f)
-    >>> var = wdm.band_averaged_variance(Nf, Nt, dt, flat)
-    >>> bool(wdm.inner_product.band_averaged(w, w, var, Nf) > 0)
+    >>> var = wilson.band_averaged_variance(Nf, Nt, dt, flat)
+    >>> bool(wilson.inner_product.band_averaged(w, w, var, Nf) > 0)
     True
     """
     return _diagonal_inner(w_a, w_b, var, Nf, cells)
@@ -367,13 +367,13 @@ def evolutionary_whittle(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> x = np.random.default_rng(0).standard_normal(Nf * Nt)
-    >>> w = wdm.forward_time(x, Nf, Nt, dt)
+    >>> w = wilson.forward_time(x, Nf, Nt, dt)
     >>> Sn = lambda f, t: 1e-3 * np.ones((f.size, t.size))
-    >>> var = wdm.evolutionary_variance(Nf, Nt, dt, Sn)
-    >>> bool(wdm.inner_product.evolutionary_whittle(w, w, var, Nf) > 0)
+    >>> var = wilson.evolutionary_variance(Nf, Nt, dt, Sn)
+    >>> bool(wilson.inner_product.evolutionary_whittle(w, w, var, Nf) > 0)
     True
     """
     return _diagonal_inner(w_a, w_b, var_tf, Nf, cells)
@@ -519,13 +519,13 @@ def gaussian(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> N = Nf * Nt
     >>> x = np.random.default_rng(0).standard_normal(N)
-    >>> w = wdm.forward_time(x, Nf, Nt, dt)
+    >>> w = wilson.forward_time(x, Nf, Nt, dt)
     >>> Sn = 1e-3 * np.ones(N // 2 + 1)   # on the rfftfreq grid
-    >>> bool(wdm.inner_product.gaussian(w, w, Nf, Nt, dt, Sn) > 0)
+    >>> bool(wilson.inner_product.gaussian(w, w, Nf, Nt, dt, Sn) > 0)
     True
     """
     N = n_samples(Nf, Nt)
@@ -566,14 +566,14 @@ def gaussian_from_func(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> x = np.random.default_rng(0).standard_normal(Nf * Nt)
-    >>> w = wdm.forward_time(x, Nf, Nt, dt)
+    >>> w = wilson.forward_time(x, Nf, Nt, dt)
     >>> flat = lambda f: 1e-3 * np.ones_like(f)
-    >>> a = wdm.inner_product.gaussian_from_func(w, w, Nf, Nt, dt, flat)
+    >>> a = wilson.inner_product.gaussian_from_func(w, w, Nf, Nt, dt, flat)
     >>> Sn = flat(np.fft.rfftfreq(Nf * Nt, d=dt))
-    >>> b = wdm.inner_product.gaussian(w, w, Nf, Nt, dt, Sn)
+    >>> b = wilson.inner_product.gaussian(w, w, Nf, Nt, dt, Sn)
     >>> bool(np.isclose(a, b))
     True
     """
@@ -639,15 +639,15 @@ def whittle_many(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> xs = np.random.default_rng(0).standard_normal((5, Nf * Nt))
-    >>> W = wdm.forward_time_many(xs, Nf, Nt, dt)
-    >>> var = wdm.whittle_variance(Nf, Nt, dt, lambda f: 1e-3 * np.ones_like(f))
-    >>> vals = wdm.inner_product.whittle_many(W, W, var, Nf)
+    >>> W = wilson.forward_time_many(xs, Nf, Nt, dt)
+    >>> var = wilson.whittle_variance(Nf, Nt, dt, lambda f: 1e-3 * np.ones_like(f))
+    >>> vals = wilson.inner_product.whittle_many(W, W, var, Nf)
     >>> vals.shape
     (5,)
-    >>> bool(np.isclose(vals[2], wdm.inner_product.whittle(W[2], W[2], var, Nf)))
+    >>> bool(np.isclose(vals[2], wilson.inner_product.whittle(W[2], W[2], var, Nf)))
     True
     """
     return _diagonal_inner_many(w_a, w_b, var, Nf, cells)
@@ -692,13 +692,13 @@ def loglike_whittle_many(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> d = np.random.default_rng(0).standard_normal(Nf * Nt)
-    >>> w_d = wdm.forward_time(d, Nf, Nt, dt)
+    >>> w_d = wilson.forward_time(d, Nf, Nt, dt)
     >>> templates = np.zeros((3, Nf + 1, Nt))
-    >>> var = wdm.whittle_variance(Nf, Nt, dt, lambda f: 1e-3 * np.ones_like(f))
-    >>> ll = wdm.inner_product.loglike_whittle_many(
+    >>> var = wilson.whittle_variance(Nf, Nt, dt, lambda f: 1e-3 * np.ones_like(f))
+    >>> ll = wilson.inner_product.loglike_whittle_many(
     ...     w_d, templates, var, Nf, include_logdet=False
     ... )
     >>> ll.shape, bool(np.all(ll < 0))
@@ -765,12 +765,12 @@ def loglike_whittle(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> d = np.random.default_rng(0).standard_normal(Nf * Nt)
-    >>> w_d = wdm.forward_time(d, Nf, Nt, dt)
-    >>> var = wdm.whittle_variance(Nf, Nt, dt, lambda f: 1e-3 * np.ones_like(f))
-    >>> ll = wdm.inner_product.loglike_whittle(
+    >>> w_d = wilson.forward_time(d, Nf, Nt, dt)
+    >>> var = wilson.whittle_variance(Nf, Nt, dt, lambda f: 1e-3 * np.ones_like(f))
+    >>> ll = wilson.inner_product.loglike_whittle(
     ...     w_d, np.zeros_like(w_d), var, Nf, include_logdet=False
     ... )
     >>> bool(ll < 0)  # negative for a nonzero residual
@@ -814,13 +814,13 @@ def loglike_band_averaged(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> d = np.random.default_rng(0).standard_normal(Nf * Nt)
-    >>> w_d = wdm.forward_time(d, Nf, Nt, dt)
+    >>> w_d = wilson.forward_time(d, Nf, Nt, dt)
     >>> flat = lambda f: 1e-3 * np.ones_like(f)
-    >>> var = wdm.band_averaged_variance(Nf, Nt, dt, flat)
-    >>> ll = wdm.inner_product.loglike_band_averaged(
+    >>> var = wilson.band_averaged_variance(Nf, Nt, dt, flat)
+    >>> ll = wilson.inner_product.loglike_band_averaged(
     ...     w_d, np.zeros_like(w_d), var, Nf, include_logdet=False
     ... )
     >>> bool(ll < 0)
@@ -861,13 +861,13 @@ def loglike_evolutionary_whittle(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> d = np.random.default_rng(0).standard_normal(Nf * Nt)
-    >>> w_d = wdm.forward_time(d, Nf, Nt, dt)
+    >>> w_d = wilson.forward_time(d, Nf, Nt, dt)
     >>> Sn = lambda f, t: 1e-3 * np.ones((f.size, t.size))
-    >>> var = wdm.evolutionary_variance(Nf, Nt, dt, Sn)
-    >>> ll = wdm.inner_product.loglike_evolutionary_whittle(
+    >>> var = wilson.evolutionary_variance(Nf, Nt, dt, Sn)
+    >>> ll = wilson.inner_product.loglike_evolutionary_whittle(
     ...     w_d, np.zeros_like(w_d), var, Nf, include_logdet=False
     ... )
     >>> bool(ll < 0)
@@ -917,14 +917,14 @@ def loglike_gaussian_many(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> N = Nf * Nt
     >>> d = np.random.default_rng(0).standard_normal(N)
-    >>> w_d = wdm.forward_time(d, Nf, Nt, dt)
+    >>> w_d = wilson.forward_time(d, Nf, Nt, dt)
     >>> templates = np.zeros((3, Nf + 1, Nt))
     >>> Sn = 1e-3 * np.ones(N // 2 + 1)
-    >>> ll = wdm.inner_product.loglike_gaussian_many(
+    >>> ll = wilson.inner_product.loglike_gaussian_many(
     ...     w_d, templates, Nf, Nt, dt, Sn, include_logdet=False
     ... )
     >>> ll.shape, bool(np.all(ll < 0))
@@ -1018,13 +1018,13 @@ def loglike_gaussian(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> N = Nf * Nt
     >>> d = np.random.default_rng(0).standard_normal(N)
-    >>> w_d = wdm.forward_time(d, Nf, Nt, dt)
+    >>> w_d = wilson.forward_time(d, Nf, Nt, dt)
     >>> Sn = 1e-3 * np.ones(N // 2 + 1)
-    >>> ll = wdm.inner_product.loglike_gaussian(
+    >>> ll = wilson.inner_product.loglike_gaussian(
     ...     w_d, np.zeros_like(w_d), Nf, Nt, dt, Sn, include_logdet=False
     ... )
     >>> bool(ll < 0)

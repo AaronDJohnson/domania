@@ -1,6 +1,6 @@
-"""``BlockTridiagonalCovariance``: band blocks factorised by the block Cholesky (spec §4.4).
+"""``BlockTridiagonalCovariance``: band blocks factorised by the block Cholesky.
 
-Two layouts of the same factorisation (spec §3.2):
+Two layouts of the same factorisation:
 
 * ``"ragged"`` -- Python lists of per-band blocks, WT ``BlockTri`` order; eager on both
   backends (the NumPy golden default);
@@ -98,7 +98,7 @@ class BlockTriCovFactor:
     n_u = 0
 
     def _apply(self, fn: Any, b: Any, C: Any, be: Backend, what: str) -> Any:
-        # domainia.linalg (D-A) takes natural, band-major vectors on both layouts: the padded
+        # domainia.linalg takes natural, band-major vectors on both layouts: the padded
         # layout packs, runs WG's _btri_* and unpacks inside (the dummy entries are exactly 0).
         if self.layout == "ragged":
             return fn(self.bt, b, be=be)

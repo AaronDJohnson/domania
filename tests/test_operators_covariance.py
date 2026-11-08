@@ -1,5 +1,5 @@
 """domainia.operators.CovarianceOperator: a domainia covariance fixed at ``nu`` on a WDM
-support, as an Operator that translate_operator moves to time and Fourier (spec section 2.6)."""
+support, as an Operator that translate_operator moves to time and Fourier."""
 
 from __future__ import annotations
 

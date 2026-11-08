@@ -1,6 +1,6 @@
 """Diagonal WDM variances of a :class:`~domainia.spectra.GenericPSD` ``S(f, t, nu)``.
 
-* :class:`BandAveragedVariance` (WDM II Eq. 36) -- the window-weighted band average,
+* :class:`BandAveragedVariance` (WDM Paper II, Eq. 36) -- the window-weighted band average,
   ``domainia.wilson.noise.evolutionary_band_variance`` of the bound PSD at the cells;
 * :class:`MidpointVariance` (Eq. 39) -- ``0.5 S(f_m, t_n)`` at the band centre
   ``f_m = m dF`` and the cell time ``t_n = n dT``.

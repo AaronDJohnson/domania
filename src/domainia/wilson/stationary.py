@@ -108,10 +108,10 @@ def is_diagonal(matrix: NDArray[np.number], *, rtol: float = 1e-10) -> bool:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
-    >>> wdm.stationary.is_diagonal(np.diag([1.0, 2.0]))
+    >>> import numpy as np; from domainia import wilson
+    >>> wilson.stationary.is_diagonal(np.diag([1.0, 2.0]))
     True
-    >>> wdm.stationary.is_diagonal(np.array([[1.0, 0.5], [0.5, 2.0]]))
+    >>> wilson.stationary.is_diagonal(np.array([[1.0, 0.5], [0.5, 2.0]]))
     False
     """
     M = np.asarray(matrix)
@@ -481,17 +481,17 @@ def build_lambda_blocks_full_active(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> psd = lambda f: 1e-3 * np.ones_like(f)
-    >>> diag, offd, n_active = wdm.stationary.build_lambda_blocks_full_active(
+    >>> diag, offd, n_active = wilson.stationary.build_lambda_blocks_full_active(
     ...     Nf, Nt, dt, psd
     ... )
     >>> len(diag), len(offd)
     (9, 8)
     >>> diag[0].shape, diag[1].shape          # edge band, then interior
     ((8, 8), (16, 16))
-    >>> Lam = wdm.stationary.assemble_lambda_full_active(
+    >>> Lam = wilson.stationary.assemble_lambda_full_active(
     ...     diag, offd, n_active, Nf, Nt
     ... )
     >>> Lam.shape
@@ -647,9 +647,9 @@ def build_K_full_active(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> flat = lambda f: 1e-3 * np.ones_like(f)
-    >>> K_diag, K_off = wdm.stationary.build_K_full_active(8, 16, 1.0, flat)
+    >>> K_diag, K_off = wilson.stationary.build_K_full_active(8, 16, 1.0, flat)
     >>> len(K_diag), len(K_off), K_diag[0].shape
     (9, 8, (16,))
     """
@@ -733,16 +733,16 @@ def psd_from_K(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> flat = lambda f: 1e-3 * np.ones_like(f)
-    >>> K_diag, _ = wdm.stationary.build_K_full_active(8, 16, 1.0, flat)
-    >>> wdm.stationary.psd_from_K(K_diag, 8, 16, 1.0).shape
+    >>> K_diag, _ = wilson.stationary.build_K_full_active(8, 16, 1.0, flat)
+    >>> wilson.stationary.psd_from_K(K_diag, 8, 16, 1.0).shape
     (65,)
 
     With another window, pass the same ``window=`` to both:
 
-    >>> K8, _ = wdm.stationary.build_K_full_active(8, 16, 1.0, flat, window=wdm.Meyer(8))
-    >>> S8 = wdm.stationary.psd_from_K(K8, 8, 16, 1.0, window=wdm.Meyer(8))
+    >>> K8, _ = wilson.stationary.build_K_full_active(8, 16, 1.0, flat, window=wilson.Meyer(8))
+    >>> S8 = wilson.stationary.psd_from_K(K8, 8, 16, 1.0, window=wilson.Meyer(8))
     >>> bool(np.allclose(S8, 1e-3, rtol=1e-12, atol=0))
     True
     """
@@ -875,14 +875,14 @@ def apply_lambda_from_psd(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> N = Nf * Nt
-    >>> x = wdm.forward_time(
+    >>> x = wilson.forward_time(
     ...     np.random.default_rng(0).standard_normal(N), Nf, Nt, dt
     ... )
     >>> Sn = 1e-3 * np.ones(N // 2 + 1)
-    >>> wdm.stationary.apply_lambda_from_psd(x, Nf, Nt, dt, Sn).shape
+    >>> wilson.stationary.apply_lambda_from_psd(x, Nf, Nt, dt, Sn).shape
     (9, 16)
     """
     from .transform import forward as _forward
@@ -968,12 +968,12 @@ def psd_from_lambda_blocks(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> flat = lambda f: 1e-3 * np.ones_like(f)
-    >>> d, o, na = wdm.stationary.build_lambda_blocks_full_active(
+    >>> d, o, na = wilson.stationary.build_lambda_blocks_full_active(
     ...     8, 16, 1.0, flat
     ... )
-    >>> Sn = wdm.stationary.psd_from_lambda_blocks(d, o, na, 8, 16, 1.0)
+    >>> Sn = wilson.stationary.psd_from_lambda_blocks(d, o, na, 8, 16, 1.0)
     >>> Sn.shape
     (65,)
     """
@@ -1022,12 +1022,12 @@ def assemble_lambda_full_active(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> flat = lambda f: 1e-3 * np.ones_like(f)
-    >>> d, o, na = wdm.stationary.build_lambda_blocks_full_active(
+    >>> d, o, na = wilson.stationary.build_lambda_blocks_full_active(
     ...     8, 16, 1.0, flat
     ... )
-    >>> wdm.stationary.assemble_lambda_full_active(d, o, na, 8, 16).shape
+    >>> wilson.stationary.assemble_lambda_full_active(d, o, na, 8, 16).shape
     (144, 144)
     """
     validate_grid(Nf, Nt)

@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from domainia import wilson as wdm
+from domainia import wilson
 from domainia.wilson.filter import phi_centered
 from domainia.wilson.grid import (
     Grid,
@@ -106,7 +106,7 @@ def test_hz_identity(grid):
     nz = w != 0
     assert np.array_equal(nz, h != 0)
     assert np.max(np.abs(h[nz] / w[nz] - 1.0)) <= 1e-15
-    assert np.max(phi_centered(Nf, Nt, dt)) == 1.0 / np.sqrt(wdm.delta_F(Nf, dt))
+    assert np.max(phi_centered(Nf, Nt, dt)) == 1.0 / np.sqrt(wilson.delta_F(Nf, dt))
 
 
 #: grids whose window arithmetic is not "nice": dt with long mantissas, odd Nf, GB 5 s.
@@ -151,7 +151,7 @@ def test_unrepresentable_delta_F_raises_instead_of_returning_zeros(dt):
     calls = {
         "phi_centered": lambda: phi_centered(Nf, Nt, dt),
         "forward_time": lambda: forward_time(np.ones(Nf * Nt), Nf, Nt, dt),
-        "inverse_time": lambda: wdm.inverse_time(np.ones((Nf + 1, Nt)), Nf, Nt, dt),
+        "inverse_time": lambda: wilson.inverse_time(np.ones((Nf + 1, Nt)), Nf, Nt, dt),
     }
     for name, call in calls.items():
         with pytest.raises(ValueError, match="delta_F is not representable"):
@@ -232,7 +232,7 @@ BASELINE_GRIDS = [(Nf, Nt, dt) for Nf, Nt in ((8, 16), (16, 32), (32, 8)) for dt
 @pytest.mark.parametrize("grid", BASELINE_GRIDS)
 def test_forward_bands_is_the_transform_on_the_bands(grid, rng):
     """On a whole record (z = rfft(x)) the cells of any interior bands are the Wilson
-    coefficients forward(z)[bands] (spec section 1.3: Wilson units)."""
+    coefficients forward(z)[bands] (Wilson units)."""
     Nf, Nt, dt = grid
     N = Nf * Nt
     x = rng.standard_normal(N)
@@ -263,7 +263,7 @@ def test_inverse_bands_is_the_inverse_on_its_bins(grid, rng):
 
 def test_inverse_bands_is_the_adjoint(backend, rng):
     """sum(forward_bands(z) w) = (2 dt / N) Re<z, inverse_bands(w)>: inverse_bands is
-    N / (2 dt) times the adjoint (spec section 1.3)."""
+    N / (2 dt) times the adjoint."""
     Nf, Nt, dt = 16, 32, 0.5
     N = Nf * Nt
     bands = np.array([3, 4, 5, 6])
@@ -345,4 +345,4 @@ def test_atom_spectrum_rejects_out_of_range_n_and_foreign_base():
 
 
 def test_time_pixel_centers_doctest_value():
-    assert wdm.time_pixel_centers(8, 4, 1.0).tolist() == [0.0, 8.0, 16.0, 24.0]
+    assert wilson.time_pixel_centers(8, 4, 1.0).tolist() == [0.0, 8.0, 16.0, 24.0]

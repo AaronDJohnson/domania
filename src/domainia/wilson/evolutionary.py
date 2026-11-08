@@ -1,4 +1,4 @@
-r"""Stateless WDM II kernels for evolutionary (nonstationary) noise.
+r"""Stateless WDM Paper II kernels for evolutionary (nonstationary) noise.
 
 Everything here is a pure function of ``(grid, spectrum, arrays)``.  Anything with
 state or a factorisation lives outside :mod:`domainia.wilson`: the covariances of
@@ -9,10 +9,10 @@ kernels), the factors of :mod:`domainia.linalg` (``BlockTriFactor``) and the map
 * Time masks: :func:`energy_fraction`, :func:`apply_time_mask`
   (:math:`M = W\chi W^{\mathsf T}/\delta t`).
 * The 0.1% wrap rule: :func:`wrap_fractions`, :func:`wrap_cut_columns`.
-* The exact covariance (WDM II eq:wdm_generic_covariance, :math:`\theta = 0`):
+* The exact covariance (WDM Paper II, eq:wdm_generic_covariance, :math:`\theta = 0`):
   :func:`time_domain_factor`, :func:`time_domain_covariance`,
   :func:`exact_covariance`, :func:`draw_noise` (dense, NumPy, small grids).
-* WDM II Eq. (45), the nonstationary block tri-diagonal covariance
+* WDM Paper II, Eq. (45), the nonstationary block tri-diagonal covariance
   :math:`\Lambda_{pq} = \frac1T\,\mathrm{Re}\sum_k \eta_k S(f_k, \bar t_{pq})
   \hat g_p(k)\hat g_q^*(k)`, :math:`\bar t = (t_n + t_{n'})/2` used literally:
 
@@ -34,7 +34,7 @@ computes in the Wilson basis of that window.  For Eq. (45) that is :func:`eq45_p
 the plan's atoms (``plan.base``) carry the window to every builder downstream.
 
 PSDs are callables ``Sn(f, t)``: elementwise, broadcasting, argument order
-``(f, t)`` (WDM II writes :math:`S(t, f)`), samples through
+``(f, t)`` (WDM Paper II writes :math:`S(t, f)`), samples through
 :func:`domainia.wilson.grid.sanitize_psd`.  Cell times are :math:`t_n = n\Delta T`.
 
 Numerics: every NumPy path is an operation-order-preserving transcription of its
@@ -216,7 +216,7 @@ def wrap_cut_columns(Nf: int, Nt: int, dt: float, tol: float = 1e-3, *,
                      bands: Array | None = None,
                      window: Window = MEYER) -> tuple[int, int]:
     """``(leading, trailing)`` time columns to cut so that no kept atom of ``bands``
-    (all by default) wraps more than ``tol`` of its energy (WDM II: ``tol = 1e-3``).
+    (all by default) wraps more than ``tol`` of its energy (WDM Paper II: ``tol = 1e-3``).
 
     The rule is geometric (it ignores the noise).  With the default window: ``(6, 5)`` on the
     sinusoid grid ``(64, 256, 2**-10)``; ``(5, 4)`` on the 3- and 6-month GB analysis bands.
@@ -236,8 +236,8 @@ def wrap_cut_columns(Nf: int, Nt: int, dt: float, tol: float = 1e-3, *,
 
     Examples
     --------
-    >>> from domainia import wilson as wdm
-    >>> wdm.evolutionary.wrap_cut_columns(64, 256, 2**-10)
+    >>> from domainia import wilson
+    >>> wilson.evolutionary.wrap_cut_columns(64, 256, 2**-10)
     (6, 5)
     """
     # worst band per column
@@ -315,7 +315,7 @@ def exact_covariance(Nf: int, Nt: int, dt: float, Sn: PsdFtFunc, *,
 
 
 # ---------------------------------------------------------------------------
-# WDM II Eq. (45): plans (host constants)
+# WDM Paper II, Eq. (45): plans (host constants)
 # ---------------------------------------------------------------------------
 
 

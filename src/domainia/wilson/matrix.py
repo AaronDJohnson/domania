@@ -113,8 +113,8 @@ def build_W(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
-    >>> W = wdm.matrix.build_W(4, 8, 1.0)
+    >>> import numpy as np; from domainia import wilson
+    >>> W = wilson.matrix.build_W(4, 8, 1.0)
     >>> W.shape
     (40, 32)
     """
@@ -181,8 +181,8 @@ def active_W(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
-    >>> Wa = wdm.matrix.active_W(4, 8, 1.0)
+    >>> import numpy as np; from domainia import wilson
+    >>> Wa = wilson.matrix.active_W(4, 8, 1.0)
     >>> Wa.shape, bool(np.allclose(Wa @ Wa.T, 1.0 * np.eye(32)))
     ((32, 32), True)
     """
@@ -222,8 +222,8 @@ def build_C_time(N: int, dt: float, Sn_func: PsdFunc) -> Array:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
-    >>> C = wdm.matrix.build_C_time(32, 1.0, lambda f: 1e-3 * np.ones_like(f))
+    >>> import numpy as np; from domainia import wilson
+    >>> C = wilson.matrix.build_C_time(32, 1.0, lambda f: 1e-3 * np.ones_like(f))
     >>> C.shape, bool(np.allclose(C, C.T))
     ((32, 32), True)
     """
@@ -293,8 +293,8 @@ def build_C_wdm(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
-    >>> C = wdm.matrix.build_C_wdm(4, 8, 1.0, lambda f: 1e-3 * np.ones_like(f))
+    >>> import numpy as np; from domainia import wilson
+    >>> C = wilson.matrix.build_C_wdm(4, 8, 1.0, lambda f: 1e-3 * np.ones_like(f))
     >>> C.shape
     (40, 40)
     """
@@ -333,9 +333,9 @@ def build_C_wdm_active(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> flat = lambda f: 1e-3 * np.ones_like(f)
-    >>> C = wdm.matrix.build_C_wdm_active(4, 8, 1.0, flat)
+    >>> C = wilson.matrix.build_C_wdm_active(4, 8, 1.0, flat)
     >>> C.shape, float(np.round(np.diag(C)[0], 6))   # ~ S_n / 2
     ((32, 32), 0.0005)
     """
@@ -368,12 +368,12 @@ def rfft_to_real(x_rfft: CArray, N: int) -> Array:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> x = np.random.default_rng(0).standard_normal(32)
-    >>> packed = wdm.matrix.rfft_to_real(np.fft.rfft(x), 32)
+    >>> packed = wilson.matrix.rfft_to_real(np.fft.rfft(x), 32)
     >>> packed.shape
     (32,)
-    >>> wdm.matrix.rfft_to_real(np.fft.rfft(x[:5]), 5)
+    >>> wilson.matrix.rfft_to_real(np.fft.rfft(x[:5]), 5)
     Traceback (most recent call last):
     ValueError: N must be even, got 5
     """
@@ -410,13 +410,13 @@ def real_to_rfft(x_real: Array, N: int) -> CArray:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
+    >>> import numpy as np; from domainia import wilson
     >>> x = np.random.default_rng(0).standard_normal(32)
-    >>> packed = wdm.matrix.rfft_to_real(np.fft.rfft(x), 32)
-    >>> back = wdm.matrix.real_to_rfft(packed, 32)
+    >>> packed = wilson.matrix.rfft_to_real(np.fft.rfft(x), 32)
+    >>> back = wilson.matrix.real_to_rfft(packed, 32)
     >>> bool(np.allclose(back, np.fft.rfft(x)))
     True
-    >>> wdm.matrix.real_to_rfft(np.zeros(5), 5)
+    >>> wilson.matrix.real_to_rfft(np.zeros(5), 5)
     Traceback (most recent call last):
     ValueError: N must be even, got 5
     """

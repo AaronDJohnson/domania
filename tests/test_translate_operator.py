@@ -1,4 +1,5 @@
-"""domainia.translate operators: a native covariance seen from another domain (spec section 3)."""
+"""domainia.translate operators: a native covariance seen from another domain
+(domainia 2.0 spec, section 3)."""
 
 from __future__ import annotations
 

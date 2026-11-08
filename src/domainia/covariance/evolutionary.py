@@ -1,4 +1,4 @@
-r"""Evolutionary-spectrum covariance of WDM cells (WDM II Eq. 45) for any callable PSD.
+r"""Evolutionary-spectrum covariance of WDM cells (WDM Paper II, Eq. 45) for any callable PSD.
 
 .. math::  \Lambda_{pq} = \frac1T\,\mathrm{Re}\sum_k \eta_k\,S(f_k, \bar t_{pq})\,
            \hat g_p(k)\,\hat g_q^*(k),\qquad \bar t_{pq} = (t_{n_p} + t_{n_q})/2,

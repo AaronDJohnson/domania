@@ -1,4 +1,4 @@
-"""Move full-record data between the time, Fourier and WDM domains (spec section 3).
+"""Move full-record data between the time, Fourier and WDM domains (domainia 2.0 spec, section 3).
 
 NumPy only: a JAX array is copied to host NumPy (results have float64 dtype; a float32
 input keeps its float32 precision), and ``transform`` cannot be traced under ``jax.jit`` or

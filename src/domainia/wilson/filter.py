@@ -63,8 +63,8 @@ def nu_d(x: Array, d: int = 4) -> Array:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
-    >>> wdm.filter.nu_d(np.array([0.0, 0.5, 1.0]))
+    >>> import numpy as np; from domainia import wilson
+    >>> wilson.filter.nu_d(np.array([0.0, 0.5, 1.0]))
     array([0. , 0.5, 1. ])
     """
     if isinstance(d, bool) or not isinstance(d, (int, np.integer)):
@@ -111,8 +111,8 @@ def phi_centered(Nf: int, Nt: int, dt: float, d: int = 4) -> Array:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
-    >>> phi = wdm.phi_centered(8, 16, 1.0)
+    >>> import numpy as np; from domainia import wilson
+    >>> phi = wilson.phi_centered(8, 16, 1.0)
     >>> phi.shape, bool(phi[8] == phi.max())   # flat top includes index Nt/2
     ((16,), True)
     """
@@ -160,8 +160,8 @@ def phi_fft_order(Nf: int, Nt: int, dt: float, d: int = 4) -> Array:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
-    >>> phi = wdm.phi_fft_order(8, 16, 1.0)
+    >>> import numpy as np; from domainia import wilson
+    >>> phi = wilson.phi_fft_order(8, 16, 1.0)
     >>> int(np.argmax(phi))   # peak moved to index 0
     0
     """
@@ -191,9 +191,9 @@ def phi_squared_normalization(Nf: int, Nt: int, dt: float, d: int = 4) -> float:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
-    >>> total = wdm.filter.phi_squared_normalization(8, 16, 1.0)
-    >>> bool(np.isclose(total, np.sum(wdm.phi_centered(8, 16, 1.0) ** 2)))
+    >>> import numpy as np; from domainia import wilson
+    >>> total = wilson.filter.phi_squared_normalization(8, 16, 1.0)
+    >>> bool(np.isclose(total, np.sum(wilson.phi_centered(8, 16, 1.0) ** 2)))
     True
     """
     return float(np.sum(phi_centered(Nf, Nt, dt, d) ** 2))

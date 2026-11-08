@@ -1,7 +1,7 @@
 """D-C2: BlockTridiagonalCovariance in the ragged (WT) and padded (WG) layouts.
 
 * Both layouts are the dense Gaussian of the assembled block-tridiagonal matrix.
-* Strategy cross-check: padded vs ragged <= 1e-12 (spec §3.2).
+* Strategy cross-check: padded vs ragged <= 1e-12.
 * Padded diagonal blocks are symmetrised and dummy slots carry the identity.
 * A block that is not positive definite sets ``ok = False``.
 """
@@ -52,7 +52,7 @@ def test_block_tridiagonal_is_the_dense_gaussian(backend, rng, layout):
 
 
 def test_padded_matches_ragged(rng):
-    """Strategy cross-check (spec §3.2): <= 1e-12; one band (no upper blocks) included."""
+    """Strategy cross-check: <= 1e-12; one band (no upper blocks) included."""
     for sizes in (SIZES, (4,)):
         diag, up = _blocks(rng, sizes)
         b = rng.standard_normal(sum(sizes))

@@ -63,14 +63,14 @@ class Grid:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
-    >>> g = wdm.Grid(Nf=8, Nt=16, dt=1.0)
+    >>> import numpy as np; from domainia import wilson
+    >>> g = wilson.Grid(Nf=8, Nt=16, dt=1.0)
     >>> g.N, g.dF, g.dT
     (128, 0.0625, 8.0)
     >>> x = np.random.default_rng(0).standard_normal(g.N)
-    >>> wdm.forward_time(x, *g).shape          # unpacks as (Nf, Nt, dt)
+    >>> wilson.forward_time(x, *g).shape          # unpacks as (Nf, Nt, dt)
     (9, 16)
-    >>> wdm.Grid(Nf=9, Nt=16, dt=1.0)
+    >>> wilson.Grid(Nf=9, Nt=16, dt=1.0)
     Traceback (most recent call last):
     ValueError: Nf must be even, got 9
     """
@@ -143,12 +143,12 @@ def validate_grid(Nf: int, Nt: int) -> None:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
-    >>> wdm.validate_grid(8, 16)          # even and positive: fine
-    >>> wdm.validate_grid(9, 16)
+    >>> import numpy as np; from domainia import wilson
+    >>> wilson.validate_grid(8, 16)          # even and positive: fine
+    >>> wilson.validate_grid(9, 16)
     Traceback (most recent call last):
     ValueError: Nf must be even, got 9
-    >>> wdm.validate_grid(8.0, 16)
+    >>> wilson.validate_grid(8.0, 16)
     Traceback (most recent call last):
     TypeError: Nf must be an integer, got float
     """
@@ -184,12 +184,12 @@ def validate_dt(dt: float) -> None:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
-    >>> wdm.validate_dt(0.5)
-    >>> wdm.validate_dt(0.0)
+    >>> import numpy as np; from domainia import wilson
+    >>> wilson.validate_dt(0.5)
+    >>> wilson.validate_dt(0.0)
     Traceback (most recent call last):
     ValueError: dt must be a positive finite number, got 0.0
-    >>> wdm.validate_dt(True)
+    >>> wilson.validate_dt(True)
     Traceback (most recent call last):
     TypeError: dt must be a real number, got bool
     """
@@ -238,9 +238,9 @@ def validate_finite(values: object, context: str) -> None:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
-    >>> wdm.validate_finite([1.0, 2.0], 'x')      # all finite: fine
-    >>> wdm.validate_finite([1.0, np.nan], 'x')   # doctest: +ELLIPSIS
+    >>> import numpy as np; from domainia import wilson
+    >>> wilson.validate_finite([1.0, 2.0], 'x')      # all finite: fine
+    >>> wilson.validate_finite([1.0, np.nan], 'x')   # doctest: +ELLIPSIS
     Traceback (most recent call last):
     ValueError: x: 1 of 2 entries are not finite (1 nan, 0 inf); first at index 1...
     """
@@ -303,10 +303,10 @@ def sanitize_psd(values: object, context: str) -> Array:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
-    >>> wdm.grid.sanitize_psd([1e-3, np.inf], 'demo')   # inf -> no power
+    >>> import numpy as np; from domainia import wilson
+    >>> wilson.grid.sanitize_psd([1e-3, np.inf], 'demo')   # inf -> no power
     array([0.001, 0.   ])
-    >>> wdm.grid.sanitize_psd([-1.0], 'demo')
+    >>> wilson.grid.sanitize_psd([-1.0], 'demo')
     Traceback (most recent call last):
     ValueError: demo: PSD has negative value(s); a power spectral density must be non-negative
     """
@@ -355,8 +355,8 @@ def n_samples(Nf: int, Nt: int) -> int:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
-    >>> wdm.n_samples(8, 16)
+    >>> import numpy as np; from domainia import wilson
+    >>> wilson.n_samples(8, 16)
     128
     """
     for name, val in (("Nf", Nf), ("Nt", Nt)):
@@ -394,13 +394,13 @@ def delta_F(Nf: int, dt: float) -> float:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
-    >>> wdm.delta_F(8, 1.0)
+    >>> import numpy as np; from domainia import wilson
+    >>> wilson.delta_F(8, 1.0)
     0.0625
-    >>> wdm.delta_F(0, 1.0)
+    >>> wilson.delta_F(0, 1.0)
     Traceback (most recent call last):
     ValueError: Nf must be positive, got 0
-    >>> wdm.delta_F(8, 5e-324)          # doctest: +ELLIPSIS
+    >>> wilson.delta_F(8, 5e-324)          # doctest: +ELLIPSIS
     Traceback (most recent call last):
     ValueError: delta_F is not representable for Nf=8, dt=5e-324...
     """
@@ -431,8 +431,8 @@ def delta_T(Nf: int, dt: float) -> float:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
-    >>> wdm.delta_T(8, 1.0)
+    >>> import numpy as np; from domainia import wilson
+    >>> wilson.delta_T(8, 1.0)
     8.0
     """
     validate_dt(dt)
@@ -455,8 +455,8 @@ def band_frequencies(Nf: int, dt: float) -> Array:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
-    >>> f = wdm.band_frequencies(8, 1.0)
+    >>> import numpy as np; from domainia import wilson
+    >>> f = wilson.band_frequencies(8, 1.0)
     >>> f.shape, float(f[0]), float(f[-1])   # DC .. Nyquist
     ((9,), 0.0, 0.5)
     """
@@ -491,8 +491,8 @@ def time_pixel_centers(Nf: int, Nt: int, dt: float) -> Array:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
-    >>> wdm.time_pixel_centers(8, 4, 1.0)
+    >>> import numpy as np; from domainia import wilson
+    >>> wilson.time_pixel_centers(8, 4, 1.0)
     array([ 0.,  8., 16., 24.])
     """
     validate_grid(Nf, Nt)
@@ -520,8 +520,8 @@ def band_indices(m: int, Nf: int, Nt: int) -> IntArray:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
-    >>> wdm.grid.band_indices(1, 8, 4)
+    >>> import numpy as np; from domainia import wilson
+    >>> wilson.grid.band_indices(1, 8, 4)
     array([2, 3, 0, 1])
     """
     N = n_samples(Nf, Nt)
@@ -548,8 +548,8 @@ def carrier_phase(m: int, Nt: int) -> Array:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
-    >>> wdm.grid.carrier_phase(1, 4)
+    >>> import numpy as np; from domainia import wilson
+    >>> wilson.grid.carrier_phase(1, 4)
     array([ 1., -1.,  1., -1.])
     """
     if m % 2 == 0:
@@ -577,8 +577,8 @@ def active_mask(Nf: int, Nt: int) -> BoolArray:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
-    >>> mask = wdm.active_mask(8, 16)
+    >>> import numpy as np; from domainia import wilson
+    >>> mask = wilson.active_mask(8, 16)
     >>> mask.shape, int(mask.sum())   # total active == N
     ((9, 16), 128)
     """
@@ -605,8 +605,8 @@ def count_active(Nf: int, Nt: int) -> int:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
-    >>> wdm.count_active(8, 16)
+    >>> import numpy as np; from domainia import wilson
+    >>> wilson.count_active(8, 16)
     128
     """
     return int(np.sum(active_mask(Nf, Nt)))
@@ -619,7 +619,7 @@ def count_active(Nf: int, Nt: int) -> int:
 # The N active cells of an (Nf+1, Nt) grid, listed in BAND order: DC with even
 # n, then bands 1..Nf-1 with every n, then Nyquist with (Nf+n) even -- i.e.
 # ``np.nonzero(active_mask(Nf, Nt))``.  This is the order of
-# ``matrix.active_W`` and of every WDM II covariance.  The Nyquist->DC fold of
+# ``matrix.active_W`` and of every WDM Paper II covariance.  The Nyquist->DC fold of
 # lisa/wdm 0.2.0 (and the manuscript's L1373 interleave) is not offered.
 
 
@@ -628,8 +628,8 @@ def packed_cells(Nf: int, Nt: int) -> tuple[IntArray, IntArray]:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson as wdm
-    >>> m, n = wdm.grid.packed_cells(4, 4)
+    >>> import numpy as np; from domainia import wilson
+    >>> m, n = wilson.grid.packed_cells(4, 4)
     >>> m.tolist()
     [0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4]
     >>> n.tolist()
@@ -666,8 +666,8 @@ def edge_columns(Nt: int, lead: int, trail: int) -> tuple[int, ...]:
 
     Examples
     --------
-    >>> from domainia import wilson as wdm
-    >>> wdm.grid.edge_columns(256, 8, 7)
+    >>> from domainia import wilson
+    >>> wilson.grid.edge_columns(256, 8, 7)
     (0, 1, 2, 3, 4, 5, 6, 7, 249, 250, 251, 252, 253, 254, 255)
     """
     return tuple(range(lead)) + tuple(range(Nt - trail, Nt))
@@ -675,12 +675,12 @@ def edge_columns(Nt: int, lead: int, trail: int) -> tuple[int, ...]:
 
 def endpoint_weights(n_rfft: int) -> Array:
     r"""Trapezoid weights :math:`\eta_k` of the one-sided sum: ``1/2`` at DC and
-    Nyquist, ``1`` between (WDM II Eq. 51, eq:freq_edge_weight).
+    Nyquist, ``1`` between (WDM Paper II, Eq. 51, eq:freq_edge_weight).
 
     Examples
     --------
-    >>> from domainia import wilson as wdm
-    >>> wdm.grid.endpoint_weights(5)
+    >>> from domainia import wilson
+    >>> wilson.grid.endpoint_weights(5)
     array([0.5, 1. , 1. , 1. , 0.5])
     """
     c = np.ones(n_rfft)
