@@ -8646,4 +8646,80 @@ Run `git status --short` before each `git add -A`. It must list only files the s
 
 ## Execution errata
 
-(Filled in during execution.)
+Executed 2026-11-08, subagent-driven: one implementer per task, then a review of that task's diff, fixes, and a re-review. The commits from 81a8597 to dd59860 hold the work; the counts below come from the final tree.
+
+### Final state
+
+- Full suite: 1768 passed, 3 skipped. The skips are the three `DOMAINIA_ORACLE_ROOT` ones.
+- NumPy lane: 1661 passed, 110 skipped.
+- `meyer_cases.py --check`: baseline reproduces, 1504 arrays. Task 10's float64 bit check (scratch `t10_bits.py`, every Meyer case including the RESCALED families): `0 of 1504 arrays differ`.
+- The suite counts run above the plan's figures by +15 (full suite) and +14 passed / +1 skipped (NumPy lane). The extra tests are the review-fix tests listed under "Fixes beyond the plan text".
+
+### Deviations from the plan text
+
+- **Commit trailers.** Each commit names the model that wrote it. Sonnet implementers wrote `Claude Sonnet 5.5` where the plan says `Claude Opus 5.5`.
+- **Task 7.** The plan says all 12 tests go red with `AttributeError`. The `ChannelStack` test goes red with `NotImplementedError`, because `st.dense(nu)` runs first.
+- **Task 8.** In `test_a_reversed_channel_dict_meets_the_same_blocks`, `solve` and `quadratic_form` are compared to 1e-12 relative, not bit for bit; `apply` and `project` stay exact.
+  - The plan's exact form failed in up to 8 of 30 pytest runs on this machine, always on `solve` for `dense-two-channels`, by at most 1.5e-15 relative.
+  - The cause is the two-step triangular solve (`covariance/base.py`, scipy `solve_triangular` on Accelerate). Its last bit does not reproduce under pytest; the mechanism was not pinned down.
+  - The 1e-12 tolerance still catches a channel-order bug, which changes `solve` by O(1).
+- **Task 10.**
+  - Task 2's comment lines inside the `forward_bands`/`inverse_bands` blocks were kept, and the casts applied line by line.
+  - The Step 11 count is 103, not 101: the baseline file has two more tests (d026bdc, 0bab5d1).
+- **Task 11.** Step 1's grep (`must be an integer`) missed two sites:
+  - `build_C_time`'s `N`;
+  - `eq45_plan`'s `P`: `P=2.7` became 2, `True` became 1, and `P=0` raised `IndexError`.
+
+  Both now go through `_require_int`, and `eq45_plan` gains `P >= 1` (87a57c7).
+- **Task 14.** Step 8's import anchor in `tests/wilson/test_grid_bands.py` misses an `inverse,` line between `forward_time,` and `inverse_bands,`. The import goes after the block's closing `)`.
+- **Task 15.**
+  - Step 1 measured 164 / 67 / 75, against the plan's "about" 167 / 50 / 75. The +17 spec hits are the 2026-11-04 references Tasks 1–14 added.
+  - The codemod's `maps/fourier.py` module-docstring replacement came out MISSING, because Task 3 had reworded it. It was done by hand, keeping Task 3's self-conjugate clause.
+  - Eight 2026-11-04 references in forms the codemod misses were fixed by hand.
+  - The Meyer baseline docstrings drop the follow-up-spec citation, because the zero-hit gate overrides spec §1.7's request to cite it.
+  - Two further commits:
+    - e8d2471 holds wording items routed from earlier reviews.
+    - dd59860 holds leftovers no gate regex catches: 1.x labels (`S1`, `S4 merge`, `E-C2`), `wdm.` alias prose, two follow-up-spec references, stale test paths, "oracle" with no referent, and README fixes. In the README, `## Units` is now a top-level section, and the interior-bands condition on `FourierToWDM` is stated.
+
+### Fixes beyond the plan text (from the task reviews)
+
+- **Task 2 (0bab5d1).** The RESCALED comparator in `meyer_cases.mismatches` accepted NaN, because `max|g − f·w| > tol` is False for NaN. It is now NaN-safe, with a red-first test. The fix also adds a per-family count assertion and a `dt_rfft` test of `after()` against `Compose`.
+- **Task 6.**
+  - 8af18b8: `DenseOperator` takes `eps` from a float32 input's dtype; before, a float32 rank-deficient PSD matrix was refused. `operator_matrix` validates `channel_names` before converting it. The reversed-dict test gets a real WDM→WDM translation target.
+  - 4d2c7f6: the narrow `eps` is for float32 only. float16 had silently dropped directions.
+- **Task 8 (3ffaaff).** Tests only: an alt-window case pins `CovarianceOperator.domain`'s window, and the `ChannelStack` children are checked one by one for window and cells.
+- **Task 10 (6396bb0).** An `add_at` spy pins `inverse_bands`' post-FFT `phi` cast. Without it, `np.add.at` rounded complex128 into the complex64 output and no test failed. The fix also tightens three texts.
+
+### Review notes left open
+
+These are minor; each review judged them not worth a fix in this plan.
+
+- Test strength:
+  - `pytest.raises(TypeError)` without `match` in `test_dom_domains.py` (Task 4).
+  - `to_coordinates`'s role word is not pinned (Task 5).
+  - No PSD-boundary test for `DenseOperator` (Task 6).
+  - The never-dense test covers only the ragged layout (Task 7).
+  - No `jax.jit` test of `WDMToTime.adjoint` or an `after()` map (Task 13; checked by hand to 4e-16).
+  - No JAX test of `MidpointVariance.on()` (Task 14).
+- Input checks:
+  - `multiply` does not check `b`'s shape, as `factor(nu).solve` does not (Task 7).
+  - `empirical_variance`'s `n_realizations` has no kind check (Task 11).
+  - `to_coordinates`' √2 multiply can overflow above ~1.27e308 (Task 5).
+- Structure:
+  - `from .conftest import _oracle_paths` imports a conftest (Task 14).
+  - `test_transform_shim.py` imports from `test_single_precision.py` (Task 10).
+  - The integer-kind check is written out five times in `domainia.wilson` (Task 11).
+  - The window scan's `CONSUMERS` does not list `_cells_and_window`, the one remaining Meyer fallback (Task 9).
+- The coordinator's untracked `.superpowers/` folder is not in the root `.gitignore`, so hatchling would pack it into an sdist built from this tree (Task 12 review). At the end of execution the folder was moved out of the repo, into the session scratchpad.
+
+### Final whole-branch review
+
+- **Verdict:** ready to merge once this section is filled and the tasks file is committed. No code changes were needed.
+- **Units cross-check:** every route agrees with the dense `W_a x` reference to within 1.6e-14. The routes covered are `TimeToWDM`/`WDMToTime`, `FourierToWDM` (dense, fft, `restrict`, `after()` over pad and crop, `Compose`), `translate.transform`, `translate_operator`, `to_coordinates` and `CovarianceOperator`. Each was run on four grids, two windows and the three units, with odd-N pad/crop sources.
+- **Correction to an earlier review note:** `FourierToWDM(impl="fft")` cannot return float64 for complex64 input through an `np.float64` `rfft_scale`. `FourierDomain` coerces `dt` and `sigma0` to Python floats, so the fft path is always float32 for complex64 input.
+- **Minor notes, left open:**
+  - `domains._positive_float` takes `dt=True` or `dt="2"` (bare `float()`), while `wilson.validate_dt` now refuses both with `TypeError`.
+  - A wrong-kind domain passed to `FourierToWDM`, `BinSelect` or `Restrict` raises `AttributeError`.
+  - Silent `int()` truncation remains in `ChannelStack`'s `params_per_channel`, `DiagonalCovariance`'s `n` and `BinSelect`'s bins.
+  - `testing.dense_lambda_generic` takes unit-norm atoms, so its Λ is at the old record scale. For Wilson units pass `FourierToWDM.C` (= κU).
+  - The toy-model ports are mentioned more than once in a few modules.
