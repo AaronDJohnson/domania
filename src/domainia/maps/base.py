@@ -26,9 +26,9 @@ kind        apply                       push(cov) (``PushedCovariance``)
 
 A covariance without ``matvec`` -- every covariance on WDM cells -- cannot be pushed through
 a real or analysis map: ``PushedCovariance.rows``/``matvec`` raise a ``TypeError`` (spec
-section 4.2's WDM -> time push ``W^T Lambda W / dt^2`` is not available).  A full-record WDM
-covariance wrapped as a :class:`domainia.translate.Operator` is seen from time through
-:func:`domainia.translate.translate_operator` instead.
+section 4.2's WDM -> time push ``W^T Lambda W / dt^2`` is not available).  Fix the
+covariance at a noise state as a :class:`domainia.operators.CovarianceOperator` and see it
+from time through :func:`domainia.translate.translate_operator` instead.
 """
 
 from __future__ import annotations
@@ -231,14 +231,16 @@ class PushedCovariance:
         """``cov.matvec``, or a TypeError: a covariance on WDM cells (``DiagonalCovariance``,
         ``EvolutionaryCovariance``, ...) has no fixed-noise-state ``matvec``, so spec section
         4.2's WDM -> time push ``W^T Lambda W / dt^2`` is not available; the error names the
-        :func:`domainia.translate.translate_operator` route."""
+        route: :class:`domainia.operators.CovarianceOperator`, then
+        :func:`domainia.translate.translate_operator`."""
         fn = getattr(self.cov, "matvec", None)
         if fn is None:
             raise TypeError(f"{type(self.cov).__name__} has no matvec: a push through a "
                             f"{self.map.kind!r} map needs a fixed-noise-state SupportsMatvec "
-                            "(X -> X Sigma), so the WDM -> time push is not available; wrap a "
-                            "full-record WDM covariance as a domainia.translate.Operator and see "
-                            "it from time with domainia.translate.translate_operator")
+                            "(X -> X Sigma), so the WDM -> time push is not available; fix the "
+                            "covariance at a noise state as a domainia.operators.CovarianceOperator "
+                            "(a domainia.translate.Operator) and see it from time with "
+                            "domainia.translate.translate_operator")
         return fn
 
     def rows(self, idx: Any, be: Backend | None = None) -> Any:

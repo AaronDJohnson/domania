@@ -40,8 +40,8 @@ import numpy as np
 from domainia import wilson
 from domainia.domains import ChannelAxis, FourierDomain, TimeDomain, WDMDomain
 
-__all__ = ["Domain", "Operator", "TranslatedOperator", "log_coordinate_scale", "transform",
-           "translate_operator"]
+__all__ = ["Domain", "Operator", "TranslatedOperator", "from_coordinates", "log_coordinate_scale",
+           "to_coordinates", "transform", "translate_operator"]
 
 #: The domains :func:`transform` and :func:`log_coordinate_scale` take (full-record ones only).
 type Domain = TimeDomain | FourierDomain | WDMDomain

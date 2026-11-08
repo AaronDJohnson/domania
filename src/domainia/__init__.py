@@ -18,7 +18,11 @@ Modules
   ``SampledWindow``).
 * :mod:`domainia.translate`: ``transform`` (``{channel: array}`` dicts) and
   ``translate_operator`` (lazy covariance change of basis) between the full-record
-  ``TimeDomain``, ``FourierDomain.full`` and ``WDMDomain.full``.
+  ``TimeDomain``, ``FourierDomain.full`` and ``WDMDomain.full``; ``to_coordinates`` and
+  ``from_coordinates`` (the real coordinates of the ``Operator`` contract).
+* :mod:`domainia.operators`: ``DenseOperator`` (an explicit covariance matrix),
+  ``CovarianceOperator`` (a :mod:`domainia.covariance` covariance at a fixed noise state)
+  and ``operator_matrix`` (the matrix of any ``Operator``).
 * :mod:`domainia.domains`: ``TimeDomain``, ``FourierDomain``, ``CellSet``, ``WDMDomain``,
   ``ChannelAxis`` (frozen, hashable: static under ``jax.jit``).
 * :mod:`domainia.data`: ``TimeSeries``, ``FourierBins``, ``WDMCells`` (pytrees).
@@ -30,10 +34,12 @@ Modules
 
 from __future__ import annotations
 
-from . import data, domains, linalg, translate, wilson
+from . import data, domains, linalg, operators, translate, wilson
 from .data import FourierBins, TimeSeries, WDMCells
 from .domains import CellSet, ChannelAxis, FourierDomain, TimeDomain, WDMDomain
-from .translate import Operator, TranslatedOperator, log_coordinate_scale, transform, translate_operator
+from .operators import CovarianceOperator, DenseOperator, operator_matrix
+from .translate import (Operator, TranslatedOperator, from_coordinates, log_coordinate_scale,
+                        to_coordinates, transform, translate_operator)
 from .wilson import MEYER, Grid, Meyer, RampWindow, SampledWindow, Window, WindowError
 
 __version__ = "2.0.0"
@@ -42,6 +48,8 @@ __all__ = [
     "MEYER",
     "CellSet",
     "ChannelAxis",
+    "CovarianceOperator",
+    "DenseOperator",
     "FourierBins",
     "FourierDomain",
     "Grid",
@@ -59,8 +67,12 @@ __all__ = [
     "__version__",
     "data",
     "domains",
+    "from_coordinates",
     "linalg",
     "log_coordinate_scale",
+    "operator_matrix",
+    "operators",
+    "to_coordinates",
     "transform",
     "translate",
     "translate_operator",

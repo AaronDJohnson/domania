@@ -1,8 +1,11 @@
-"""Explicit covariance matrices as :class:`domainia.translate.Operator` s, and the matrix of
-any operator (spec section 2).
+"""Covariances as :class:`domainia.translate.Operator` s, and the matrix of any operator
+(spec section 2).
 
 * :class:`DenseOperator`: an explicit covariance matrix on the stacked real coordinates of
   a full-record domain.
+* :class:`CovarianceOperator`: a :mod:`domainia.covariance` covariance fixed at a noise
+  state ``nu`` on a (possibly partial) WDM support, so that
+  :func:`~domainia.translate.translate_operator` can see it from time or Fourier.
 * :func:`operator_matrix`: the matrix of any ``Operator``, native or translated, in the
   stacked real coordinates of its domain (``K N`` applies: for small ``N``).
 
@@ -11,7 +14,8 @@ The stacked real coordinates of ``K`` channels are the rows of
 (channel-major): ``r = to_coordinates(values, domain, channel_names).reshape(-1)``, of
 length ``K N``.  Every operator here passes its ``channel_names`` to ``to_coordinates``, so
 a dict built in another channel order still meets the right blocks of the matrix.  NumPy
-only.
+only.  Importing this module does not import :mod:`domainia.covariance`:
+:class:`CovarianceOperator` imports it when it is constructed.
 """
 
 from __future__ import annotations
@@ -19,11 +23,12 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from domainia import wilson
+from domainia.domains import CellSet, WDMDomain
 from domainia.translate import (
     Domain,
     Operator,
@@ -32,8 +37,12 @@ from domainia.translate import (
     from_coordinates,
     to_coordinates,
 )
+from domainia.wilson.backend import NUMPY
 
-__all__ = ["DenseOperator", "operator_matrix"]
+if TYPE_CHECKING:
+    from domainia.covariance import Covariance
+
+__all__ = ["CovarianceOperator", "DenseOperator", "operator_matrix"]
 
 
 @dataclass(frozen=True, eq=False)
@@ -143,6 +152,132 @@ class DenseOperator:
 
     def log_determinant(self) -> float:
         return float(np.sum(np.log(self._w)))  # type: ignore[attr-defined]
+
+
+@dataclass(frozen=True, eq=False)
+class CovarianceOperator:
+    """A :mod:`domainia.covariance` covariance ``cov`` fixed at the noise state ``nu`` on the
+    WDM ``support``, as an :class:`~domainia.translate.Operator`.
+
+    ``support`` is the :class:`~domainia.domains.WDMDomain` (cells and window) the
+    covariance lives on; it may be partial.  The operator's ``domain`` is
+    ``WDMDomain.full(support.cells.grid, window=support.window)``.  Let ``K`` be the number
+    of channels, ``s = support.size`` and ``P`` the ``(K s, K N)`` selection of the
+    support's cells in every channel (channel-major).  The operator is ``C = P^T Sigma P``
+    with ``Sigma = cov`` at ``nu``, and its methods are the Moore-Penrose structure of that
+    ``C`` (``F = cov.factor(nu)``):
+
+    * ``apply``: ``cov.multiply``; ``solve``: ``F.solve``; ``project``: zeros off the
+      support (the identity for a full support);
+    * ``quadratic_form``: ``F.quad``; ``log_determinant``: ``F.logdet``;
+      ``degrees_of_freedom``: ``K s``.
+
+    Layout: the values go through :func:`~domainia.translate.to_coordinates` (``(K, N)``,
+    ``channel_names`` order) and are cut to the support, ``R[:, support.cells.packed_positions()]``
+    (``(K, s)``).  That array is flattened channel-major for a single covariance
+    (``cov.n == K s``, so the covariance may correlate the channels) and kept as rows for a
+    :class:`~domainia.covariance.ChannelStack` (one child per channel, each with
+    ``n == s``).  Results are put back with exact zeros off the support and returned
+    through :func:`~domainia.translate.from_coordinates`.
+
+    Validation: ``TypeError`` for a wrong kind (``cov`` not a ``Covariance``, ``support``
+    not a ``WDMDomain``, ``channel_names`` against the ``ChannelAxis`` rules, a non-numeric
+    ``nu``); ``ValueError`` for a size or channel-count mismatch, a covariance ``window``
+    (when not ``None``) or ``cells`` (when it has them) other than the support's, a
+    non-zero ``n_u``, or ``F.ok`` false (the factor is computed once, eagerly on NumPy, at
+    construction).  NumPy only.
+    """
+
+    cov: Covariance
+    nu: Any
+    support: WDMDomain
+    channel_names: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        # Imported here, not at module level: ``import domainia`` imports this module and
+        # must not import domainia.covariance (the package docstring).
+        from domainia.covariance import ChannelStack, Covariance
+
+        cov, support = self.cov, self.support
+        if not isinstance(cov, Covariance):
+            raise TypeError(f"cov must be a domainia.covariance.Covariance; got {type(cov).__name__}")
+        if not isinstance(support, WDMDomain):
+            raise TypeError(f"support must be a WDMDomain; got {type(support).__name__}")
+        names = _channel_names(self.channel_names)
+        K, s = len(names), support.size
+        stack = isinstance(cov, ChannelStack)
+        parts = cov.covs if stack else (cov,)
+        if stack:
+            if len(parts) != K:
+                raise ValueError(f"the ChannelStack has {len(parts)} channels; channel_names has {K}")
+            if any(c.n != s for c in parts):
+                raise ValueError(f"every ChannelStack channel needs n = support.size = {s}; got "
+                                 f"n = {tuple(c.n for c in parts)}")
+        elif cov.n != K * s:
+            raise ValueError(f"cov.n = {cov.n}, but {K} channel(s) on a support of {s} cells need "
+                             f"cov.n = {K * s}")
+        for c in parts:
+            window = getattr(c, "window", None)
+            if window is not None and window != support.window:
+                raise ValueError(f"the covariance is built for the window {window.name} but the "
+                                 f"support uses {support.window.name}")
+            cells = getattr(c, "cells", None)
+            if isinstance(cells, CellSet) and cells != support.cells:
+                raise ValueError(f"the covariance's cells ({cells!r}) are not support.cells "
+                                 f"({support.cells!r})")
+        if cov.n_u != 0:
+            raise ValueError(f"cov.n_u = {cov.n_u}: an Operator has no nuisance directions")
+        nu = np.asarray(self.nu)
+        if nu.dtype.kind not in "iuf":
+            raise TypeError(f"nu must be a real numeric array; got dtype {nu.dtype}")
+        nu = np.array(nu, dtype=np.float64)
+        nu.setflags(write=False)
+        F = cov.factor(nu, NUMPY)
+        if not bool(F.ok):
+            raise ValueError(f"{type(cov).__name__} is not positive definite at nu")
+        pos = support.cells.packed_positions()
+        object.__setattr__(self, "nu", nu)
+        object.__setattr__(self, "channel_names", names)
+        object.__setattr__(self, "_domain", WDMDomain.full(support.cells.grid, window=support.window))
+        object.__setattr__(self, "_factor", F)
+        object.__setattr__(self, "_pos", pos)
+        object.__setattr__(self, "_stack", stack)
+
+    @property
+    def domain(self) -> WDMDomain:
+        return self._domain  # type: ignore[attr-defined]
+
+    @property
+    def degrees_of_freedom(self) -> int:
+        return len(self.channel_names) * self.support.size
+
+    def _b(self, values: Any) -> np.ndarray:
+        """``values`` on the support: ``(K, s)`` rows for a ChannelStack, else ``(K s,)``."""
+        pos, stack = self._pos, self._stack  # type: ignore[attr-defined]
+        R = to_coordinates(values, self.domain, self.channel_names)[:, pos]
+        return R if stack else R.reshape(-1)
+
+    def _values(self, y: Any) -> dict[str, np.ndarray]:
+        """The support vector ``y`` back on the full domain: exact zeros off the support."""
+        K = len(self.channel_names)
+        R = np.zeros((K, self.domain.cells.grid.N))
+        R[:, self._pos] = np.asarray(y).reshape(K, -1)  # type: ignore[attr-defined]
+        return from_coordinates(R, self.domain, self.channel_names)
+
+    def apply(self, values: Mapping[str, Any]) -> dict[str, np.ndarray]:
+        return self._values(self.cov.multiply(self.nu, self._b(values), be=NUMPY))
+
+    def solve(self, values: Mapping[str, Any]) -> dict[str, np.ndarray]:
+        return self._values(self._factor.solve(self._b(values)))  # type: ignore[attr-defined]
+
+    def project(self, values: Mapping[str, Any]) -> dict[str, np.ndarray]:
+        return self._values(self._b(values))
+
+    def quadratic_form(self, values: Mapping[str, Any]) -> float:
+        return float(self._factor.quad(self._b(values)))  # type: ignore[attr-defined]
+
+    def log_determinant(self) -> float:
+        return float(self._factor.logdet)  # type: ignore[attr-defined]
 
 
 def operator_matrix(op: Operator) -> np.ndarray:

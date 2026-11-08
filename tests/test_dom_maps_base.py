@@ -149,7 +149,8 @@ def test_maps_are_frozen_dataclasses():
 def test_push_without_matvec_is_a_type_error_naming_translate_operator():
     """Spec section 4.2's WDM -> time push (W^T Lambda W / dt^2) needs a fixed-noise-state
     ``matvec`` that no cell covariance has: a clear TypeError, not a bare AttributeError,
-    from ``rows`` and ``matvec`` of a real or analysis push, naming the operator route."""
+    from ``rows`` and ``matvec`` of a real or analysis push, naming the operator route
+    (``CovarianceOperator``, then ``translate_operator``)."""
     from domainia.covariance import DiagonalCovariance
     from domainia.maps import TimeToFourier, WDMToTime
 
@@ -157,7 +158,7 @@ def test_push_without_matvec_is_a_type_error_naming_translate_operator():
     time = TimeDomain(GRID.N, GRID.dt)
     cov = DiagonalCovariance(np.ones(GRID.N), GRID.N)
     P = WDMToTime(full, time).push(cov)
-    msg = (r"DiagonalCovariance has no matvec: .*domainia\.translate\.Operator.*"
+    msg = (r"DiagonalCovariance has no matvec: .*domainia\.operators\.CovarianceOperator.*"
            r"domainia\.translate\.translate_operator")
     with pytest.raises(TypeError, match=msg):
         P.rows([0])
