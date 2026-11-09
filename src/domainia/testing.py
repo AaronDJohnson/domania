@@ -13,6 +13,9 @@ likelihood path).  Every oracle here is ``O(N^2)`` memory or worse: keep ``N`` <
 :func:`dense_W`, :func:`wdm_congruence` and :func:`eq45_dense` take ``window=`` (default
 Meyer: the WDM transform) and compute in the Wilson basis of that window.
 
+The oracles follow the package's rule: a wrong kind (``cells`` that is not a ``CellSet``, a
+float ``margin``, a complex ``s_I``) raises ``TypeError``, a wrong value ``ValueError``.
+
 Test windows (``domainia.wilson.windows``):
 
 * :func:`smoothstep`: a non-Meyer ramp for :class:`~domainia.wilson.RampWindow`.
@@ -35,6 +38,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from domainia import wilson
+from domainia.wilson._checks import (REAL_KINDS, require_callable, require_dtype, require_instance,
+                                     require_int)
 from domainia.wilson.evolutionary import eq45_direct, eq45_plan
 from domainia.wilson.windows import MEYER, SampledWindow, Window
 
@@ -62,7 +67,7 @@ def dense_W(cells: CellSet, *, window: Window = MEYER) -> Array:
     """``(cells.size, N)``: row ``p`` is cell ``p``'s atom sampled in time, so ``W x`` are
     the cells of ``x`` (``wilson.matrix.active_W`` rows, ``W_a W_a^T = dt I``) in the
     Wilson basis of ``window``."""
-    g = cells.grid
+    g = require_instance("cells", cells, CellSet, "a CellSet").grid
     return wilson.matrix.active_W(g.Nf, g.Nt, g.dt, window=window)[cells.packed_positions()]
 
 
@@ -77,7 +82,8 @@ def eq45_dense(cells: CellSet, Sn: Callable[[Any, Any], Any], *, P: int = 24,
                t_max: float | None = None, window: Window = MEYER) -> Array:
     """Eq. (45) on ``cells`` by the direct sum, ``Sn(f, t)`` elementwise (``A_n`` inside),
     with the atoms of ``window``."""
-    g = cells.grid
+    g = require_instance("cells", cells, CellSet, "a CellSet").grid
+    require_callable("Sn", Sn)
     plan = eq45_plan(g.Nf, g.Nt, g.dt, cells.keep_mask(), P=P, t_max=t_max, window=window)
     return eq45_direct(plan, Sn)
 
@@ -112,8 +118,12 @@ def eq54_covariance(s_I: Array, s_G_src: Array, h: CArray, *, margin: int) -> CA
     :math:`\kappa = -\mathrm{margin} \ldots G + \mathrm{margin} - 1` (grid units).
 
     ``s_G_src`` has ``G + 2 margin`` entries; ``h`` is :math:`\hat h` at the lags
-    ``-(G + margin) .. G + margin``.
+    ``-(G + margin) .. G + margin``.  ``margin`` must be an integer, and ``s_I`` and
+    ``s_G_src`` real numeric arrays (``TypeError`` otherwise).
     """
+    margin = require_int("margin", margin)
+    require_dtype("s_I", s_I, REAL_KINDS, "a real numeric array")
+    require_dtype("s_G_src", s_G_src, REAL_KINDS, "a real numeric array")
     s_I = np.asarray(s_I, dtype=float)
     G = s_I.size
     s_G_src = np.asarray(s_G_src, dtype=float)
@@ -174,17 +184,17 @@ class PointwiseOperator:
                 raise ValueError("PointwiseOperator needs every active cell: use WDMDomain.full(grid)")
             mask = wilson.active_mask(g.Nf, g.Nt)
         else:
-            raise TypeError(f"PointwiseOperator needs a TimeDomain or WDMDomain; got "
+            raise TypeError(f"PointwiseOperator needs a TimeDomain or WDMDomain, got "
                             f"{type(self.domain).__name__}")
         if not isinstance(self.variances, Mapping):
-            raise TypeError(f"variances must be a {{channel: array}} mapping; got "
+            raise TypeError(f"variances must be a {{channel: array}} mapping, got "
                             f"{type(self.variances).__name__}")
         if not self.variances:
             raise ValueError("variances must be a non-empty {channel: array} mapping")
         var = {}
         for name, v in self.variances.items():
             if not isinstance(name, str):
-                raise TypeError(f"channel names must be strings; got {name!r}")
+                raise TypeError(f"channel names must be strings, got {name!r}")
             a = np.array(v, dtype=np.float64)
             if a.shape != mask.shape:
                 raise ValueError(f"channel {name!r}: variances have shape {a.shape}; need {mask.shape}")
@@ -208,7 +218,7 @@ class PointwiseOperator:
 
     def _values(self, values: Any) -> dict[str, Array]:
         if not isinstance(values, Mapping):
-            raise TypeError(f"values must be a mapping; got {type(values).__name__}")
+            raise TypeError(f"values must be a mapping, got {type(values).__name__}")
         if set(values) != set(self.variances):
             raise ValueError(f"values have channels {tuple(values)}; need {self.channel_names}")
         out = {}

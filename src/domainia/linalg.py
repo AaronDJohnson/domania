@@ -46,6 +46,7 @@ from typing import Any, Literal
 
 import numpy as np
 
+from domainia.wilson._checks import require_instance, require_int, require_real, require_str
 from domainia.wilson.backend import Backend, get_backend, is_tracer, jax_backend, pytree_dataclass
 
 from .domains import CellSet
@@ -105,8 +106,9 @@ class BandLayout:
 
     @classmethod
     def from_sizes(cls, sizes: Sequence[int]) -> BandLayout:
-        """The layout of bands with ``sizes[m]`` cells each (concatenated in order)."""
-        sizes = [int(s) for s in sizes]
+        """The layout of bands with ``sizes[m]`` cells each (concatenated in order).  Each
+        size must be an integer (``TypeError`` otherwise, ``2.0`` and ``True`` included)."""
+        sizes = [require_int(f"sizes[{m}]", s) for m, s in enumerate(sizes)]
         if not sizes or min(sizes) < 0 or max(sizes) == 0:
             raise ValueError(f"sizes must be non-negative with at least one band of cells; got {sizes}")
         off = np.concatenate([[0], np.cumsum(sizes)])
@@ -124,6 +126,7 @@ class BandLayout:
     @classmethod
     def from_cells(cls, cells: CellSet) -> BandLayout:
         """One slot row per band present in a band-ordered :class:`~domainia.domains.CellSet`."""
+        require_instance("cells", cells, CellSet, "a CellSet")
         return cls.from_sizes([s for _, s in cells.band_sizes()])
 
     @property
@@ -256,7 +259,11 @@ def blocktri_factor(diag: Any, up: Any, *, layout: Layout,
     sequences (packed with :meth:`BandLayout.pack_blocks`) or ``(nb, B, B)`` /
     ``(nb-1, B, B)`` arrays that already carry identity dummies
     (in the order of :meth:`BandLayout.add_identity_dummies`).
+
+    A ``layout`` that is not a string, or a ``band_layout`` that is not a
+    :class:`BandLayout`, raises ``TypeError``; an unknown ``layout`` raises ``ValueError``.
     """
+    require_str("layout", layout)
     if layout == "ragged":
         if not isinstance(diag, (list, tuple)):
             raise TypeError("layout='ragged' needs a sequence of diagonal blocks")
@@ -269,6 +276,7 @@ def blocktri_factor(diag: Any, up: Any, *, layout: Layout,
     if layout == "padded":
         if band_layout is None:
             raise ValueError("layout='padded' needs band_layout")
+        require_instance("band_layout", band_layout, BandLayout, "a BandLayout")
         if isinstance(diag, (list, tuple)):
             diag, up = band_layout.pack_blocks(diag, up, be=be)
         be = _be(be, diag, up)
@@ -317,7 +325,7 @@ def _layout_of(f: BlockTriFactor, band_layout: BandLayout | None) -> BandLayout:
     lay = band_layout if band_layout is not None else f.band_layout
     if lay is None:
         raise ValueError("a padded factor without its band_layout: pass band_layout=")
-    return lay
+    return require_instance("band_layout", lay, BandLayout, "a BandLayout")
 
 
 def blocktri_whiten(f: BlockTriFactor, b: Any, *, band_layout: BandLayout | None = None,
@@ -330,6 +338,7 @@ def blocktri_whiten(f: BlockTriFactor, b: Any, *, band_layout: BandLayout | None
     (the dummy entries of the packed result are exactly zero); ``band_layout`` overrides
     the factor's own (``None`` when a covariance stored it without).
     """
+    require_instance("f", f, BlockTriFactor, "a BlockTriFactor")
     if f.layout == "ragged":
         _require_complete(f)
     be = _be(be, b, *_factor_arrays(f))
@@ -351,6 +360,7 @@ def blocktri_solve(f: BlockTriFactor, b: Any, *, band_layout: BandLayout | None 
     ``unpack(blocktri_solve_packed(pack(b)))``; ``band_layout``
     as :func:`blocktri_whiten`.
     """
+    require_instance("f", f, BlockTriFactor, "a BlockTriFactor")
     if f.layout == "ragged":
         _require_complete(f)
     be = _be(be, b, *_factor_arrays(f))
@@ -376,6 +386,7 @@ def blocktri_solve(f: BlockTriFactor, b: Any, *, band_layout: BandLayout | None 
 def blocktri_whiten_packed(f: BlockTriFactor, b: Any, *, be: Backend | None = None) -> Any:
     """Padded layout only: ``L^-1 b`` for ``b (nb, B, k)``, one ``be.scan`` over the bands;
     the forward-only quadratic form is ``sum(z * z)``."""
+    require_instance("f", f, BlockTriFactor, "a BlockTriFactor")
     if f.layout != "padded":
         raise ValueError("blocktri_whiten_packed needs the padded layout")
     be = _be(be, f.Ls, b)
@@ -397,6 +408,7 @@ def blocktri_whiten_packed(f: BlockTriFactor, b: Any, *, be: Backend | None = No
 def blocktri_solve_packed(f: BlockTriFactor, b: Any, *, be: Backend | None = None) -> Any:
     """Padded layout only: ``Lambda^-1 b`` for ``b (nb, B, k)``.  It is
     :func:`blocktri_whiten_packed`, then a reverse ``be.scan`` of the back substitution."""
+    require_instance("f", f, BlockTriFactor, "a BlockTriFactor")
     if f.layout != "padded":
         raise ValueError("blocktri_solve_packed needs the padded layout")
     be = _be(be, f.Ls, b)
@@ -437,11 +449,12 @@ class CBlockFactor:
 
 def cblock_factor(M: Any, b: int, *, be: Backend | None = None) -> CBlockFactor:
     """Block Cholesky of the Hermitian block tridiagonal of ``M``, with its log-determinant;
-    the blocks outside the tridiagonal are not read."""
+    the blocks outside the tridiagonal are not read.  ``b`` must be an integer
+    (``TypeError`` otherwise)."""
+    b = require_int("b", b)
     be = _be(be, M)
     xp = be.xp
     M = be.asarray(M)
-    b = int(b)
     n = M.shape[0]
     if b <= 0 or n % b:
         raise ValueError("the bins must be whole blocks")
@@ -464,6 +477,7 @@ def cblock_factor(M: Any, b: int, *, be: Backend | None = None) -> CBlockFactor:
 
 def cblock_forward(f: CBlockFactor, h: Any, *, be: Backend | None = None) -> Any:
     """``L^-1 h``, by block forward substitution."""
+    require_instance("f", f, CBlockFactor, "a CBlockFactor")
     be = _be(be, f.Ls, h)
     Ls, Cs, b = f.Ls, f.Cs, f.b
     nb = Ls.shape[0]
@@ -475,6 +489,7 @@ def cblock_forward(f: CBlockFactor, h: Any, *, be: Backend | None = None) -> Any
 
 def cblock_backward(f: CBlockFactor, u: Any, *, be: Backend | None = None) -> Any:
     """``L^-H u``, by block back substitution."""
+    require_instance("f", f, CBlockFactor, "a CBlockFactor")
     be = _be(be, f.Ls, u)
     xp = be.xp
     Ls, Cs, b = f.Ls, f.Cs, f.b
@@ -520,15 +535,23 @@ def pcg(apply_A: Callable[[Any], Any], apply_M: Callable[[Any], Any], B: Any, *,
     where ``converged`` is False, which a caller maps to ``-inf``.  A row with a
     non-positive or non-finite curvature ``p.Ap`` fails (the early-exit loop had no such
     check).
+
+    A wrong kind raises ``TypeError``: ``tol`` and ``true_rtol`` must be real numbers
+    (``true_rtol`` may be ``None``), ``maxit`` an integer and ``on_fail`` a string (an
+    unknown one raises ``ValueError``).
     """
+    require_str("on_fail", on_fail)
     if on_fail not in ("raise", "nan"):
         raise ValueError(f"on_fail must be 'raise' or 'nan'; got {on_fail!r}")
+    tol = require_real("tol", tol)
+    maxit = require_int("maxit", maxit)
+    true_rtol = None if true_rtol is None else require_real("true_rtol", true_rtol)
     be = _be(be, B)
     xp = be.xp
     B = be.asarray(B)
     if B.ndim != 2:
         raise ValueError(f"B must be (R, N); got shape {B.shape}")
-    rtol = max(5.0 * tol, 1e-12) if true_rtol is None else float(true_rtol)
+    rtol = max(5.0 * tol, 1e-12) if true_rtol is None else true_rtol
 
     def dot(a: Any, c: Any) -> Any:
         return xp.vecdot(a, c)
