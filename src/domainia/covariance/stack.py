@@ -5,11 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from domainia.wilson._checks import require_instance, require_int
+from domainia.wilson._checks import require_instance, require_int, require_str
 from domainia.wilson.backend import Backend, get_backend, pytree_dataclass
 from domainia.wilson.windows import Window
 
-from .base import Covariance
+from .base import Covariance, _check_leading
 
 __all__ = ["ChannelStack", "StackFactor"]
 
@@ -37,8 +37,21 @@ class StackFactor:
         C = C if C is not None else self.__dict__.get("_C")
         return [None if C is None else C[str(c)] for c in range(len(self.channels))]
 
+    def _b_shape(self) -> tuple[int, ...]:
+        """``(channels,)``: one row of ``b`` per channel.  Each row ``b[c]`` is then checked by
+        its channel's factor, so a stack whose channels differ in size refuses every ``b``."""
+        return (len(self.channels),)
+
+    def _rows(self, b: Any, be: Backend | None, what: str) -> Any:
+        """``b`` as an array, its first axis checked against the channels."""
+        b = (be or get_backend(b)).asarray(b)
+        _check_leading(b, self._b_shape(), f"StackFactor.{what}")
+        return b
+
     def quad(self, b: Any, *, C: Any = None, form: str = "solve", be: Backend | None = None) -> Any:
         """``sum_c quad_c(b[c])`` from ``0.0`` in channel order; ``b`` is ``(C, n)``."""
+        require_str("form", form)
+        b = self._rows(b, be, "quad")
         total = 0.0
         for c, (f, Cc) in enumerate(zip(self.channels, self._sub(C), strict=True)):
             total = total + f.quad(b[c], C=Cc, form=form, be=be)
@@ -46,11 +59,13 @@ class StackFactor:
 
     def solve(self, b: Any, *, C: Any = None, be: Backend | None = None) -> Any:
         be = be or get_backend(b)
+        b = self._rows(b, be, "solve")
         return be.xp.stack([f.solve(b[c], C=Cc, be=be)
                             for c, (f, Cc) in enumerate(zip(self.channels, self._sub(C), strict=True))])
 
     def whiten(self, b: Any, *, C: Any = None, be: Backend | None = None) -> Any:
         be = be or get_backend(b)
+        b = self._rows(b, be, "whiten")
         return be.xp.stack([f.whiten(b[c], C=Cc, be=be)
                             for c, (f, Cc) in enumerate(zip(self.channels, self._sub(C), strict=True))])
 
@@ -112,6 +127,16 @@ class ChannelStack(Covariance):
         sizes = [cov.n for cov in self.covs]
         return xp.block([[blocks[i] if i == j else xp.zeros((sizes[i], sizes[j]))
                           for j in range(len(blocks))] for i in range(len(blocks))])
+
+    def _b_shape(self) -> tuple[int, ...]:
+        """``(channels, n_c)``: one row per channel, of the channels' common leading shape
+        (``(n_c,)``).  A stack whose channels differ in size can be built and factorised,
+        but has no such layout: ``ValueError``."""
+        rows = [cov._b_shape() for cov in self.covs]
+        if any(r != rows[0] for r in rows):
+            raise ValueError("ChannelStack: b has one row per channel, so the channels must share one "
+                             f"size; their row shapes are {', '.join(str(r) for r in rows)}")
+        return (len(self.covs), *rows[0])
 
     def _multiply(self, C: Any, nu: Any, b: Any, be: Backend) -> Any:
         """Each channel's ``Sigma_c(nu_c) b[c]``, stacked: ``b`` is ``(channels, n_c)``, so the

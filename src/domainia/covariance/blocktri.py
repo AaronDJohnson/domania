@@ -20,7 +20,7 @@ from domainia.wilson._checks import require_int, require_str
 from domainia.wilson.backend import Backend, get_backend, pytree_dataclass
 
 from ..linalg import BandLayout, blocktri_factor, blocktri_solve, blocktri_whiten
-from .base import Covariance, QuadForm, as_evaluator, factor_constants, quad_form
+from .base import Covariance, QuadForm, _check_leading, as_evaluator, factor_constants, quad_form
 
 __all__ = ["BlockTriCovFactor", "BlockTridiagonalCovariance", "blocks_to_dense", "blocktri_cov_factor",
            "dummy_slots", "to_layout"]
@@ -98,13 +98,27 @@ class BlockTriCovFactor:
 
     n_u = 0
 
+    def _b_shape(self, C: Any = None) -> tuple[int, ...]:
+        """``(n,)``: the sum of the ragged blocks' sizes, or the padded layout's ``n`` (static
+        meta of the ``BandLayout`` in the constants ``C``; its ``Ls`` are ``(nb, B, B)``)."""
+        if self.layout == "ragged":
+            return (sum(L.shape[0] for L in self.bt.Ls),)
+        return (factor_constants(self, C, "_b_shape")["layout"].n,)
+
     def _apply(self, fn: Any, b: Any, C: Any, be: Backend, what: str) -> Any:
         # domainia.linalg takes natural, band-major vectors on both layouts: the padded
         # layout packs, runs the ``*_packed`` kernels and unpacks inside (the dummy entries
         # are exactly 0).
+        b = be.asarray(b)
         if self.layout == "ragged":
+            # A failed ragged factor stops at its first bad block, so its blocks do not add
+            # up to n: skip the check and let ``fn`` raise the failure.
+            if bool(self.ok):
+                _check_leading(b, self._b_shape(), f"BlockTriCovFactor.{what}")
             return fn(self.bt, b, be=be)
-        return fn(self.bt, b, band_layout=factor_constants(self, C, what)["layout"], be=be)
+        C = factor_constants(self, C, what)
+        _check_leading(b, self._b_shape(C), f"BlockTriCovFactor.{what}")
+        return fn(self.bt, b, band_layout=C["layout"], be=be)
 
     def _be(self, b: Any, be: Backend | None) -> Backend:
         # The factor's arrays count too (as CholFactor): a host b against a device factor

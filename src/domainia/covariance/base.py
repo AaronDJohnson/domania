@@ -11,7 +11,11 @@ A covariance is built once from host constants and factorised once per noise sta
 ``F`` is a :class:`Factor`: ``logdet`` (:math:`\ln|C|`), ``ok`` (False when ``C`` is not
 positive definite), ``solve(b)`` (:math:`C^{-1}b`),
 ``whiten(b)`` (:math:`L^{-1}b` with :math:`|L^{-1}b|^2 = b^{\mathsf T}C^{-1}b`),
-``quad(b, form=...)`` and ``n_u`` (0 for every covariance here).
+``quad(b, form=...)`` and ``n_u`` (0 for every covariance here).  ``b`` is read with
+``be.asarray`` (a list is accepted), and its leading axes must be the factor's own
+``(n,)``, or ``(channels,)`` for a ``StackFactor`` (each row then checked by its
+channel's factor); ``solve`` and ``whiten`` also take an ``(n, k)`` column batch.  Any
+other leading shape raises ``ValueError``, as in :meth:`Covariance.multiply`.
 
 **A factor holds per-state arrays only**.  Every array
 that depends on the grid alone -- band layouts, the Eq. 45 plan -- stays in the
@@ -194,6 +198,15 @@ def factor_constants(F: Any, C: Any, what: str) -> Any:
     return C
 
 
+def _check_leading(b: Any, expected: tuple[int, ...], what: str) -> None:
+    """Raise ``ValueError`` unless ``b``'s leading axes are ``expected``.  Trailing axes (an
+    ``(n, k)`` column batch) are not compared.  Without the check a ``(1,)`` ``b`` would
+    broadcast, a longer one be cut and an extra channel row be dropped, silently.  Shapes
+    are static under ``jax.jit``, so it runs while tracing."""
+    if tuple(b.shape[:len(expected)]) != tuple(expected):
+        raise ValueError(f"{what}: b must have leading shape {expected}, got shape {b.shape}")
+
+
 @pytree_dataclass(data=("v", "logdet", "ok"), meta=())
 @dataclass(frozen=True, eq=False)
 class DiagFactor:
@@ -212,17 +225,28 @@ class DiagFactor:
         v = be.asarray(v)
         return cls(v, xp.sum(xp.log(v)), xp.all(v > 0) & xp.all(xp.isfinite(v)))
 
+    def _b_shape(self) -> tuple[int, ...]:
+        """``(n,)``, from the variances."""
+        return (self.v.shape[0],)
+
     def solve(self, b: Any, *, C: Any = None, be: Backend | None = None) -> Any:
+        be = be or get_backend(self.v, b)
+        b = be.asarray(b)
+        _check_leading(b, self._b_shape(), "DiagFactor.solve")
         return b / (self.v if b.ndim == 1 else self.v[:, None])
 
     def whiten(self, b: Any, *, C: Any = None, be: Backend | None = None) -> Any:
         be = be or get_backend(self.v, b)
+        b = be.asarray(b)
+        _check_leading(b, self._b_shape(), "DiagFactor.whiten")
         s = be.xp.sqrt(self.v)
         return b / (s if b.ndim == 1 else s[:, None])
 
     def quad(self, b: Any, *, C: Any = None, form: QuadForm = "solve", be: Backend | None = None) -> Any:
         be = be or get_backend(self.v, b)
         if require_str("form", form) == "elementwise":
+            b = be.asarray(b)
+            _check_leading(b, self._b_shape(), "DiagFactor.quad")
             return be.xp.sum(b ** 2 / self.v)
         return quad_form(self, b, form, be)
 
@@ -255,8 +279,14 @@ class CholFactor:
         d = xp.diagonal(L)
         return cls(L, 2.0 * xp.sum(xp.log(d)), ok & xp.all(xp.isfinite(d) & (d > 0)), impl)
 
+    def _b_shape(self) -> tuple[int, ...]:
+        """``(n,)``, from ``L``."""
+        return (self.L.shape[0],)
+
     def solve(self, b: Any, *, C: Any = None, be: Backend | None = None) -> Any:
         be = be or get_backend(self.L, b)
+        b = be.asarray(b)
+        _check_leading(b, self._b_shape(), "CholFactor.solve")
         if self.impl == "scipy":
             return be.cho_solve(self.L, b)
         u = be.solve_triangular(self.L, b, lower=True)
@@ -264,6 +294,8 @@ class CholFactor:
 
     def whiten(self, b: Any, *, C: Any = None, be: Backend | None = None) -> Any:
         be = be or get_backend(self.L, b)
+        b = be.asarray(b)
+        _check_leading(b, self._b_shape(), "CholFactor.whiten")
         return be.solve_triangular(self.L, b, lower=True)
 
     def quad(self, b: Any, *, C: Any = None, form: QuadForm = "solve", be: Backend | None = None) -> Any:
@@ -280,7 +312,8 @@ class Covariance:
     own caches.  Covariances with a dense form implement ``_matrix(C, nu, be)``;
     :meth:`dense` is its host value.  :meth:`multiply` is ``_multiply(C, nu, b, be)``,
     which defaults to ``_matrix(C, nu, be) @ b``; a class with a cheaper product overrides
-    it.  ``jittable = False`` marks a strategy that runs eagerly on both backends (the
+    it.  :meth:`multiply` first checks ``b``'s leading axes against :meth:`_b_shape`.
+    ``jittable = False`` marks a strategy that runs eagerly on both backends (the
     ragged layout, ``on_fail="raise"``).
     """
 
@@ -339,16 +372,25 @@ class Covariance:
                             "_multiply nor _matrix (a dense assembly)")
         return self._matrix(C, nu, be) @ b
 
+    def _b_shape(self) -> tuple[int, ...]:
+        """The leading shape of the ``b`` that :meth:`multiply` takes: ``(n,)``.
+        ``ChannelStack`` overrides it."""
+        return (self.n,)
+
     def multiply(self, nu: Any, b: Any, be: Backend | None = None) -> Any:
-        """``Sigma(nu) b``, eagerly.  ``b`` has the layout the factor's ``solve`` takes:
-        ``(n,)``, or ``(channels, n_c)`` for :class:`~domainia.covariance.stack.ChannelStack`.
+        """``Sigma(nu) b``, eagerly.  ``b`` has the layout the factor's ``solve`` takes: its
+        leading axes are :meth:`_b_shape`, ``(n,)``, or ``(channels, n_c)`` for
+        :class:`~domainia.covariance.stack.ChannelStack`, and any trailing axes are a batch
+        of columns (``(n, k)``).  Any other leading shape raises ``ValueError``.
 
         NumPy is the tested backend; a JAX ``be`` is passed through.  The name is not
         ``matvec``: ``PushedCovariance`` duck-types ``matvec(X, be)``, which has a
         fixed-noise-state signature.
         """
         be = be or get_backend(nu, b)
-        return self._multiply(self.constants(be), be.asarray(nu), be.asarray(b), be)
+        b = be.asarray(b)
+        _check_leading(b, self._b_shape(), f"{type(self).__name__}.multiply")
+        return self._multiply(self.constants(be), be.asarray(nu), b, be)
 
     def constants(self, be: Backend | None = None) -> Any:
         """The constants on ``be``: built once in host NumPy, cached per backend (JAX:
