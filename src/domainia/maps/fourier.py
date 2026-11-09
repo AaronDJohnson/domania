@@ -260,11 +260,10 @@ class FourierToWDM(LinearMap):
     and ``kappa = src.rfft_scale * sqrt(2 dt / N)`` (``N``, ``dt`` of the
     cells' grid) turns bins in ``src.units`` into Wilson coefficients.  ``impl="dense"``
     evaluates ``Re(z[..., lo:lo+width] @ C.T)`` (the golden default);
-    ``impl="fft"`` evaluates ``src.rfft_scale * wilson.transform.forward_bands`` (opt-in).
-    For complex128 bins it agrees with dense to <= 1e-12 relative; complex64 bins run
-    ``forward_bands`` in single precision on the fft path, so it returns float32 where dense
-    returns float64.  For a record ``x`` and its bins ``z`` in ``src.units``, the cells equal
-    ``TimeToWDM.apply(x)`` on the same cells.
+    ``impl="fft"`` evaluates ``src.rfft_scale * wilson.transform.forward_bands`` (opt-in) on
+    the bins converted to complex128 first.  Both impls return float64 cells whatever the
+    bins' precision, and they agree to <= 1e-12 relative.  For a record ``x`` and its bins
+    ``z`` in ``src.units``, the cells equal ``TimeToWDM.apply(x)`` on the same cells.
     """
 
     src: FourierDomain
@@ -335,6 +334,7 @@ class FourierToWDM(LinearMap):
             return be.xp.real(z[..., self.lo:self.lo + self.width] @ self.C.T)
         g = self.dst.cells.grid
         geo = _geometry(self.dst)
+        z = be.xp.asarray(z, dtype=np.complex128)        # double, whatever the bins' precision
         w = wilson.transform.forward_bands(z, self.src.k0, geo["bands"], g.Nf, g.Nt, g.dt, be=be,
                                            window=self.dst.window)
         return self.src.rfft_scale * w.reshape(*w.shape[:-2], -1)[..., geo["sel"]]

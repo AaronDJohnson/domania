@@ -1,9 +1,14 @@
 """Maps out of the time domain: WDM cells, retained Fourier bins, crops and zero padding.
 
 Every evaluator here makes the library call of the WDM Paper II toy models it was ported
-from (they do not ship), so the NumPy path is bitwise:
+from (they do not ship), so for float64 input (other inputs are converted to float64 first)
+the NumPy path is bitwise:
 ``TimeToWDM.apply(d) == forward_time(d, window=dst.window)[mask][keep]``.  The Wilson window
 is the ``WDMDomain``'s (``dst.window`` of ``TimeToWDM``, ``src.window`` of ``WDMToTime``).
+
+``TimeToWDM``, ``WDMToTime`` and ``TimeToFourier.apply`` take real arrays: a complex, bool,
+str or object dtype raises ``TypeError`` before the conversion, which would otherwise drop
+an imaginary part with only a ``ComplexWarning``.
 """
 
 from __future__ import annotations
@@ -13,7 +18,8 @@ from typing import Any
 
 import numpy as np
 from domainia import wilson
-from domainia.wilson._checks import index_array, require_instance, require_int, require_real
+from domainia.wilson._checks import (REAL_KINDS, index_array, require_dtype, require_instance,
+                                     require_int, require_real)
 from domainia.wilson.backend import pytree_dataclass
 from domainia.wilson.transform import atom_spectrum, base_atom_spectra
 
@@ -69,8 +75,9 @@ class TimeToWDM(LinearMap):
         return self.dst.cells.grid
 
     def apply(self, x, be=None):
+        require_dtype("x", x, REAL_KINDS, "a real numeric array")
         be = self._be(x, be)
-        x = be.asarray(x)
+        x = be.xp.asarray(x, dtype=np.float64)
         g = self.grid
         if x.ndim == 1:
             w = wilson.forward_time(x, g.Nf, g.Nt, g.dt, be=be, window=self.dst.window)
@@ -86,8 +93,9 @@ class TimeToWDM(LinearMap):
         return be.set(full, (slice(None), self.m_idx, self.n_idx), Y, copy=False)
 
     def adjoint(self, y, be=None):
+        require_dtype("y", y, REAL_KINDS, "a real numeric array")
         be = self._be(y, be)
-        y = be.asarray(y)
+        y = be.xp.asarray(y, dtype=np.float64)
         g = self.grid
         x = g.dt * wilson.inverse_time_many(self._scatter(y, be), g.Nf, g.Nt, g.dt, be=be,
                                             window=self.dst.window)
@@ -134,8 +142,9 @@ class WDMToTime(LinearMap):
         return self.src.cells.grid
 
     def apply(self, y, be=None):
+        require_dtype("y", y, REAL_KINDS, "a real numeric array")
         be = self._be(y, be)
-        y = be.asarray(y)
+        y = be.xp.asarray(y, dtype=np.float64)
         g = self.grid
         Y = y.reshape(-1, y.shape[-1])
         full = be.xp.zeros((Y.shape[0], g.Nf + 1, g.Nt), dtype=Y.dtype)
@@ -144,7 +153,9 @@ class WDMToTime(LinearMap):
                                         window=self.src.window).reshape(*y.shape[:-1], g.N)
 
     def adjoint(self, x, be=None):
+        require_dtype("x", x, REAL_KINDS, "a real numeric array")
         be = self._be(x, be)
+        x = be.xp.asarray(x, dtype=np.float64)
         fwd = TimeToWDM(self.dst, self.src, m_idx=self.m_idx, n_idx=self.n_idx,
                         built_for=(self.dst, self.src))
         return fwd.apply(x, be) / self.grid.dt
@@ -170,11 +181,11 @@ class TimeToFourier(LinearMap):
     """``x -> rfft(x)[keep]``: the retained complex bins, ``fmin <= f < f_Nyq`` with DC and
     Nyquist dropped (kind ``"analysis"``).
 
-    ``apply`` returns the complex bins exactly as the ported toy models compute them
-    (``np.fft.rfft(r)[keep]``), because the Whittle density's ``2/N |R|^2`` order is
-    bitwise only on them.  Their real orthonormal coordinates are
-    ``sqrt(2/N) (Re R_k, -Im R_k)``, bin by bin, with rows :meth:`orthonormal_rows`.
-    ``dst`` has ``units="rfft"``.
+    For float64 input (other inputs are converted to float64 first), ``apply`` returns the
+    complex bins exactly as the ported toy models compute them (``np.fft.rfft(r)[keep]``),
+    because the Whittle density's ``2/N |R|^2`` order is bitwise only on them.  Their real
+    orthonormal coordinates are ``sqrt(2/N) (Re R_k, -Im R_k)``, bin by bin, with rows
+    :meth:`orthonormal_rows`.  ``dst`` has ``units="rfft"``.
     """
 
     src: TimeDomain
@@ -194,23 +205,27 @@ class TimeToFourier(LinearMap):
         require_instance("dst", self.dst, FourierDomain, "a FourierDomain")
 
     def apply(self, x, be=None):
+        require_dtype("x", x, REAL_KINDS, "a real numeric array")
         _last_axis(x, self.src.N, "TimeToFourier.apply")
         be = self._be(x, be)
         k0, n = self.dst.k0, self.dst.n
-        return be.fft.rfft(be.asarray(x), axis=-1)[..., k0:k0 + n]
+        return be.fft.rfft(be.xp.asarray(x, dtype=np.float64), axis=-1)[..., k0:k0 + n]
 
     def apply_complex(self, x, be=None):
-        """``F x`` for a complex series (``fft``, the kept bins)."""
+        """``F x`` for a complex series (``fft``, the kept bins), in complex128: complex input
+        is converted to complex128 first, real input to float64."""
         _last_axis(x, self.src.N, "TimeToFourier.apply_complex")
         be = self._be(x, be)
         k0, n = self.dst.k0, self.dst.n
-        return be.fft.fft(be.asarray(x), axis=-1)[..., k0:k0 + n]
+        x = be.xp.asarray(x, dtype=np.complex128 if np.iscomplexobj(x) else np.float64)
+        return be.fft.fft(x, axis=-1)[..., k0:k0 + n]
 
     def adjoint(self, y, be=None):
-        """``Re(F^H y)``: the real-inner-product adjoint, ``(N/2) irfft`` of the kept bins."""
+        """``Re(F^H y)``: the real-inner-product adjoint, ``(N/2) irfft`` of the kept bins.
+        ``y`` is converted to complex128 first (a real ``y`` too), so the result is float64."""
         _last_axis(y, self.dst.n, "TimeToFourier.adjoint")
         be = self._be(y, be)
-        y = be.asarray(y)
+        y = be.xp.asarray(y, dtype=np.complex128)
         N, k0, n = self.src.N, self.dst.k0, self.dst.n
         spec = be.xp.zeros((*y.shape[:-1], N // 2 + 1), dtype=complex)
         spec = be.set(spec, (..., slice(k0, k0 + n)), y, copy=False)

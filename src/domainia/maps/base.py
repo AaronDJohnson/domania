@@ -14,6 +14,18 @@ recomputing anything.  Constants given to a constructor (``dataclasses.replace``
 ``dataclasses.replace(map, dst=...)`` raises ``ValueError`` instead of reusing constants
 built for the old domain.
 
+Maps that compute (``TimeToWDM``, ``WDMToTime``, ``TimeToFourier``, ``FourierToWDM``,
+``FourierZeroPad``, ``FourierCrop``), and a push through one of them, return
+float64/complex128 whatever the input's precision; maps that only select, slice or
+zero-fill (``Identity``, ``CropTime``, ``ZeroPadTime``, ``Restrict``, ``BinSelect``), and their
+adjoints, return the input's dtype (``BinSelect.adjoint``: the input's complex
+counterpart), and a push through ``Identity`` or ``BinSelect`` returns the dtype of the
+covariance's ``dense()``.  ``Compose`` returns what its parts return.  (A push through an
+``Identity`` on a ``TimeDomain`` or a ``WDMDomain`` is a ``"real"`` push: it returns what
+``cov.matvec`` returns on float64 unit rows, float64 for a float32 matrix.)  The real inputs
+of ``TimeToWDM``, ``WDMToTime`` and ``TimeToFourier.apply`` refuse a complex, bool, str or
+object dtype with ``TypeError``.
+
 Map kinds (what ``apply`` takes and returns; ``adjoint`` is the adjoint for the real
 inner product, ``<z, z'> = Re sum conj(z) z'`` on complex vectors):
 
@@ -459,7 +471,9 @@ class BinSelect(LinearMap):
 
     def adjoint(self, y, be=None):
         be = self._be(y, be)
-        out = be.xp.zeros((*y.shape[:-1], self.src.n), dtype=complex)
+        # the input's complex counterpart, computed on the host so both backends agree
+        out = be.xp.zeros((*y.shape[:-1], self.src.n),
+                          dtype=np.result_type(np.dtype(y.dtype), np.complex64))
         return be.set(out, (..., slice(self.offset, self.offset + self.dst.n)), y, copy=False)
 
     def push_rows(self, Mp, idx, be=None):
