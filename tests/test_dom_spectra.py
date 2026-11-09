@@ -1,4 +1,4 @@
-"""D-B6: TabulatedSpectrum and GenericPSD."""
+"""TabulatedSpectrum and GenericPSD."""
 
 from __future__ import annotations
 

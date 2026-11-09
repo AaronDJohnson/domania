@@ -1,4 +1,4 @@
-"""C8: the stateless WDM Paper II kernels (domainia.wilson.evolutionary,
+"""The stateless WDM Paper II kernels (domainia.wilson.evolutionary,
 domainia.wilson.special, domainia.wilson.noise).
 
 Every kernel is checked against its source: the frozen wdm_dev oracle
@@ -116,7 +116,7 @@ def test_energy_fraction_and_time_mask_match_the_dense_mask(rng):
 
 
 def test_wrap_rule_on_the_sinusoid_grid():
-    """G5: (6, 5) at (64, 256, 2**-10).  The last cut columns wrap 0.11200% (col 5)
+    """The cut is (6, 5) at (64, 256, 2**-10).  The last cut columns wrap 0.11200% (col 5)
     and 0.11708% (col 251); the first kept ones 0.0631% (cols 6 and 250)."""
     frac = np.nanmax(E.wrap_fractions(64, 256, 2.0**-10), axis=0)
     assert E.wrap_cut_columns(64, 256, 2.0**-10) == (6, 5)

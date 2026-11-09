@@ -1,4 +1,4 @@
-"""D-C11: the covariance package's public surface (section D-C gate).
+"""The covariance package's public surface.
 
 * ``domainia.covariance`` exports exactly the documented names; importing it never
   imports JAX.

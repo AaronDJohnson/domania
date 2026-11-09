@@ -7,8 +7,9 @@ likelihood path).  Every oracle here is ``O(N^2)`` memory or worse: keep ``N`` <
   (``wilson.evolutionary.eq45_direct``).
 * :func:`blocktri_dense`: a ragged block-tridiagonal matrix assembled densely.
 * :func:`hhat`, :func:`eq54_covariance`, :func:`dense_lambda_generic`: the generic
-  Eq. (54) covariance of a modulated stationary process on Fourier bins and its WDM
-  form (ported from the galactic-binary toy model, which does not ship).
+  Eq. (54) covariance of a modulated stationary process on Fourier bins, and its
+  congruence by atoms ``U``, in Wilson units for ``U = FourierToWDM.C`` (ported from the
+  galactic-binary toy model, which does not ship).
 
 :func:`dense_W`, :func:`wdm_congruence` and :func:`eq45_dense` take ``window=`` (default
 Meyer: the WDM transform) and compute in the Wilson basis of that window.
@@ -141,7 +142,13 @@ def eq54_covariance(s_I: Array, s_G_src: Array, h: CArray, *, margin: int) -> CA
 def dense_lambda_generic(U: CArray, s_I: Array, s_G_src: Array, h: CArray, *,
                          margin: int) -> Array:
     r""":math:`\Lambda = \tfrac12\mathrm{Re}(U M U^\dagger)` with ``M`` from
-    :func:`eq54_covariance` and ``U`` the unit-norm atoms on the ``G`` grid bins."""
+    :func:`eq54_covariance` and ``U`` the unit-norm atoms on the ``G`` grid bins.
+
+    ``Lambda`` is in the units of ``U``: ``Lambda(U) = Lambda(C) / kappa**2`` for
+    ``C = kappa U`` (:class:`~domainia.maps.FourierToWDM`), so ``N / (2 dt)`` times the
+    Wilson-unit ``Lambda`` for ``"rfft"``-unit bins only.  ``U = FourierToWDM.C`` gives Wilson
+    units for a directly built map, not for a ``restrict=True`` or ``after()`` map (its ``C``
+    is not ``kappa U`` on the window's ``G`` bins)."""
     U = np.asarray(U)
     M = eq54_covariance(s_I, s_G_src, h, margin=margin)
     return 0.5 * np.real(U @ M @ U.conj().T)

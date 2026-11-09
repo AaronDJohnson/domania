@@ -1,4 +1,4 @@
-"""D-A3: the dense oracles of ``domainia.testing`` against independent constructions."""
+"""The dense oracles of ``domainia.testing`` against independent constructions."""
 
 from __future__ import annotations
 
@@ -9,7 +9,8 @@ from domainia import wilson
 from domainia.wilson.evolutionary import (eq45_blocks_cheb, eq45_coeffs_bessel, eq45_plan, exact_covariance,
                               time_domain_covariance)
 from domainia import testing as T
-from domainia.domains import CellSet
+from domainia.domains import CellSet, FourierDomain, WDMDomain
+from domainia.maps import FourierToWDM
 
 # The WDM Paper II toy models' test configuration: 8 x 16 cells, dt = 1/16, f_min = 0.5,
 # f_ref = 1.
@@ -119,6 +120,20 @@ def test_eq54_is_the_covariance_of_a_modulated_stationary_process(rng):
     U = rng.standard_normal((6, G)) + 1j * rng.standard_normal((6, G))
     lam = T.dense_lambda_generic(U, np.zeros(G), Nr * S[src], h, margin=margin)
     assert np.array_equal(lam, 0.5 * np.real(U @ got @ U.conj().T))
+
+
+def test_dense_lambda_generic_of_a_maps_C_is_its_push(rng):
+    """``U = W.C`` of a ``FourierToWDM`` ``W`` built directly over the band window gives
+    ``Lambda`` in Wilson units: the push of the Eq. (54) covariance through ``W``."""
+    dst = WDMDomain(CellSet.bands(GRID, (2, 3, 4)))
+    W = FourierToWDM(FourierToWDM(FourierDomain(N, DT, 0, N // 2 + 1, "rfft"), dst).window, dst)
+    G, margin = W.src.n, 3
+    h = np.zeros(2 * (G + margin) + 1, complex)
+    h[G + margin - 1:G + margin + 2] = 0.2 - 0.1j, 1.0, 0.2 + 0.1j      # lags -1, 0, 1
+    sI, sG = rng.uniform(0.5, 1.0, G), rng.uniform(1.0, 2.0, G + 2 * margin)
+    lam = T.dense_lambda_generic(W.C, sI, sG, h, margin=margin)
+    M = T.eq54_covariance(sI, sG, h, margin=margin)
+    assert rel(lam, W.push_rows(M, np.arange(W.shape[0]))) < 1e-14
 
 
 def test_eq54_with_a_constant_envelope_is_diagonal():

@@ -1,4 +1,4 @@
-"""C9: the NumPy-only CI lane.
+"""The NumPy-only CI lane.
 
 ``WDM_TESTS_HIDE_JAX=1`` makes ``import jax`` fail inside the test session, so
 every JAX test must skip -- and every NumPy test must still pass.

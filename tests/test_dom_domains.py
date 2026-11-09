@@ -1,4 +1,4 @@
-"""D-A2: domains and cell sets."""
+"""Domains and cell sets."""
 
 from __future__ import annotations
 

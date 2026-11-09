@@ -1,4 +1,4 @@
-"""C2: the backend shim."""
+"""The backend shim."""
 
 from __future__ import annotations
 

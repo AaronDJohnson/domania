@@ -1,4 +1,4 @@
-"""C6: packing helpers, the Hz window, atoms and band-limited analysis."""
+"""Packing helpers, the Hz window, atoms and band-limited analysis."""
 
 from __future__ import annotations
 

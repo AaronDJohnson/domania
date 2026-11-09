@@ -1,4 +1,4 @@
-"""D-B2: TimeToWDM and WDMToTime -- dense oracles and adjoints."""
+"""TimeToWDM and WDMToTime -- dense oracles and adjoints."""
 
 from __future__ import annotations
 

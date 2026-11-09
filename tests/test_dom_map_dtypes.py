@@ -1,4 +1,4 @@
-"""The maps compute in double (spec 2026-11-08 §1): a map that computes returns
+"""The maps compute in double: a map that computes returns
 float64/complex128 whatever the input's precision, integers included; a map that only
 selects, slices or zero-fills returns its input's dtype (``BinSelect.adjoint``: the input's
 complex counterpart).  One table over every public map method that takes data, on NumPy and
@@ -247,7 +247,7 @@ def test_the_time_maps_do_not_follow_the_grid_dt_type(dt, rng):
 
 
 def test_fourier_domains_store_python_floats():
-    """Spec §1.5: ``FourierDomain`` stores ``dt`` and ``sigma0`` as Python floats, so
+    """``FourierDomain`` stores ``dt`` and ``sigma0`` as Python floats, so
     ``rfft_scale`` is one too and no weak-type promotion depends on the caller's scalar."""
     d = FourierDomain(GRID.N, np.float64(0.5), 0, 65, "dt_rfft")
     s = FourierDomain(GRID.N, 0.5, 0, 65, "sigma0", sigma0=np.float32(2.5))

@@ -1,4 +1,4 @@
-"""D-B7: the section's public names, and no JAX import from maps, spectra or variance."""
+"""The public names of maps, spectra and variance, and no JAX import from them."""
 
 from __future__ import annotations
 

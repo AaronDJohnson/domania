@@ -1,4 +1,4 @@
-"""C3: the transform over the backend shim.
+"""The transform over the backend shim.
 
 NumPy: the frozen oracle vendored_2f7136c to rounding on random grids, dt != 1,
 float32 and float64, batched and unbatched.  Bit-identical up to v0.11.0; the

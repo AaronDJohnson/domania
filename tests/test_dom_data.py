@@ -1,4 +1,4 @@
-"""D-A2: data vectors are pytrees with static domains."""
+"""Data vectors are pytrees with static domains."""
 
 from __future__ import annotations
 

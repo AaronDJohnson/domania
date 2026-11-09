@@ -316,10 +316,9 @@ class FourierToWDM(LinearMap):
 
     @property
     def window(self) -> FourierDomain:
-        """The band windows' bins ``[g0, g0 + G)`` of the cells' grid record
-        (480 / 876 / 1800 for the galactic-binary toy model).  The record is ``dst``'s grid,
-        not ``src``'s: the two agree for a built map (the constructor checks it), while a map
-        returned by :meth:`after` reads the bins of the outer record.  It is
+        """The band windows' bins ``[g0, g0 + G)`` of the cells' grid record.  The record is
+        ``dst``'s grid, not ``src``'s: the two agree for a built map (the constructor checks
+        it), while a map returned by :meth:`after` reads the bins of the outer record.  It is
         ``dataclasses.replace`` of ``src``, so ``units`` and ``sigma0`` are ``src``'s.  (These
         are band-window *bins*.  The Wilson window of the cells is ``dst.window``.)"""
         geo = _geometry(self.dst)

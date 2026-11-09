@@ -1,4 +1,4 @@
-"""D-B3: TimeToFourier, CropTime, ZeroPadTime -- the Whittle bins, the crop, the pad."""
+"""TimeToFourier, CropTime, ZeroPadTime -- the Whittle bins, the crop, the pad."""
 
 from __future__ import annotations
 

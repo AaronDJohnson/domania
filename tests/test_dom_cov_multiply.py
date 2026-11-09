@@ -1,6 +1,6 @@
 """Covariance.multiply: ``Sigma(nu) b`` in the layout of the factor's ``solve``, for every
 covariance class, and ChannelStack's dense form.  ``multiply`` and the factors' ``solve``,
-``whiten`` and ``quad`` check the leading shape of ``b`` (spec 2026-11-08 §2.8)."""
+``whiten`` and ``quad`` check the leading shape of ``b``."""
 
 from __future__ import annotations
 
@@ -137,7 +137,7 @@ def test_a_covariance_with_neither_multiply_nor_a_dense_form_raises_type_error()
         _FactorOnly().multiply(np.zeros(1), np.ones(3))
 
 
-# --- the leading shape of b (spec 2026-11-08 §2.8) ------------------------------------------
+# --- the leading shape of b -----------------------------------------------------------------
 
 N = CELLS.size
 NU2 = np.array([0.3, 0.0, -1.1, 0.6])
@@ -147,8 +147,8 @@ def _two_channels():
     return ChannelStack([COVS["diagonal-callable"](), COVS["diagonal-array"]()], 2)
 
 
-#: The three silent modes: ``(cov, nu, b, multiply's leading shape, the factor's)``.  Before
-#: §2.8 a ``DiagonalCovariance`` broadcast a ``(1,)`` ``b``, a ``BlockTridiagonalCovariance``
+#: The three silent modes: ``(cov, nu, b, multiply's leading shape, the factor's)``.  Before,
+#: a ``DiagonalCovariance`` broadcast a ``(1,)`` ``b``, a ``BlockTridiagonalCovariance``
 #: cut an ``(n + 1,)`` one to its first ``n`` entries (both layouts), and a two-channel
 #: ``ChannelStack`` dropped a third row, all without an error.
 SILENT = {

@@ -1,4 +1,4 @@
-"""C4: domainia.wilson.noise and domainia.wilson.stationary against the frozen oracle.
+"""domainia.wilson.noise and domainia.wilson.stationary against the frozen oracle.
 
 Bit for bit up to v0.11.0.  The Hz window of v0.12.0 (Paper I eq:Meyer-def: phi flat
 value 1/sqrt(Delta F), stationary prefactor 1/N, against the oracle's omega-normalised
@@ -103,7 +103,7 @@ def test_colored_noise_and_empirical_variance_are_the_oracle_to_rounding():
     (8, np.nan, "dt must be a positive finite number"),
 ])
 def test_colored_noise_rejects_bad_N_and_dt(N, dt, match):
-    """``colored_noise`` is public since C4, so it validates like every entry point.
+    """``colored_noise`` is public, so it validates like every entry point.
 
     Unvalidated, an odd N has no Nyquist bin yet bin N//2 was drawn real-only,
     so the noise was not stationary (per-sample variance 0.79--1.22 of its mean

@@ -1,5 +1,5 @@
-"""D-A5: the wdm_dev EV linear-algebra tests retired from ``wdm`` in C8 (part-1 plan note 7),
-re-homed on ``domainia`` (originals: tests/wilson/vendored/test_evolutionary.py,
+"""The wdm_dev EV linear-algebra tests that ``wdm`` retired when it kept only the stateless
+kernels, re-homed on ``domainia`` (originals: tests/wilson/vendored/test_evolutionary.py,
 which still runs them against the frozen ``wdm_dev_ev`` oracle), on the one factor family
 of ``domainia.covariance``."""
 

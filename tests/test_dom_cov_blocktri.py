@@ -1,4 +1,4 @@
-"""D-C2: BlockTridiagonalCovariance in the ragged and padded layouts.
+"""BlockTridiagonalCovariance in the ragged and padded layouts.
 
 * Both layouts are the dense Gaussian of the assembled block-tridiagonal matrix.
 * Strategy cross-check: padded vs ragged <= 1e-12.

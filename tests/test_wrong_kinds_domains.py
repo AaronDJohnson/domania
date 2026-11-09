@@ -1,5 +1,5 @@
-"""``domainia.domains`` refuses a wrong kind with ``TypeError`` and a wrong value with ``ValueError``
-(spec 2026-11-08 §1.5, §2.3-§2.6): grids, cell sets, real scalars, ``units``, integers, index
+"""``domainia.domains`` refuses a wrong kind with ``TypeError`` and a wrong value with
+``ValueError``: grids, cell sets, real scalars, ``units``, integers, index
 arrays, the ``from_mask`` mask and channel names."""
 
 from __future__ import annotations
@@ -128,7 +128,7 @@ def test_a_missing_sigma0_stays_a_value_error():
 @pytest.mark.parametrize("v", [np.float64(0.5), np.int64(2), np.float32(0.5), Fraction(1, 2), 2],
                          ids=["float64", "int64", "float32", "Fraction", "int"])
 def test_real_scalars_are_taken_and_stored_as_float(v):
-    """Spec §1.5: the domains store ``dt``, ``t0`` and ``sigma0`` as Python floats, so
+    """The domains store ``dt``, ``t0`` and ``sigma0`` as Python floats, so
     ``rfft_scale`` stays a Python float too."""
     t = TimeDomain(128, v, v)
     assert (type(t.dt), type(t.t0)) == (float, float) and (t.dt, t.t0) == (float(v), float(v))

@@ -1,4 +1,4 @@
-"""D-C1: the covariance protocol, DiagFactor / CholFactor, DiagonalCovariance, DenseCovariance.
+"""The covariance protocol, DiagFactor / CholFactor, DiagonalCovariance, DenseCovariance.
 
 * Every factor is the dense Gaussian: solve, whiten, the three quadratic-form orders,
   log-determinant -- on both backends.

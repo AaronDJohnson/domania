@@ -1,4 +1,4 @@
-"""D-A6: preconditioned CG -- one frozen-row body (the GPU toy models' semantics) whose
+"""Preconditioned CG -- one frozen-row body (the GPU toy models' semantics) whose
 single-row run is the WDM Paper II toy models' early-exit loop bit for bit, with their
 true-residual check (NumPy)."""
 

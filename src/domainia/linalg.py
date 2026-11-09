@@ -429,7 +429,7 @@ def blocktri_solve_packed(f: BlockTriFactor, b: Any, *, be: Backend | None = Non
 
 
 # ---------------------------------------------------------------------------
-# Complex Hermitian block-tridiagonal (the galactic-binary 12-month exact model)
+# Complex Hermitian block-tridiagonal
 # ---------------------------------------------------------------------------
 
 

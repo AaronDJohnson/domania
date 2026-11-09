@@ -120,7 +120,7 @@ def test_eq45_plan_P_range_and_numpy_int():
 
 
 # ---------------------------------------------------------------------------
-# The other wilson sites (spec 2026-11-08 §2.3-§2.5, §3.5)
+# The other wilson sites
 # ---------------------------------------------------------------------------
 
 _T, _IP = wilson.transform, wilson.inner_product
@@ -331,7 +331,7 @@ def test_cholesky_keeps_its_choices(backend):
         backend.cholesky(A, impl="lapack")
 
 
-#: The real-array checks of spec §3.5: the call, an accepted float64 array, and the name in
+#: The real-array checks: the call, an accepted float64 array, and the name in
 #: the message.
 _REAL_ARRAYS = {
     "inverse wmn": (lambda a: wilson.inverse(a, 8, 16, 1.0), _W, "wmn"),

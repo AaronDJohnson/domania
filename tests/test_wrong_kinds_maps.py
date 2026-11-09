@@ -1,5 +1,5 @@
-"""``domainia.maps`` refuses a wrong kind with ``TypeError`` and a wrong value with ``ValueError``
-(spec 2026-11-08 §2.3-§2.7): domains, counts, index arrays, ``fmin``, ``restrict``, ``impl``,
+"""``domainia.maps`` refuses a wrong kind with ``TypeError`` and a wrong value with
+``ValueError``: domains, counts, index arrays, ``fmin``, ``restrict``, ``impl``,
 ``after``'s inner map and ``Compose``'s parts."""
 
 from __future__ import annotations
@@ -270,7 +270,7 @@ def _every_map():
 @pytest.mark.parametrize("leaf", [lambda x: None, lambda x: object()], ids=["None", "object"])
 def test_jax_rebuilds_with_placeholder_leaves_still_work(leaf):
     """``jax.tree_util`` rebuilds a map through its constructor, with placeholders for the
-    arrays it carries (spec §2.7): the checks read only static fields and map arguments."""
+    arrays it carries: the checks read only static fields and map arguments."""
     jax, _ = jax_or_skip()
     maps = _every_map()
     assert len({type(m) for m in maps}) == 12

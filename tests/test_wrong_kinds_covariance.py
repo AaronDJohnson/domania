@@ -1,5 +1,5 @@
 """``domainia.covariance`` refuses a wrong kind with ``TypeError`` and a wrong value with
-``ValueError`` (spec 2026-11-08 §2.3, §2.5, §2.6, §2.9)."""
+``ValueError``."""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ def _cases(slots, wrong):
             for value, kind in wrong if not (value is None and none_is_default)]
 
 
-# --- integers (spec §2.3, §2.9) -------------------------------------------------------------
+# --- integers -------------------------------------------------------------------------------
 
 INT_SLOTS = {
     "DiagonalCovariance.n": (lambda v: DiagonalCovariance(V, v), "n", False),
@@ -99,7 +99,7 @@ def test_count_ranges_stay_value_errors():
                 _ev(P=P, **kw)
 
 
-# --- flags (spec §2.5) ----------------------------------------------------------------------
+# --- flags ----------------------------------------------------------------------------------
 
 FLAG_SLOTS = {
     "DenseCovariance.symmetrize": (
@@ -132,7 +132,7 @@ def test_numpy_bool_flags_pass_and_are_stored_as_bool():
         assert float(F.logdet) == pytest.approx(np.log(64.0), rel=1e-15)
 
 
-# --- string options (spec §2.5) -------------------------------------------------------------
+# --- string options -------------------------------------------------------------------------
 
 DIAG_F = DiagonalCovariance(V, 4).factor(NU)
 CHOL_F = DenseCovariance(S, 4, chol_impl="numpy").factor(NU)
@@ -192,7 +192,7 @@ def test_unknown_strings_stay_value_errors(make, match):
         make()
 
 
-# --- covariances and callables (spec §2.6) --------------------------------------------------
+# --- covariances and callables --------------------------------------------------------------
 
 @pytest.mark.parametrize(("covs", "index", "kind"), [
     ([1], 0, "int"), ("ab", 0, "str"), ([None], 0, "NoneType"), ([S], 0, "ndarray"),
@@ -216,7 +216,7 @@ def test_the_psd_must_be_callable():
         EvolutionaryCovariance(object(), CELLS)
 
 
-# --- t_max (spec §2.4, §2.9) ----------------------------------------------------------------
+# --- t_max ----------------------------------------------------------------------------------
 
 @pytest.mark.parametrize("kw", [{}, DIRECT], ids=["interp", "direct"])
 @pytest.mark.parametrize(("t_max", "kind"), [

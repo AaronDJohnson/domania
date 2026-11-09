@@ -1,4 +1,4 @@
-"""D-A7: the linear algebra on JAX -- jit/vmap with the constants passed as arguments,
+"""The linear algebra on JAX -- jit/vmap with the constants passed as arguments,
 parity with NumPy, the eager-only oracle modes refusing to trace, x64 enforced."""
 
 from __future__ import annotations

@@ -110,7 +110,7 @@ DATA = [(TimeSeries, TIME, np.zeros((1, 128))), (FourierBins, BINS, np.zeros((1,
 ])
 def test_data_channels_must_be_a_channel_axis(cls, domain, values, channels, kind):
     """A tuple, a str or ``None`` used to raise a bare ``AttributeError`` (``channels.size``),
-    and a NumPy scalar was taken as a one-name axis (spec §2.6)."""
+    and a NumPy scalar was taken as a one-name axis."""
     message = f"{cls.__name__}.channels must be a ChannelAxis, got {kind}"
     with pytest.raises(TypeError, match=exactly(message)):
         cls(values, domain, channels)
@@ -155,7 +155,7 @@ def test_translate_kind_messages_say_got(call, message):
     (np.full((1, 128), "1"), "<U1"), (np.ones((1, 128)).astype(object), "object"),
 ])
 def test_from_coordinates_refuses_coordinates_that_are_not_real(R, dtype):
-    """Complex coordinates used to raise ``ValueError`` (spec §3.5): ``R`` is never complex."""
+    """Complex coordinates used to raise ``ValueError``: ``R`` is never complex."""
     message = f"R must be an array of real coordinates, got dtype {dtype}"
     with pytest.raises(TypeError, match=exactly(message)):
         from_coordinates(R, TIME, ("A",))
@@ -168,14 +168,14 @@ def test_from_coordinates_takes_numpy_integers_and_floats():
 
 
 def test_complex_values_on_a_time_domain_stay_a_value_error():
-    """Complex values are valid on a ``FourierDomain``: the domain makes them wrong (spec §3.5)."""
+    """Complex values are valid on a ``FourierDomain``: the domain makes them wrong."""
     with pytest.raises(ValueError, match="complex values on a real TimeDomain"):
         transform({"A": np.ones(128) + 0j}, TIME, WDM)
 
 
 @pytest.mark.parametrize("part", ["real", "imaginary"])
 def test_to_coordinates_refuses_an_overflowing_sqrt2_scaling(part):
-    """``sqrt(2) * 1.3e308`` overflows float64; it used to come back as ``inf`` (spec §2.9).
+    """``sqrt(2) * 1.3e308`` overflows float64; it used to come back as ``inf``.
     NumPy warns about the overflow before the check runs, hence ``np.errstate``."""
     unit = 1.0 if part == "real" else 1j
     X = np.zeros(65, complex)

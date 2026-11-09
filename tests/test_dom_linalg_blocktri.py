@@ -1,4 +1,4 @@
-"""D-A4: diagonal, dense-Cholesky and block-tridiagonal factors against dense linear
+"""Diagonal, dense-Cholesky and block-tridiagonal factors against dense linear
 algebra and, bit for bit, against the oracle formulas they port (NumPy).  The diagonal and
 dense factors are the one family of ``domainia.covariance``."""
 

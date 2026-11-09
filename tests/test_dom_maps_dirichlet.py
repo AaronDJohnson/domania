@@ -1,4 +1,4 @@
-"""D-B4: pad_maps / crop_maps (exact Dirichlet kernels), FourierZeroPad, FourierCrop."""
+"""pad_maps / crop_maps (exact Dirichlet kernels), FourierZeroPad, FourierCrop."""
 
 from __future__ import annotations
 

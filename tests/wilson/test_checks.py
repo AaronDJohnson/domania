@@ -1,4 +1,4 @@
-"""The shared argument checks of ``domainia.wilson._checks`` (spec 2026-11-08 §2.2): each helper
+"""The shared argument checks of ``domainia.wilson._checks``: each helper
 returns the value it accepts and refuses every other kind with ``TypeError`` and the message
 ``"{name} must be <kind>, got <type or dtype>"``; a wrong value is the caller's ``ValueError``."""
 
@@ -252,7 +252,7 @@ def _noise(N):
     (lambda: domains.TimeDomain(8.0, 1.0), "N must be an integer, got float"),
 ], ids=["_require_int", "validate_grid", "n_samples", "nu_d", "colored_noise", "Meyer", "domains._int"])
 def test_the_seven_integer_checks_raise_the_helpers_message(call, message):
-    """The seven copies of the integer check (spec 2026-11-08, Context) call ``require_int``."""
+    """The seven copies of the integer check call ``require_int``."""
     with pytest.raises(TypeError, match=_exact(message)):
         call()
 

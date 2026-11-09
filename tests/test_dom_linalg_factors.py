@@ -1,4 +1,4 @@
-"""D-A5: the complex Hermitian block factor (``linalg.cblock_factor`` / ``cblock_forward`` /
+"""The complex Hermitian block factor (``linalg.cblock_factor`` / ``cblock_forward`` /
 ``cblock_backward``) against, bit for bit, the galactic-binary toy model's formulas it
 ports (NumPy)."""
 

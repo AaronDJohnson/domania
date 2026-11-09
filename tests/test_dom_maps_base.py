@@ -1,4 +1,4 @@
-"""D-B1: the LinearMap base, PushedCovariance, Identity, Compose, Restrict, BinSelect."""
+"""The LinearMap base, PushedCovariance, Identity, Compose, Restrict, BinSelect."""
 
 from __future__ import annotations
 

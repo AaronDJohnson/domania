@@ -173,7 +173,7 @@ def test_jax_float32_runs_are_single_precision(name, jax_be, rng):
 
 
 # ---------------------------------------------------------------------------
-# The single-precision guard (spec 2026-11-08 §1.4): a float32 run that overflows raises
+# The single-precision guard: a float32 run that overflows raises
 # ---------------------------------------------------------------------------
 
 

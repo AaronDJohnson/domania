@@ -226,7 +226,7 @@ def _check_single_output(out: NDArray[np.generic], entry: str) -> None:
     product, FFT or scaling overflowed.  NumPy only warns on the way and JAX
     says nothing, so the caller would get ``nan`` cells.  Each entry point
     checks the arrays it computes itself, so the message names the function
-    whose array overflowed (spec 2026-11-08 §1.4).
+    whose array overflowed.
 
     Host work, as :func:`_check_finite` is: skipped for a double-precision
     result (float64 runs gain no pass) and for a JAX tracer.  It does not
