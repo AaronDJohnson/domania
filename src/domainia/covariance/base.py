@@ -45,6 +45,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, Protocol, runtime_checkable
 
 import numpy as np
+from domainia.wilson._checks import require_bool, require_str
 from domainia.wilson.backend import NUMPY, Backend, get_backend, pytree_dataclass, require_x64
 from domainia.wilson.windows import Window
 
@@ -163,7 +164,9 @@ def as_evaluator(obj: Any, **kwargs: Any) -> Evaluator:
 
 def quad_form(factor: Any, b: Any, form: QuadForm, be: Backend, C: Any = None) -> Any:
     """``b^T C^-1 b`` in the operation order ``form`` (module docstring); ``C`` the factor's
-    constants (passed through to ``solve`` / ``whiten``)."""
+    constants (passed through to ``solve`` / ``whiten``).  A ``form`` that is not a string
+    raises ``TypeError``; a string the factor has no order for raises ``ValueError``."""
+    require_str("form", form)
     if form == "solve":
         return b @ factor.solve(b, C=C, be=be)
     if form == "whiten":
@@ -219,7 +222,7 @@ class DiagFactor:
 
     def quad(self, b: Any, *, C: Any = None, form: QuadForm = "solve", be: Backend | None = None) -> Any:
         be = be or get_backend(self.v, b)
-        if form == "elementwise":
+        if require_str("form", form) == "elementwise":
             return be.xp.sum(b ** 2 / self.v)
         return quad_form(self, b, form, be)
 
@@ -372,14 +375,16 @@ class Covariance:
         ``jax.jit(lambda C, nu, pre: self._factor(C, nu, be, key=key, pre=pre))``, the
         constants and the :meth:`prepare` output (staged rows) passed as its arguments.
         NumPy, ``jit=False`` or a non-jittable covariance: eager, in the same order (the
-        reference path).
+        reference path).  ``jit`` is ``None`` or a bool on every backend (``TypeError``
+        otherwise).
         """
+        jit = None if jit is None else require_bool("jit", jit)
         be = be or get_backend(nu)
         C = self.constants(be)
         nu = be.asarray(nu)
         key = self.state_key(np.asarray(nu, dtype=float))
         kw = {"key": key} if self.threads_key else {}
-        if be.name == "jax" and (self.jittable if jit is None else bool(jit)):
+        if be.name == "jax" and (self.jittable if jit is None else jit):
             pre = self.prepare(C, nu, be, key)
             fns = self.__dict__.setdefault("_jit_cache", {})
             if ("factor", key) not in fns:

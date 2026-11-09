@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from domainia.wilson._checks import require_instance, require_int
 from domainia.wilson.backend import Backend, get_backend, pytree_dataclass
 from domainia.wilson.windows import Window
 
@@ -62,7 +63,9 @@ class ChannelStack(Covariance):
         self.covs = tuple(covs)
         if not self.covs:
             raise ValueError("ChannelStack needs at least one channel")
-        self.k = int(params_per_channel)
+        for c, cov in enumerate(self.covs):
+            require_instance(f"covs[{c}]", cov, Covariance, "a Covariance")
+        self.k = require_int("params_per_channel", params_per_channel)
         if self.k < 0:
             raise ValueError(f"params_per_channel must be non-negative; got {params_per_channel}")
         self.n = sum(c.n for c in self.covs)

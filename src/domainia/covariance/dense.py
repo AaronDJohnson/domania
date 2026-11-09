@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from domainia.wilson._checks import require_bool, require_int, require_str
 from domainia.wilson.backend import Backend
 
 from .base import CholFactor, Covariance, as_evaluator
@@ -17,8 +18,10 @@ def dense_factor(S: Any, *, chol_impl: Literal["numpy", "scipy"], symmetrize: bo
 
     For example ``np.linalg.cholesky(0.5 * (S + S.T))`` (``chol_impl="numpy"``,
     ``symmetrize=True``) or ``cho_factor(S)`` (``"scipy"``, ``symmetrize=False``).
+    ``symmetrize`` must be a bool and ``chol_impl`` a string (``TypeError`` otherwise).
     """
-    if symmetrize:
+    require_str("chol_impl", chol_impl)
+    if require_bool("symmetrize", symmetrize):
         S = 0.5 * (S + S.T)
     return CholFactor.build(S, impl=chol_impl, be=be)
 
@@ -34,12 +37,12 @@ class DenseCovariance(Covariance):
 
     def __init__(self, matrix: Any, n: int, *, chol_impl: Literal["numpy", "scipy"],
                  symmetrize: bool = True) -> None:
-        if chol_impl not in ("numpy", "scipy"):
+        if require_str("chol_impl", chol_impl) not in ("numpy", "scipy"):
             raise ValueError(f"chol_impl must be 'numpy' or 'scipy'; got {chol_impl!r}")
         self.matrix = as_evaluator(matrix)
-        self.n = int(n)
+        self.n = require_int("n", n)
         self.chol_impl = chol_impl
-        self.symmetrize = bool(symmetrize)
+        self.symmetrize = require_bool("symmetrize", symmetrize)
 
     def host_constants(self) -> Any:
         return self.matrix.host_constants()

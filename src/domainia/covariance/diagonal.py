@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from domainia.wilson._checks import require_int
 from domainia.wilson.backend import Backend
 from domainia.wilson.windows import Window
 
@@ -33,12 +34,14 @@ class DiagonalCovariance(Covariance):
     """
 
     def __init__(self, variance: Any, n: int, *, channel: int | None = None) -> None:
+        n = require_int("n", n)
+        channel = None if channel is None else require_int("channel", channel)
         cells = getattr(variance, "cells", None)
         self.cells = cells if isinstance(cells, CellSet) else None
         window = getattr(variance, "window", None)
         self._window = window if isinstance(window, Window) else None
-        self.variance = as_evaluator(variance, **({} if channel is None else {"channel": int(channel)}))
-        self.n = int(n)
+        self.variance = as_evaluator(variance, **({} if channel is None else {"channel": channel}))
+        self.n = n
         self.jittable = bool(getattr(variance, "jittable", True))
 
     @property

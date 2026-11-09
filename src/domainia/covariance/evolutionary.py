@@ -25,6 +25,7 @@ from typing import Any, Literal
 
 import numpy as np
 
+from domainia.wilson._checks import require_bool, require_callable, require_int, require_real, require_str
 from domainia.wilson.backend import Backend, get_backend
 from domainia.wilson.evolutionary import eq45_blocks_cheb, eq45_coeffs_interp, eq45_direct, eq45_plan
 from domainia.wilson.grid import packed_cells
@@ -111,9 +112,12 @@ class EvolutionaryCovariance(Covariance):
         ``"blocktri"`` (``layout`` ``"ragged"``, default, or ``"padded"``) or ``"dense"``
         (``chol_impl``, ``symmetrize`` as :class:`DenseCovariance`).
     t_max
-        End of the Chebyshev time domain (default: the cells' grid ``T``).
+        End of the Chebyshev time domain (default: the cells' grid ``T``).  A real number,
+        checked at construction; whether the kept pair mid-times lie inside
+        ``[0, t_max]`` is the plan's check, at the first factorisation.
     P
-        Chebyshev order of ``interp`` (24).
+        Chebyshev order of ``interp`` (24): an integer ``>= 1``, checked at construction
+        for every builder.
     window
         The Wilson window of the cells' basis.  ``None`` (default) means the
         ``WDMDomain``'s window, or :data:`~domainia.wilson.MEYER` for a ``CellSet``; a
@@ -124,21 +128,26 @@ class EvolutionaryCovariance(Covariance):
                  layout: str | None = None, t_max: float | None = None, P: int = 24,
                  chol_impl: Literal["numpy", "scipy"] = "numpy", symmetrize: bool = True,
                  window: Window | None = None) -> None:
-        if builder not in BUILDERS:
+        if require_str("builder", builder) not in BUILDERS:
             raise ValueError(f"unknown builder {builder!r}; expected one of {BUILDERS}")
-        if not callable(psd):
-            raise TypeError(f"builder {builder!r} needs a callable PSD psd(f, t, nu); "
-                            f"{type(psd).__name__} is not callable")
+        require_callable("psd", psd)
         cells, window = _cells_and_window(cells, window)
-        if assembly not in ("blocktri", "dense"):
+        if require_str("assembly", assembly) not in ("blocktri", "dense"):
             raise ValueError(f"assembly must be 'blocktri' or 'dense'; got {assembly!r}")
         if builder == "direct" and assembly != "dense":
             raise ValueError("builder 'direct' needs assembly='dense'")
-        if layout is not None and assembly == "dense":
-            raise ValueError(f"layout applies to assembly='blocktri' only; got layout={layout!r} "
-                             "with assembly='dense'")
-        if chol_impl not in ("numpy", "scipy"):
+        if layout is not None:
+            require_str("layout", layout)
+            if assembly == "dense":
+                raise ValueError(f"layout applies to assembly='blocktri' only; got layout={layout!r} "
+                                 "with assembly='dense'")
+        if require_str("chol_impl", chol_impl) not in ("numpy", "scipy"):
             raise ValueError(f"chol_impl must be 'numpy' or 'scipy'; got {chol_impl!r}")
+        symmetrize = require_bool("symmetrize", symmetrize)
+        P = require_int("P", P)
+        if P < 1:
+            raise ValueError(f"P must be >= 1, got {P}")
+        t_max = None if t_max is None else require_real("t_max", t_max)
         self.psd, self.cells, self.builder, self.assembly = psd, cells, builder, assembly
         self.n = len(cells.m)
         keep = cells.keep_mask()
@@ -149,7 +158,8 @@ class EvolutionaryCovariance(Covariance):
         self.sizes = sizes
         self.block_evaluator = blocks
         if assembly == "blocktri":
-            self.impl: Covariance = BlockTridiagonalCovariance(blocks, sizes, layout=layout or "ragged")
+            self.impl: Covariance = BlockTridiagonalCovariance(blocks, sizes,
+                                                               layout="ragged" if layout is None else layout)
         else:
             matrix = blocks if builder == "direct" else _DenseFromBlocks(blocks, sizes)
             self.impl = DenseCovariance(matrix, self.n, chol_impl=chol_impl, symmetrize=symmetrize)

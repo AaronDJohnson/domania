@@ -16,6 +16,7 @@ from typing import Any, Literal
 import dataclasses
 
 import numpy as np
+from domainia.wilson._checks import require_int, require_str
 from domainia.wilson.backend import Backend, get_backend, pytree_dataclass
 
 from ..linalg import BandLayout, blocktri_factor, blocktri_solve, blocktri_whiten
@@ -137,14 +138,15 @@ class BlockTridiagonalCovariance(Covariance):
 
     ``blocks`` is an :class:`~domainia.covariance.base.Evaluator` (or callable
     ``fn(nu, be)``) returning ``(diag, up)`` ragged or padded (:func:`to_layout`);
-    ``sizes`` the cells per band.  ``layout="ragged"`` runs eagerly on both backends.
+    ``sizes`` the cells per band, a sequence of integers (an integer ndarray included).
+    ``layout="ragged"`` runs eagerly on both backends.
     """
 
     def __init__(self, blocks: Any, sizes: tuple[int, ...], *, layout: Layout = "ragged") -> None:
-        if layout not in ("ragged", "padded"):
+        if require_str("layout", layout) not in ("ragged", "padded"):
             raise ValueError(f"layout must be 'ragged' or 'padded'; got {layout!r}")
         self.blocks = as_evaluator(blocks)
-        self.sizes = tuple(int(s) for s in sizes)
+        self.sizes = tuple(require_int(f"sizes[{m}]", s) for m, s in enumerate(sizes))
         self.n = int(sum(self.sizes))
         self.layout = layout
         self.jittable = layout == "padded"
