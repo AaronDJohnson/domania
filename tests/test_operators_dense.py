@@ -3,6 +3,8 @@ Operator, and any Operator as its matrix."""
 
 from __future__ import annotations
 
+import dataclasses
+
 import numpy as np
 import pytest
 
@@ -26,6 +28,7 @@ DOMAINS = {
 }
 NAMES = ("A", "E")
 _rng = np.random.default_rng(53)
+EPS64, EPS32 = float(np.finfo(np.float64).eps), float(np.finfo(np.float32).eps)
 
 
 def _n(domain):
@@ -39,10 +42,10 @@ def _y(domain):
     return transform({k: _rng.standard_normal(time.N) for k in NAMES}, time, domain)
 
 
-def _psd(n, rank):
+def _psd(n, rank, rng=_rng):
     """A random symmetric PSD ``(n, n)`` matrix of rank ``rank`` whose two channel blocks are
     correlated (no block structure)."""
-    B = _rng.standard_normal((n, rank)) / np.sqrt(n)
+    B = rng.standard_normal((n, rank)) / np.sqrt(n)
     return B @ B.T + (0.3 * np.eye(n) if rank == n else 0.0)
 
 
@@ -161,16 +164,24 @@ def test_the_matrix_is_validated():
         op.apply({"E": y["A"]})
     with pytest.raises(TypeError, match="mapping"):
         op.solve([y["A"]])
-    with pytest.raises(TypeError, match="Operator"):
+    with pytest.raises(TypeError, match=r"^op must implement domainia\.translate\.Operator, got ndarray$"):
         operator_matrix(C)
 
 
 def test_a_float32_rank_deficient_matrix_uses_float32_eps():
+    """... and stores it: ``op.rtol`` is ``K N eps32``, so a rebuild from the float64
+    ``op.matrix`` (``dataclasses.replace``, or the fields passed back) keeps the same
+    directions.  Before, the rebuild used float64's eps and refused the matrix."""
     n = N
     B = _rng.standard_normal((n, n // 2)).astype(np.float32)
     C = B @ B.T
     C = ((C + C.T) / 2).astype(np.float32)                           # exactly symmetric
-    assert DenseOperator(C, TIME, ("A",)).degrees_of_freedom == n // 2
+    op = DenseOperator(C, TIME, ("A",))
+    assert op.degrees_of_freedom == n // 2 and op.rtol == n * EPS32
+    for again in (dataclasses.replace(op),
+                  DenseOperator(op.matrix, op.domain, op.channel_names, rtol=op.rtol)):
+        np.testing.assert_array_equal(again.matrix, op.matrix)
+        assert again.degrees_of_freedom == op.degrees_of_freedom and again.rtol == op.rtol
 
 
 def test_operator_matrix_refuses_a_str_channel_names():
@@ -203,3 +214,124 @@ def test_a_float16_matrix_keeps_float64_eps():
     Q = np.linalg.qr(_rng.standard_normal((n, n)))[0]
     C = ((Q * w) @ Q.T).astype(np.float16)
     assert DenseOperator(C, TIME, NAMES).degrees_of_freedom == n
+
+
+def _diag(last):
+    """``diag(1, ..., 1, last)`` on ``TIME``: ``eigh`` returns the entries exactly, and
+    ``max |lambda| = 1``."""
+    return np.diag(np.r_[np.ones(N - 1), last])
+
+
+def test_the_default_tolerance_is_exact_at_its_boundary():
+    """``tol = max|lambda| * (K N eps)``, the code's own expression: ``-tol`` is accepted and
+    ``-1.01 tol`` refused; ``+tol`` is dropped and ``+1.01 tol`` kept."""
+    tol = 1.0 * (N * EPS64)
+    assert DenseOperator(_diag(-1.0 * tol), TIME, ("A",)).degrees_of_freedom == N - 1
+    with pytest.raises(ValueError, match="^matrix is not positive semi-definite"):
+        DenseOperator(_diag(-1.01 * tol), TIME, ("A",))
+    assert DenseOperator(_diag(1.0 * tol), TIME, ("A",)).degrees_of_freedom == N - 1
+    assert DenseOperator(_diag(1.01 * tol), TIME, ("A",)).degrees_of_freedom == N
+
+
+def test_an_rtol_below_round_off_says_so():
+    """``rtol=0`` on a rank-deficient ``B B^T``: round-off makes a zero eigenvalue negative,
+    and the message says the default accepts it.  The seed is fixed: in about 1 draw in 1200
+    (17 of 20000 seeds) round-off leaves every zero eigenvalue >= 0.  ``-I`` with ``rtol=0``
+    gets the plain message."""
+    n = 2 * N
+    C = _psd(n, n - 7, np.random.default_rng(17))
+    w = np.linalg.eigh(0.5 * C + 0.5 * C.T)[0]
+    assert -(np.max(np.abs(w)) * (n * EPS64)) <= w[0] < 0.0          # the premise: round-off
+    assert DenseOperator(C, TIME, NAMES).degrees_of_freedom == n - 7
+    with pytest.raises(ValueError, match=r"^matrix is not positive semi-definite at rtol=0\.0: .* "
+                                         r"within round-off of zero .* the default rtol=None accepts it$"):
+        DenseOperator(C, TIME, NAMES, rtol=0)
+    with pytest.raises(ValueError, match="^matrix is not positive semi-definite") as info:
+        DenseOperator(-np.eye(N), TIME, ("A",), rtol=0)
+    assert "round-off" not in str(info.value)
+
+
+def test_rtol_forgives_negative_eigenvalues_down_to_minus_rtol_max_lambda():
+    C = _diag(-1e-3)
+    op = DenseOperator(C, TIME, ("A",), rtol=1e-2)
+    assert op.degrees_of_freedom == N - 1 and op.rtol == 1e-2
+    with pytest.raises(ValueError, match="^matrix is not positive semi-definite: "):
+        DenseOperator(C, TIME, ("A",))
+
+
+@pytest.mark.parametrize("rtol", [1, 1.0, 5])
+def test_an_rtol_of_one_or_more_is_refused(rtol):
+    """``max |lambda| >= |lambda_min|``, so from ``rtol = 1`` on no eigenvalue is below
+    ``-tol``: ``-I`` was accepted, with no direction kept."""
+    with pytest.raises(ValueError, match=r"^rtol must be < 1; got "):
+        DenseOperator(-np.eye(N), TIME, ("A",), rtol=rtol)
+
+
+@pytest.mark.parametrize(("rtol", "kind"), [
+    ("1e-6", "str"), (True, "bool"), (np.True_, "bool"), (1e-6 + 0j, "complex"),
+    (np.array(1e-6), "ndarray"),
+])
+def test_rtol_of_the_wrong_kind_raises_type_error(rtol, kind):
+    with pytest.raises(TypeError, match=f"^rtol must be a real number, got {kind}$"):
+        DenseOperator(np.eye(N), TIME, ("A",), rtol=rtol)
+
+
+@pytest.mark.parametrize(("matrix", "dtype"), [
+    (np.eye(N) + 0j, "complex128"), (np.eye(N, dtype=np.complex64), "complex64"),
+    (np.eye(N).astype(object), "object"), (np.eye(N) > 0, "bool"),
+])
+def test_a_matrix_of_the_wrong_dtype_raises_type_error(matrix, dtype):
+    with pytest.raises(TypeError, match=f"^matrix must be a real numeric array, got dtype {dtype}$"):
+        DenseOperator(matrix, TIME, ("A",))
+
+
+def test_rtol_reads_back_the_tolerance_used():
+    """``op.rtol`` is never ``None``: ``K N eps`` for ``rtol=None`` (float32's eps for a float32
+    matrix), else the given ``rtol``, as a Python float."""
+    C = _psd(N, N)
+    op = DenseOperator(C, TIME, ("A",))
+    assert type(op.rtol) is float and op.rtol == N * EPS64
+    assert DenseOperator(C.astype(np.float32), TIME, ("A",)).rtol == N * EPS32
+    assert DenseOperator(np.eye(N, dtype=np.int64), TIME, ("A",)).rtol == N * EPS64
+    for given, want in ((np.float64(1e-6), 1e-6), (np.int64(0), 0.0)):
+        op = DenseOperator(C, TIME, ("A",), rtol=given)
+        assert type(op.rtol) is float and op.rtol == want
+
+
+def test_huge_matrices_fail_closed():
+    """``max|lambda| * K N * eps`` overflowed to inf for ``-1.2e307 I`` (accepted, nothing kept);
+    ``(C + C^T) / 2`` overflowed for ``diag(1e308)``; ``eigh`` returns inf for a finite matrix
+    whose largest eigenvalue (here 2e308) is beyond float64."""
+    time16 = TimeDomain(16, DT)
+    with pytest.raises(ValueError, match="^matrix is not positive semi-definite: "):
+        DenseOperator(-1.2e307 * np.eye(16), time16, ("A",))
+    op = DenseOperator(np.diag(np.full(16, 1e308)), time16, ("A",))
+    assert op.degrees_of_freedom == 16
+    np.testing.assert_array_equal(op.matrix, 1e308 * np.eye(16))
+    with pytest.raises(ValueError, match="^matrix: numpy.linalg.eigh returned a non-finite eigenvalue"):
+        DenseOperator(np.full((4, 4), 5e307), TimeDomain(4, DT), ("A",))
+
+
+def test_the_zero_matrix_is_refused():
+    with pytest.raises(ValueError, match="^matrix is zero"):
+        DenseOperator(np.zeros((N, N)), TIME, ("A",))
+
+
+def test_the_symmetry_factor_follows_the_dtype():
+    """``max |C - C^T| <= f max |C|`` with ``f = 1e-12``, or ``1e-12 eps32 / eps64`` (about
+    5.4e-4) for a float32 matrix: a float32 product ``B D B^T`` nobody symmetrised (here
+    ``D`` spans 8 decades) passes, a float64 asymmetry of 1e-11 does not, and the message
+    prints the factor applied."""
+    rng = np.random.default_rng(11)
+    B = rng.standard_normal((N, N)).astype(np.float32)
+    D = np.diag(np.logspace(0, -8, N)).astype(np.float32)
+    C = B @ D @ B.T
+    assert 1e-12 < np.max(np.abs(C - C.T)) / np.max(np.abs(C)) < 1e-6   # the premise
+    assert DenseOperator(C, TIME, ("A",)).degrees_of_freedom >= N // 2   # 18 to 21 in 500 seeds
+    C = _psd(N, N, rng)
+    up = np.max(np.abs(C)) * np.triu(np.ones_like(C), 1)
+    with pytest.raises(ValueError, match=r"^matrix is not symmetric: max \|C - C\^T\| is 1e-11 of "
+                                         r"max \|C\| \(more than 1e-12\)$"):
+        DenseOperator(C + 1e-11 * up, TIME, ("A",))
+    with pytest.raises(ValueError, match=r"\(more than 0\.00054\)$"):
+        DenseOperator((C + 1e-2 * up).astype(np.float32), TIME, ("A",))

@@ -213,15 +213,15 @@ class _WithNuisance(DiagonalCovariance):
 
 def test_the_arguments_are_validated():
     ev = EvolutionaryCovariance(PSD, ALL)
-    with pytest.raises(TypeError, match="cov must be a domainia.covariance.Covariance"):
+    with pytest.raises(TypeError, match=r"^cov must be a domainia\.covariance\.Covariance, got ndarray$"):
         CovarianceOperator(np.eye(N), NU, WDM, ("A",))
-    with pytest.raises(TypeError, match="support must be a WDMDomain"):
+    with pytest.raises(TypeError, match="^support must be a WDMDomain, got CellSet$"):
         CovarianceOperator(ev, NU, ALL, ("A",))
     with pytest.raises(TypeError, match="channel_names must be a tuple"):
         CovarianceOperator(ev, NU, WDM, "A")
     with pytest.raises(ValueError, match="unique"):
         CovarianceOperator(ChannelStack([ev, ev], 2), np.r_[NU, NU], WDM, ("A", "A"))
-    with pytest.raises(TypeError, match="nu must be a real numeric array"):
+    with pytest.raises(TypeError, match="^nu must be a real numeric array, got dtype <U2$"):
         CovarianceOperator(ev, "nu", WDM, ("A",))
     with pytest.raises(ValueError, match=r"^cov\.n = 32, but 2 channel\(s\) on a support of 32 cells need "
                                          r"cov\.n = 64$"):

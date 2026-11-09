@@ -36,6 +36,7 @@ from domainia.translate import (
     from_coordinates,
     to_coordinates,
 )
+from domainia.wilson._checks import REAL_KINDS, require_dtype, require_instance, require_real
 from domainia.wilson.backend import NUMPY
 
 if TYPE_CHECKING:
@@ -50,15 +51,25 @@ class DenseOperator:
 
     ``matrix`` is ``(K N, K N)`` on the stacked real coordinates of ``domain`` (module
     docstring), ``K = len(channel_names)``, so channels may be correlated.  It must be
-    finite and symmetric to 1e-12 relative (``max |C - C^T| <= 1e-12 max |C|``); the
-    operator then stores ``(C + C^T) / 2`` as ``matrix``, a read-only float64 copy.
+    finite and symmetric to ``f`` relative (``max |C - C^T| <= f max |C|``), with
+    ``f = 1e-12``, or ``1e-12 eps32 / eps64`` (about 5.4e-4) for a float32 ``matrix``, so
+    that a float32 product ``B D B^T`` nobody symmetrised passes.  The operator then stores
+    ``C / 2 + C^T / 2`` (which cannot overflow) as ``matrix``, a read-only float64 copy.
 
-    ``numpy.linalg.eigh`` decomposes it once.  An eigenvalue below ``-tol`` raises
-    ``ValueError`` (``C`` is not positive semi-definite); the eigenpairs with
-    ``lambda > tol`` are kept (``V``, ``Lambda``).  ``tol = max |lambda| K N eps`` (the
-    default of ``numpy.linalg.matrix_rank``; ``eps`` is float32's for a float32 ``matrix`` and
-    float64's otherwise), or ``rtol max |lambda|`` when ``rtol`` is
-    given.
+    ``numpy.linalg.eigh`` decomposes it once; a non-finite eigenvalue (the matrix's
+    spectrum is beyond float64) and the zero matrix (no direction to keep) raise
+    ``ValueError``.  One relative tolerance ``rtol`` does both jobs, with
+    ``tol = max |lambda| rtol``: an eigenvalue below ``-tol`` raises ``ValueError`` (``C``
+    is not positive semi-definite), and the eigenpairs with ``lambda > tol`` are kept
+    (``V``, ``Lambda``).  So ``rtol`` drops the directions with an eigenvalue at or below
+    ``rtol max |lambda|`` and forgives negative eigenvalues down to ``-rtol max |lambda|``.
+    The default ``rtol=None`` is ``K N eps``, the default of ``numpy.linalg.matrix_rank``
+    (``eps`` is float32's for a float32 ``matrix`` and float64's otherwise).  A given
+    ``rtol`` must be ``>= 0`` and ``< 1`` (from 1 on, no eigenvalue is below ``-tol``); when
+    one refuses an eigenvalue within ``K N eps max |lambda|`` of zero, the message says that
+    it is round-off and that the default accepts it.  ``op.rtol`` reads back the relative
+    tolerance used, never ``None``, so ``dataclasses.replace(op)`` rebuilds the same
+    operator.
 
     * ``apply``: ``C r``; ``solve``: ``V Lambda^-1 V^T r``; ``project``: ``V V^T r``;
     * ``quadratic_form``: ``r^T solve(r)``; ``log_determinant``: ``sum log lambda``;
@@ -75,7 +86,9 @@ class DenseOperator:
     matrix: Any
     domain: Domain
     channel_names: tuple[str, ...]
-    rtol: float | None = field(default=None, kw_only=True)
+    #: The relative tolerance (class docstring).  ``None``, the default, becomes ``K N eps``
+    #: at construction, so after it ``rtol`` is the float used, never ``None``.
+    rtol: float = field(default=None, kw_only=True)  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
         N, _ = _record(self.domain, "domain")
@@ -84,9 +97,10 @@ class DenseOperator:
         if isinstance(self.matrix, np.ma.MaskedArray):
             raise TypeError("matrix: masked arrays are refused (numpy.asarray drops the mask)")
         C = np.asarray(self.matrix)
-        if C.dtype.kind not in "iuf":
-            raise TypeError(f"matrix must be a real numeric array; got dtype {C.dtype}")
-        eps = float(np.finfo(np.float32 if C.dtype == np.float32 else np.float64).eps)
+        require_dtype("matrix", C, REAL_KINDS, "a real numeric array")
+        eps64 = float(np.finfo(np.float64).eps)
+        eps = float(np.finfo(np.float32).eps) if C.dtype == np.float32 else eps64
+        f = 1e-12 * (eps / eps64)                       # 1e-12, or about 5.4e-4 for float32
         if C.shape != (n, n):
             raise ValueError(f"matrix has shape {C.shape}; {len(names)} channel(s) of {N} "
                              f"coordinates need shape ({n}, {n})")
@@ -94,21 +108,34 @@ class DenseOperator:
         C = C.astype(np.float64)
         peak = float(np.max(np.abs(C)))
         asym = float(np.max(np.abs(C - C.T)))
-        if asym > 1e-12 * peak:
+        if asym > f * peak:
             raise ValueError(f"matrix is not symmetric: max |C - C^T| is {asym / peak:.2g} of "
-                             f"max |C| (more than 1e-12)")
-        rtol = self.rtol
-        if rtol is not None:
-            if isinstance(rtol, bool) or not isinstance(rtol, (int, float, np.integer, np.floating)):
-                raise TypeError(f"rtol must be a real number or None; got {type(rtol).__name__}")
-            rtol = float(rtol)
+                             f"max |C| (more than {f:.2g})")
+        if self.rtol is None:
+            rtol = n * eps
+        else:
+            rtol = require_real("rtol", self.rtol)
             if not math.isfinite(rtol) or rtol < 0.0:
                 raise ValueError(f"rtol must be finite and >= 0; got {rtol!r}")
-        S = 0.5 * (C + C.T)
+            if rtol >= 1.0:
+                raise ValueError(f"rtol must be < 1; got {rtol!r}: no eigenvalue is below "
+                                 f"-rtol max |lambda| when rtol >= 1, so every matrix would pass")
+        S = 0.5 * C + 0.5 * C.T                         # 0.5 * (C + C.T) overflows above ~9e307
         w, V = np.linalg.eigh(S)
+        if not np.isfinite(w).all():
+            raise ValueError("matrix: numpy.linalg.eigh returned a non-finite eigenvalue (the "
+                             "spectrum of the matrix is beyond float64); scale it down")
         top = float(np.max(np.abs(w)))
-        tol = top * n * eps if rtol is None else rtol * top
+        if top == 0.0:
+            raise ValueError("matrix is zero: an operator needs a direction to keep")
+        tol = top * rtol                                # the default: top * (n * eps)
         if w[0] < -tol:
+            floor = top * (n * eps)
+            if self.rtol is not None and w[0] >= -floor:
+                raise ValueError(f"matrix is not positive semi-definite at rtol={rtol!r}: its "
+                                 f"smallest eigenvalue {float(w[0])!r} is below -tol = {-tol!r}, "
+                                 f"but it is within round-off of zero (at or above -K N eps "
+                                 f"max |lambda| = {-floor!r}), and the default rtol=None accepts it")
             raise ValueError(f"matrix is not positive semi-definite: its smallest eigenvalue "
                              f"{float(w[0])!r} is below -tol = {-tol!r}")
         keep = w > tol
@@ -198,10 +225,8 @@ class CovarianceOperator:
         from domainia.covariance import ChannelStack, Covariance
 
         cov, support = self.cov, self.support
-        if not isinstance(cov, Covariance):
-            raise TypeError(f"cov must be a domainia.covariance.Covariance; got {type(cov).__name__}")
-        if not isinstance(support, WDMDomain):
-            raise TypeError(f"support must be a WDMDomain; got {type(support).__name__}")
+        require_instance("cov", cov, Covariance, "a domainia.covariance.Covariance")
+        require_instance("support", support, WDMDomain, "a WDMDomain")
         names = _channel_names(self.channel_names)
         K, s = len(names), support.size
         stack = isinstance(cov, ChannelStack)
@@ -227,8 +252,7 @@ class CovarianceOperator:
         if cov.n_u != 0:
             raise ValueError(f"cov.n_u = {cov.n_u}: an Operator has no nuisance directions")
         nu = np.asarray(self.nu)
-        if nu.dtype.kind not in "iuf":
-            raise TypeError(f"nu must be a real numeric array; got dtype {nu.dtype}")
+        require_dtype("nu", nu, REAL_KINDS, "a real numeric array")
         nu = np.array(nu, dtype=np.float64)
         nu.setflags(write=False)
         F = cov.factor(nu, NUMPY)
@@ -291,7 +315,7 @@ def operator_matrix(op: Operator) -> np.ndarray:
     ``W C W^T``.
     """
     if not isinstance(op, Operator):
-        raise TypeError(f"op must implement domainia.translate.Operator; got {type(op).__name__}")
+        raise TypeError(f"op must implement domainia.translate.Operator, got {type(op).__name__}")
     names = _channel_names(op.channel_names)
     N, _ = _record(op.domain, "op.domain")
     K = len(names)
