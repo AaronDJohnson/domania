@@ -10155,3 +10155,17 @@ The plan follows the code in each case, and the task that met it says why.
 * Context, float32 overflow: the bins of Task 10's large-`dt` test give true cells up to 3.6e37, where the spec's probe measured 1.7e33. Both fit float32, which is all the test needs.
 * §3.6: `rtol=0` on `_psd(n, n - 7)` is refused on most seeds, not all: of 20000 seeds, 19983 were refused with the round-off message and 17 were accepted. Task 8 fixes seed 17 and asserts the premise first.
 * §5 files the jitted `after()` adjoint under `tests/test_dom_restored_coverage.py:63-66`. Task 13 puts it in `tests/test_dom_maps_fourier_wdm.py`'s jit-parity loop instead, which already builds those maps.
+
+## Execution errata
+
+### Final state
+
+- Full suite: 3152 passed, 3 skipped in 132.27s. NumPy lane: 2888 passed, 267 skipped in 40.02s.
+- `meyer_cases.py --check`: baseline reproduces, 1504 arrays. Float64 bit gate against the baseline recorded before Task 1: `0 of 1504 arrays differ`.
+- No `TypeError` message in `src` keeps the `"; got"` form.
+- The sdist built from the final commit (hatchling, scratch env) holds `.gitignore`, `LICENSE`, `PKG-INFO`, `README.md`, `pyproject.toml`, `src/` and `tests/` only, with stray paths planted at the root.
+
+### The Nov 7 Task 8 `solve` probe (spec §7)
+
+- A scratch copy of `test_a_reversed_channel_dict_meets_the_same_blocks` that compares `solve` exactly, run 30 times under pytest: 4 of 30 runs failed with default threads, 10 of 30 with `VECLIB_MAXIMUM_THREADS=1`.
+- The committed test keeps its 1e-12 tolerance.

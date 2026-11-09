@@ -257,6 +257,9 @@ and the 32x8 pairs differ by ≤ 2e-16. The case therefore stays in `RESCALED` w
   key's `"{Nf}x{Nt}::dt={dt!r}"` tag.
 * All three baseline tests and `meyer_cases.main --check` use this one comparator.
 * The test docstring records the reason: units, this spec §1.
+  *(Note, 2026-11-08: the Nov 7 plan's text sweep, Task 15, dropped the citation of this spec
+  on purpose. Its zero-hit gate on spec citations in code overrides the request; the
+  docstring gives the reason without naming the spec.)*
 
 ## 2. Covariance operators
 

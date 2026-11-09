@@ -8723,3 +8723,12 @@ These are minor; each review judged them not worth a fix in this plan.
   - Silent `int()` truncation remains in `ChannelStack`'s `params_per_channel`, `DiagonalCovariance`'s `n` and `BinSelect`'s bins.
   - `testing.dense_lambda_generic` takes unit-norm atoms, so its Λ is at the old record scale. For Wilson units pass `FourierToWDM.C` (= κU).
   - The toy-model ports are mentioned more than once in a few modules.
+
+### Corrections (2026-11-08)
+
+Found by the survey for spec 2026-11-08 (`docs/superpowers/specs/2026-11-08-domainia-open-decisions-design.md`), which settles the open points above:
+
+- "22 files" (Known open points) is 24 files and 25 lines: 24 module docstrings and one function docstring (`G5:` at `tests/wilson/test_evolutionary_kernels.py:119`).
+- "The integer-kind check is written out five times in `domainia.wilson`" (Review notes left open) is six times in `wilson`, plus `domains._int`.
+- "No `jax.jit` test of … an `after()` map" held only for the adjoint: at 779550d `apply` was jitted at `tests/test_dom_maps_fourier_wdm.py:253-268`. Plan 2026-11-08 Task 13 jits the adjoint in the same loop.
+- The `DenseOperator` `rtol` question was raised after the final review, in neither list above. Spec 2026-11-08 §3 settles it.
