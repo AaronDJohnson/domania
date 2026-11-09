@@ -8,12 +8,12 @@ is the ``WDMDomain``'s (``dst.window`` of ``TimeToWDM``, ``src.window`` of ``WDM
 
 from __future__ import annotations
 
-import operator
 from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 from domainia import wilson
+from domainia.wilson._checks import index_array, require_instance, require_int, require_real
 from domainia.wilson.backend import pytree_dataclass
 from domainia.wilson.transform import atom_spectrum, base_atom_spectra
 
@@ -56,6 +56,8 @@ class TimeToWDM(LinearMap):
     built_for: Any = field(default=None, kw_only=True, repr=False)
 
     def __post_init__(self) -> None:
+        require_instance("src", self.src, TimeDomain, "a TimeDomain")
+        require_instance("dst", self.dst, WDMDomain, "a WDMDomain")
         _built_for(self, (self.src, self.dst), given=self.m_idx is not _BUILD)
         if self.m_idx is _BUILD:
             _check_grid(self.src, self.dst)
@@ -93,7 +95,7 @@ class TimeToWDM(LinearMap):
 
     def rows(self, idx):
         g = self.grid
-        idx = np.atleast_1d(np.asarray(idx, dtype=np.int64))
+        idx = np.atleast_1d(index_array("idx", idx))
         base = base_atom_spectra(g.Nf, g.Nt, g.dt, window=self.dst.window)
         m, n = np.asarray(self.m_idx), np.asarray(self.n_idx)
         return np.stack([np.fft.irfft(atom_spectrum(int(m[p]), int(n[p]), g.Nf, g.Nt, g.dt,
@@ -114,6 +116,8 @@ class WDMToTime(LinearMap):
     built_for: Any = field(default=None, kw_only=True, repr=False)
 
     def __post_init__(self) -> None:
+        require_instance("src", self.src, WDMDomain, "a WDMDomain")
+        require_instance("dst", self.dst, TimeDomain, "a TimeDomain")
         _built_for(self, (self.src, self.dst), given=self.m_idx is not _BUILD)
         if self.m_idx is _BUILD:
             g = _check_grid(self.dst, self.src)
@@ -181,10 +185,13 @@ class TimeToFourier(LinearMap):
     kind = "analysis"
 
     def __post_init__(self) -> None:
+        require_instance("src", self.src, TimeDomain, "a TimeDomain")
+        object.__setattr__(self, "fmin", require_real("fmin", self.fmin))
         _built_for(self, (self.src, self.fmin), given=self.dst is not _BUILD)
         if self.dst is _BUILD:
             k0, n = _keep_bins(self.src.N, self.src.dt, self.fmin)
             object.__setattr__(self, "dst", FourierDomain(self.src.N, self.src.dt, k0, n, "rfft"))
+        require_instance("dst", self.dst, FourierDomain, "a FourierDomain")
 
     def apply(self, x, be=None):
         _last_axis(x, self.src.N, "TimeToFourier.apply")
@@ -213,7 +220,7 @@ class TimeToFourier(LinearMap):
         """``exp(-2 pi i k j / N)`` with ``k j`` reduced mod ``N`` in exact int64 arithmetic
         first: the phase stays in ``[0, 2 pi)``, so the rows are good to ~1e-16 at any ``N``
         (unreduced, ``k j`` reaches 1.3e8 at ``N = 16384`` and the phase error 6e-12)."""
-        idx = np.atleast_1d(np.asarray(idx, dtype=np.int64))
+        idx = np.atleast_1d(index_array("idx", idx))
         k = self.dst.k0 + idx
         j = np.arange(self.src.N, dtype=np.int64)
         return np.exp(-2j * np.pi * ((np.outer(k, j) % self.src.N) / self.src.N))
@@ -240,8 +247,9 @@ class CropTime(LinearMap):
     n: int
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "start", operator.index(self.start))
-        object.__setattr__(self, "n", operator.index(self.n))
+        require_instance("src", self.src, TimeDomain, "a TimeDomain")
+        object.__setattr__(self, "start", require_int("start", self.start))
+        object.__setattr__(self, "n", require_int("n", self.n))
         if not 0 <= self.start < self.start + self.n <= self.src.N:
             raise ValueError(f"[{self.start}, {self.start + self.n}) is not inside [0, {self.src.N})")
 
@@ -270,7 +278,8 @@ class ZeroPadTime(LinearMap):
     n_extra: int
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "n_extra", operator.index(self.n_extra))
+        require_instance("src", self.src, TimeDomain, "a TimeDomain")
+        object.__setattr__(self, "n_extra", require_int("n_extra", self.n_extra))
         if self.n_extra < 0:
             raise ValueError(f"n_extra must be >= 0; got {self.n_extra}")
 

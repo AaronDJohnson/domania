@@ -129,7 +129,7 @@ def test_widely_linear_adjoint_and_no_push(cls):
         M.rows([0])
     with pytest.raises(TypeError, match="widely linear"):
         M.dense()
-    if cls == "crop":           # start is a sample index (CropTime's operator.index rule)
+    if cls == "crop":           # start is a sample index (CropTime's integer rule)
         assert type(FourierCrop(SRC, M.dst, np.int64(24)).start) is int
         with pytest.raises(TypeError):
             FourierCrop(SRC, M.dst, 24.0)

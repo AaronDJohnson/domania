@@ -8,12 +8,13 @@ source bins once.  The atoms are ``wilson.transform.band_atoms``.
 
 from __future__ import annotations
 
-import operator
 from dataclasses import dataclass, field, replace
 from typing import Any
 
 import numpy as np
 from domainia import wilson
+from domainia.wilson._checks import (index_array, require_bool, require_instance, require_int,
+                                     require_str)
 from domainia.wilson.backend import pytree_dataclass
 from domainia.wilson.grid import carrier_phase
 from domainia.wilson.transform import band_atoms
@@ -57,9 +58,11 @@ def pad_maps(N: int, Np: int, k_out, j_in):
     ``A_kj = (1/N) sum_{s<N} e^{2 pi i s (j/N - k/Np)}`` and ``B`` the same at ``-j``, with
     the columns of the self-conjugate bins ``j = 0`` and ``j = N/2`` (even ``N``) halved, so
     ``z'`` is the exact rfft of the padded real record in ``z``'s units."""
-    k = np.asarray(k_out, np.int64)[:, None]
+    N, Np = require_int("N", N), require_int("Np", Np)
+    k = index_array("k_out", k_out)[:, None]
+    j_in = index_array("j_in", j_in)
     out = []
-    for j in (np.asarray(j_in, np.int64)[None, :], -np.asarray(j_in, np.int64)[None, :]):
+    for j in (j_in[None, :], -j_in[None, :]):
         num = j * Np - k * N                                       # nu = num / (N Np)
         # N nu = j - k N / Np, mod 2
         n_nu = np.mod(np.mod(j, 2) * Np - np.mod(k * N, 2 * Np), 2 * Np) / Np
@@ -73,9 +76,11 @@ def crop_maps(N: int, start: int, Nc: int, k_out, j_in):
     ``A_kj = (1/N) e^{2 pi i j start / N} sum_{s<Nc} e^{2 pi i s (j/N - k/Nc)}``, with the
     columns of the self-conjugate bins ``j = 0`` and ``j = N/2`` (even ``N``) halved, so
     ``z^c`` is the exact rfft of the cropped real record in ``z``'s units."""
-    k = np.asarray(k_out, np.int64)[:, None]
+    N, start, Nc = require_int("N", N), require_int("start", start), require_int("Nc", Nc)
+    k = index_array("k_out", k_out)[:, None]
+    j_in = index_array("j_in", j_in)
     out = []
-    for j in (np.asarray(j_in, np.int64)[None, :], -np.asarray(j_in, np.int64)[None, :]):
+    for j in (j_in[None, :], -j_in[None, :]):
         num = j * Nc - k * N                                       # nu = num / (N Nc)
         # Nc nu = j Nc / N - k, mod 2
         n_nu = np.mod(np.mod(j * Nc, 2 * N) - np.mod(k, 2) * N, 2 * N) / N
@@ -112,6 +117,8 @@ class FourierZeroPad(_WidelyLinear):
     built_for: Any = field(default=None, kw_only=True, repr=False)
 
     def __post_init__(self) -> None:
+        require_instance("src", self.src, FourierDomain, "a FourierDomain")
+        require_instance("dst", self.dst, FourierDomain, "a FourierDomain")
         _built_for(self, (self.src, self.dst), given=self.A is not _BUILD)
         if self.A is _BUILD:
             s, d = self.src, self.dst
@@ -150,7 +157,9 @@ class FourierCrop(_WidelyLinear):
     built_for: Any = field(default=None, kw_only=True, repr=False)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "start", operator.index(self.start))
+        require_instance("src", self.src, FourierDomain, "a FourierDomain")
+        require_instance("dst", self.dst, FourierDomain, "a FourierDomain")
+        object.__setattr__(self, "start", require_int("start", self.start))
         _built_for(self, (self.src, self.dst, self.start), given=self.A is not _BUILD)
         if self.A is _BUILD:
             s, d = self.src, self.dst
@@ -268,6 +277,10 @@ class FourierToWDM(LinearMap):
     built_for: Any = field(default=None, kw_only=True, repr=False)
 
     def __post_init__(self) -> None:
+        require_instance("src", self.src, FourierDomain, "a FourierDomain")
+        require_instance("dst", self.dst, WDMDomain, "a WDMDomain")
+        require_str("impl", self.impl)
+        object.__setattr__(self, "restrict", require_bool("restrict", self.restrict))
         _built_for(self, (self.src, self.dst, self.impl, self.restrict),
                    given=self.C is not _BUILD)
         if self.C is not _BUILD:
@@ -336,7 +349,7 @@ class FourierToWDM(LinearMap):
         return be.set(out, (..., slice(self.lo, self.lo + self.width)), part, copy=False)
 
     def rows(self, idx):
-        idx = np.atleast_1d(np.asarray(idx, dtype=np.int64))
+        idx = np.atleast_1d(index_array("idx", idx))
         C = np.asarray(self.C)
         out = np.zeros((idx.size, self.src.n), complex)
         out[:, self.lo:self.lo + self.width] = C[idx]
@@ -367,6 +380,8 @@ class FourierToWDM(LinearMap):
         outer record, of another length ``N``) is refused rather than misread.  The one
         composite that passes, a crop to the whole record (``start = 0``, same ``N``), is
         the map itself (its ``C`` equals the atoms to roundoff)."""
+        require_instance("inner", inner, (FourierZeroPad, FourierCrop),
+                         "a FourierZeroPad or a FourierCrop")
         if self.impl != "dense" or inner.dst != self.src or self.src != self.window:
             raise ValueError("after() needs a dense map whose src is exactly inner.dst = "
                              "the band window")

@@ -41,6 +41,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 import numpy as np
+from domainia.wilson._checks import index_array, require_instance, require_int
 from domainia.wilson.backend import NUMPY, Backend, get_backend, pytree_dataclass, require_x64
 from domainia.wilson.windows import Window
 
@@ -111,7 +112,8 @@ def domain_size(dom: Any) -> int:
         return int(dom.n)
     if isinstance(dom, WDMDomain):
         return len(dom.cells.m)
-    raise TypeError(f"not a domain: {dom!r}")
+    raise TypeError(f"dom must be a TimeDomain, a FourierDomain or a WDMDomain, "
+                    f"got {type(dom).__name__}")
 
 
 def on_backend(obj: Any, be: Backend, fields: tuple[str, ...]) -> Any:
@@ -174,7 +176,7 @@ class LinearMap:
 
     def rows(self, idx: Any) -> np.ndarray:
         """Host dense rows ``M[idx, :]`` (``(k, n_src)``), from the adjoint of unit vectors."""
-        idx = np.atleast_1d(np.asarray(idx, dtype=np.int64))
+        idx = np.atleast_1d(index_array("idx", idx))
         E = np.zeros((idx.size, self.shape[0]))
         E[np.arange(idx.size), idx] = 1.0
         out = np.asarray(self.adjoint(E, NUMPY))
@@ -226,8 +228,8 @@ class PushedCovariance:
             raise TypeError(f"PushedCovariance needs a LinearMap, got {type(self.map).__name__}")
         if not (callable(getattr(self.cov, "matvec", None))
                 or callable(getattr(self.cov, "dense", None))):
-            raise TypeError(f"cannot push a {type(self.cov).__name__}: a covariance needs a matvec "
-                            "(SupportsMatvec) or a dense (SupportsDense) method")
+            raise TypeError("PushedCovariance needs a covariance with a matvec (SupportsMatvec) or "
+                            f"a dense (SupportsDense) method, got {type(self.cov).__name__}")
         src, window = getattr(self.map, "src", None), getattr(self.cov, "window", None)
         if isinstance(window, Window) and not isinstance(src, WDMDomain):
             raise ValueError(f"the covariance lives on WDM cells (window {window.name}) but the "
@@ -265,7 +267,7 @@ class PushedCovariance:
         return fn
 
     def rows(self, idx: Any, be: Backend | None = None) -> Any:
-        idx = np.atleast_1d(np.asarray(idx, dtype=np.int64))
+        idx = np.atleast_1d(index_array("idx", idx))
         kind = self.map.kind
         if kind == "real":
             matvec = self._matvec()
@@ -305,6 +307,10 @@ class Identity(LinearMap):
 
     src: Any
 
+    def __post_init__(self) -> None:
+        require_instance("src", self.src, (TimeDomain, FourierDomain, WDMDomain),
+                         "a TimeDomain, a FourierDomain or a WDMDomain")
+
     @property
     def dst(self) -> Any:
         return self.src
@@ -332,13 +338,14 @@ class Compose(LinearMap):
     inner: Any
 
     def __post_init__(self) -> None:
-        if isinstance(self.outer, LinearMap) and isinstance(self.inner, LinearMap):
-            a, b = self.inner.dst, self.outer.src
-            if isinstance(a, WDMDomain) and isinstance(b, WDMDomain) and a.window != b.window:
-                raise ValueError(f"cannot compose: inner.dst and outer.src use different windows "
-                                 f"({a.window.name} vs {b.window.name})")
-            if b != a:
-                raise ValueError(f"cannot compose: {a!r} != {b!r}")
+        require_instance("outer", self.outer, LinearMap, "a LinearMap")
+        require_instance("inner", self.inner, LinearMap, "a LinearMap")
+        a, b = self.inner.dst, self.outer.src
+        if isinstance(a, WDMDomain) and isinstance(b, WDMDomain) and a.window != b.window:
+            raise ValueError(f"cannot compose: inner.dst and outer.src use different windows "
+                             f"({a.window.name} vs {b.window.name})")
+        if b != a:
+            raise ValueError(f"cannot compose: {a!r} != {b!r}")
 
     @property
     def src(self) -> Any:
@@ -392,6 +399,8 @@ class Restrict(LinearMap):
     built_for: Any = field(default=None, kw_only=True, repr=False)
 
     def __post_init__(self) -> None:
+        require_instance("src", self.src, WDMDomain, "a WDMDomain")
+        require_instance("dst", self.dst, WDMDomain, "a WDMDomain")
         if self.src.window != self.dst.window:
             raise ValueError(f"src and dst use different windows ({self.src.window.name} vs "
                              f"{self.dst.window.name}): restrict within one basis")
@@ -430,9 +439,12 @@ class BinSelect(LinearMap):
     kind = "complex"
 
     def __post_init__(self) -> None:
+        require_instance("src", self.src, FourierDomain, "a FourierDomain")
         if isinstance(self.dst, tuple):
-            k0, n = (int(v) for v in self.dst)
-            object.__setattr__(self, "dst", dataclasses.replace(self.src, k0=k0, n=n))
+            k0, n = self.dst
+            object.__setattr__(self, "dst", dataclasses.replace(
+                self.src, k0=require_int("k0", k0), n=require_int("n", n)))
+        require_instance("dst", self.dst, FourierDomain, "a FourierDomain or a (k0, n) tuple")
         d, s = self.dst, self.src
         _require_same_units("BinSelect", s, d)
         if (d.N, d.dt) != (s.N, s.dt) or d.k0 < s.k0 or d.k0 + d.n > s.k0 + s.n:
