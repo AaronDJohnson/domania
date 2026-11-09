@@ -11,21 +11,23 @@ requires-python = ">=3.12"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Aaron Johnson" }]
+classifiers = ["Typing :: Typed"]
 dependencies = [
     "numpy>=2.1,<3",
     "scipy>=1.14.1,<2",
 ]
 
 [project.optional-dependencies]
-jax = ["jax>=0.9", "jaxlib>=0.9"]
+jax = ["jax>=0.9"]
 test = ["pytest>=8"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/domainia"]
 
 [tool.hatch.build.targets.sdist]
-# The design specs and implementation plans are working documents, not part of the release.
-exclude = ["docs/superpowers"]
+# Only the package and its tests: the specs and plans under docs/ and any untracked folder at
+# the root stay out. hatchling adds README.md, LICENSE, pyproject.toml, .gitignore and PKG-INFO.
+only-include = ["src", "tests"]
 
 [tool.pytest.ini_options]
 # One config for the whole repo.  tests/ has no __init__.py (its modules import the

@@ -29,11 +29,24 @@ def test_the_version_is_2_0_0_everywhere():
     assert tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["version"] == "2.0.0"
 
 
-def test_the_sdist_leaves_out_the_working_documents():
-    """The specs and plans under docs/superpowers stay out of the sdist.  hatchling is not
-    installed in the test env, so this reads the build config rather than building."""
-    hatch = tomllib.loads((REPO / "pyproject.toml").read_text())["tool"]["hatch"]
-    assert "docs/superpowers" in hatch["build"]["targets"]["sdist"]["exclude"]
+def test_the_sdist_lists_what_it_includes():
+    """The sdist takes ``src/`` and ``tests/`` only (hatchling adds README.md, LICENSE,
+    pyproject.toml, .gitignore and PKG-INFO itself), so the specs and plans under docs/ and
+    any untracked folder at the root stay out.  hatchling is not installed in the test env,
+    so this reads the build config rather than building."""
+    sdist = tomllib.loads((REPO / "pyproject.toml").read_text())["tool"]["hatch"]["build"]["targets"]["sdist"]
+    assert sdist["only-include"] == ["src", "tests"]
+    assert "exclude" not in sdist
+    assert not [path for path in sdist["only-include"] if path.split("/")[0] == "docs"]
+
+
+def test_the_project_metadata():
+    """The package ships ``py.typed`` and says so; the ``jax`` extra names ``jax`` alone
+    (``jax`` 0.9 requires its matching ``jaxlib`` itself)."""
+    project = tomllib.loads((REPO / "pyproject.toml").read_text())["project"]
+    assert "Typing :: Typed" in project["classifiers"]
+    assert (SRC / "domainia" / "py.typed").is_file()
+    assert project["optional-dependencies"]["jax"] == ["jax>=0.9"]
 
 
 def test_the_public_names():
