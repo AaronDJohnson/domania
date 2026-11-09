@@ -2,8 +2,9 @@
 
 Except the ``meyer_cases.RESCALED`` families, which changed units on purpose.  Their
 values are now Wilson coefficients, ``got = f(N, dt) * recorded`` to 1e-13, with the same
-dtype; every other array is still ``np.array_equal``.  ``meyer_cases.mismatches`` is the one
-comparator, shared with ``meyer_cases.py --check``.
+dtype; the ``meyer_cases.RETIRED`` families (``gaussian``'s, changed on purpose with no such
+rule) are not replayed; every other array is still ``np.array_equal``.
+``meyer_cases.mismatches`` is the one comparator, shared with ``meyer_cases.py --check``.
 """
 
 from __future__ import annotations

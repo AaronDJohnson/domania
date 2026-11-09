@@ -20,7 +20,9 @@ A Monte-Carlo estimator (:func:`empirical_variance`) is provided for
 verification.
 
 All variance grids return shape ``(Nf+1, Nt)`` so they slot directly
-into the inner-product functions.
+into the inner-product functions.  The analytic grids fill the inactive edge pixels
+($m = 0$ and $m = N_f$ at odd $n$) by the same formula as the active ones, so they hold
+about $S_n/2$ there, not 0; nothing in domainia reads those pixels.
 
 Every kernel here that reaches the window takes ``window=`` (a
 :class:`domainia.wilson.windows.Window`; default :data:`domainia.wilson.MEYER`) and

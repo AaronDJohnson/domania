@@ -27,11 +27,12 @@ from domainia.wilson.transform import forward_time
 
 
 def _freq_inner(x, h, Sn_array, dt, N):
-    """Reference: standard frequency-domain noise-weighted inner product."""
+    """Reference: frequency-domain noise-weighted inner product, DC and Nyquist at half weight."""
     X = np.fft.rfft(x)
     H = np.fft.rfft(h)
-    integrand = np.conj(X) * H / Sn_array
-    return float(4.0 * dt / N * np.real(np.sum(integrand[1 : N // 2])))
+    integrand = np.real(np.conj(X) * H / Sn_array)
+    edges = 0.5 * (integrand[0] + integrand[N // 2])
+    return float(4.0 * dt / N * (np.sum(integrand[1 : N // 2]) + edges))
 
 
 def test_gaussian_exact_for_flat_psd(medium_grid, flat_psd):

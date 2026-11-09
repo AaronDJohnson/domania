@@ -16,7 +16,8 @@ The gate is ``tests/wilson/test_meyer_baseline.py``: it recomputes every case th
 ``domainia.wilson`` and compares with :func:`mismatches`: ``np.array_equal`` (same dtype)
 on every array except the :data:`RESCALED` families.  Those changed units on purpose
 (every WDM value is now a Wilson coefficient) and are compared as
-``got = f * recorded`` to 1e-13.  ``python tests/wilson/meyer_cases.py --check`` is the
+``got = f * recorded`` to 1e-13.  The :data:`RETIRED` families changed on purpose with no
+such rule and are not replayed.  ``python tests/wilson/meyer_cases.py --check`` is the
 same replay as a script, with the same comparator.  The arrays are bit-exact only in the
 recording environment (the ``wdmrel`` env's NumPy pocketfft and BLAS on the machine that
 recorded them).
@@ -66,6 +67,10 @@ RESCALED: dict[tuple[str, str], Callable[[int, float], float]] = {
 }
 #: The RESCALED comparison: ``max |got - f want| <= RESCALED_RTOL * max |f want|``.
 RESCALED_RTOL = 1e-13
+#: ``(layer, case)`` families whose values changed on purpose with no closed-form rule, so they
+#: are no longer compared: ``gaussian`` now keeps the DC and Nyquist bins at half weight.
+#: ``test_window_threading.py`` pins both to the dense WDM form instead.
+RETIRED = {("wilson", "inner_product.gaussian"), ("wilson", "inner_product.gaussian_from_func")}
 #: ``"{layer}::{case}::{Nf}x{Nt}::dt={dt!r}"`` plus :func:`flatten`'s ``[i]`` suffixes.
 _KEY = re.compile(r"(?P<layer>[^:]+)::(?P<case>[^:]+)::(?P<Nf>\d+)x(?P<Nt>\d+)::dt=(?P<dt>[^\[]+)")
 
@@ -80,11 +85,14 @@ def rescale_factor(key: str) -> float | None:
 
 
 def mismatches(got: dict[str, np.ndarray], want: dict[str, np.ndarray]) -> list[str]:
-    """The keys of ``want`` that ``got`` does not reproduce (the keys must be the same).
+    """The keys of ``want`` that ``got`` does not reproduce (the keys must be the same).  The
+    :data:`RETIRED` families are dropped from both first.
 
     Same dtype everywhere; ``np.array_equal`` except for the :data:`RESCALED` keys, which
     need ``max |got - f want| <= RESCALED_RTOL * max |f want|`` (a NaN anywhere fails it).
     """
+    got, want = ({k: v for k, v in d.items() if _KEY.match(k).group("layer", "case") not in RETIRED}
+                 for d in (got, want))
     if sorted(got) != sorted(want):
         raise AssertionError(f"baseline keys differ: {sorted(set(got) ^ set(want))[:10]}")
     bad = []
@@ -316,7 +324,7 @@ def main() -> None:
         raise SystemExit(str(exc)) from None
     if bad:
         raise SystemExit(f"{len(bad)} arrays differ from the baseline: {bad[:10]}")
-    print(f"baseline reproduces: {len(out)} arrays")
+    print(f"baseline reproduces: {len(out)} arrays, except the RETIRED families")
 
 
 if __name__ == "__main__":

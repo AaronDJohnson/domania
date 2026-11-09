@@ -1,7 +1,7 @@
 """Meyer scaling function used as the WDM filter.
 
 The Meyer scaling function $\\hat\\phi(f)$ has compact frequency support
-on $[-3\\Delta F/4,\\,+3\\Delta F/4]$ and a smooth ($C^{2d-1}$)
+on $[-3\\Delta F/4,\\,+3\\Delta F/4]$ and a smooth ($C^{d-1}$)
 rolloff controlled by the regularized incomplete beta function $\\nu_d$.
 Frequencies are in Hz throughout, with the Paper I (eq:Meyer-def)
 normalisation: the flat value is $1/\\sqrt{\\Delta F}$.

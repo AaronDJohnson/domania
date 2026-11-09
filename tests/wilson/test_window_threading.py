@@ -809,20 +809,18 @@ def test_eq45_plan_carries_the_window_to_every_eq45_builder(window, Nf, Nt, dt):
 
 @pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
 @pytest.mark.parametrize("Nf, Nt, dt", GRIDS)
-def test_gaussian_forms_are_the_dense_frequency_and_wdm_forms(window, Nf, Nt, dt):
-    """``gaussian`` and ``gaussian_from_func`` are the GW inner product of the spectra of
-    ``W_a^T w / dt``; ``loglike_gaussian`` and ``loglike_gaussian_many`` (also the per-row
-    ``loglike_gaussian``, and one data grid against a stack of templates) are
-    ``-r_a^T C_a^{-1} r_a / 2 - ln det(2 pi C_a) / 2``."""
+def test_gaussian_forms_are_the_dense_wdm_forms(window, Nf, Nt, dt):
+    """``gaussian`` and ``gaussian_from_func`` are ``a_a^T C_a^{-1} b_a``; ``loglike_gaussian``
+    and ``loglike_gaussian_many`` (also the per-row ``loglike_gaussian``, and one data grid
+    against a stack of templates) are ``-r_a^T C_a^{-1} r_a / 2 - ln det(2 pi C_a) / 2``."""
     N = Nf * Nt
     mask = wilson.active_mask(Nf, Nt)
-    Wa, Ca = _dense(window, Nf, Nt, dt)[2:]
+    Ca = _dense(window, Nf, Nt, dt)[3]
     w = np.random.default_rng(N + Nf + 5).standard_normal((4, Nf + 1, Nt))
     S = psd(np.fft.rfftfreq(N, dt))
-    spec = np.fft.rfft(w[:, mask] @ Wa / dt, axis=-1)                 # rfft(W_a^T w / dt)
-    gw = 4.0 * dt / N * float(np.real(np.sum((np.conj(spec[0]) * spec[1] / S)[1:N // 2])))
-    _close(I.gaussian(w[0], w[1], Nf, Nt, dt, S, window=window), gw, RTOL_KERNEL, "gaussian")
-    _close(I.gaussian_from_func(w[0], w[1], Nf, Nt, dt, psd, window=window), gw, RTOL_KERNEL,
+    ab = w[0][mask] @ np.linalg.solve(Ca, w[1][mask])
+    _close(I.gaussian(w[0], w[1], Nf, Nt, dt, S, window=window), ab, RTOL_KERNEL, "gaussian")
+    _close(I.gaussian_from_func(w[0], w[1], Nf, Nt, dt, psd, window=window), ab, RTOL_KERNEL,
            "gaussian_from_func")
     r = (w[:2] - w[2:])[:, mask]
     quad = np.einsum("bi,bi->b", r, np.linalg.solve(Ca, r.T).T)

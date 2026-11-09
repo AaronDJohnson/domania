@@ -22,8 +22,8 @@ Diagonal flavors (cost $O(N)$, all share signature
 Exact flavor (cost $O(N \\log N_t)$):
 
 * :func:`gaussian` — inverse-transform back to the frequency domain
-  and apply the per-bin PSD weighting.  Equals the standard
-  frequency-domain inner product to machine precision.
+  and apply the per-bin PSD weighting, DC and Nyquist at half weight.
+  Equals the dense WDM form $a^T C^{-1} b$ to machine precision.
 
 Which cells the diagonal forms sum
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -43,6 +43,9 @@ the PSD is fixed during parameter estimation):
 * :func:`loglike_whittle`, :func:`loglike_band_averaged`,
   :func:`loglike_evolutionary_whittle` — diagonal-covariance forms.
 * :func:`loglike_gaussian` — full-covariance form.
+
+The log-likelihoods are in WDM coordinates ($w = W x$, $W W^T = \\delta t\\,I$): the log
+density of the time samples $x$ adds $\\tfrac{N}{2}\\ln\\delta t$.
 
 The exact forms (:func:`gaussian`, :func:`gaussian_from_func`, :func:`loglike_gaussian`,
 :func:`loglike_gaussian_many`) inverse-transform, so they take ``window=`` (default
@@ -387,34 +390,28 @@ def _frequency_inner(
     Sn_array: Array,
     dt: float,
     N: int,
-) -> float:
-    """Standard frequency-domain noise-weighted inner product.
+) -> Array:
+    """Noise-weighted inner product of rfft spectra, reduced over the last axis.
 
     $$\\langle a|b\\rangle
     = \\frac{4\\,\\delta t}{N}\\,
-    \\operatorname{Re}\\!\\sum_{j=1}^{N/2-1}
-    \\frac{A_j^*\\,B_j}{S_n(f_j)}.$$
+    \\operatorname{Re}\\!\\sum_{j=0}^{N/2} c_j\\,
+    \\frac{A_j^*\\,B_j}{S_n(f_j)},\\qquad c_0 = c_{N/2} = \\tfrac12,\\ c_j = 1
+    \\text{ otherwise}.$$
 
-    Skips the DC and Nyquist edge bins (real-valued one-sided edge
-    terms with halved weight), matching the standard GW convention.
-
-    Parameters
-    ----------
-    a_rfft, b_rfft : ndarray, complex, shape (N//2+1,)
-    Sn_array : ndarray, shape (N//2+1,)
-    dt : float
-    N : int
-
-    Returns
-    -------
-    float
+    DC and Nyquist are real-valued with no negative-frequency partner, so they
+    carry half weight, as the manuscripts do.  With $a = b = r$ this is
+    $r^T C_a^{-1} r$ against a dense
+    :func:`domainia.wilson.matrix.build_C_wdm_active` solve to machine precision.
+    A zero-power bin (an inf-at-DC LISA curve sanitizes to one) carries no weight
+    rather than producing inf/nan.  Leading axes are preserved.
     """
-    # A zero-power bin (an inf-at-DC LISA curve sanitizes to one) carries no
-    # weight rather than producing inf/nan -- same rule as _frequency_quadratic.
     with np.errstate(divide="ignore", invalid="ignore"):
-        integrand = np.conj(a_rfft) * b_rfft / Sn_array
+        integrand = np.real(np.conj(a_rfft) * b_rfft / Sn_array)
     integrand = np.where(Sn_array > 0.0, integrand, 0.0)
-    return float(4.0 * dt / N * np.real(np.sum(integrand[1 : N // 2])))
+    interior = np.sum(integrand[..., 1 : N // 2], axis=-1)
+    edges = 0.5 * (integrand[..., 0] + integrand[..., N // 2])
+    return 4.0 * dt / N * (interior + edges)
 
 
 def _gaussian_logdet(Sn_array: Array, N: int) -> float:
@@ -437,53 +434,6 @@ def _gaussian_logdet(Sn_array: Array, N: int) -> float:
     return float(np.sum(np.log(np.pi * Sn_full[contributing])))
 
 
-def _frequency_quadratic(
-    r_rfft: CArray,
-    Sn_array: Array,
-    dt: float,
-    N: int,
-) -> float:
-    """Full quadratic form $r^T C^{-1} r$ in the frequency domain.
-
-    Identical to :func:`_frequency_inner` except that the DC and Nyquist bins
-    are **included at half weight**.  Those bins are real-valued, so they carry
-    half the degrees of freedom of an interior bin; including them this way
-    reproduces $r^T C_a^{-1} r$ against a dense
-    :func:`domainia.wilson.matrix.build_C_wdm_active` solve to machine precision, whereas
-    dropping them (the standard GW inner-product convention used by
-    :func:`gaussian`) understates the quadratic form by $O(2/N)$ -- measured
-    7.8% at $N = 32$ and 0.5% at $N = 512$.
-
-    :func:`loglike_gaussian` needs this form rather than the GW one: its
-    log-determinant covers all $N$ active pixels, so a quadratic form over
-    $N - 2$ of them would not be the log of any normalized density.
-    """
-    # A zero-power bin has infinite variance: it carries no weight, rather than
-    # producing inf/nan.  Only DC and Nyquist can be zero here; the interior is
-    # required strictly positive by _check_psd_grid.
-    return float(_frequency_quadratic_axis(r_rfft, Sn_array, dt, N))
-
-
-def _frequency_quadratic_axis(
-    r_rfft: CArray,
-    Sn_array: Array,
-    dt: float,
-    N: int,
-) -> Array:
-    """$r^T C^{-1} r$ reduced over the last axis; leading axes preserved.
-
-    DC and Nyquist carry half weight -- they have no negative-frequency
-    partner, so counting them fully double-counts their contribution. Serves
-    both the scalar and batched Gaussian forms from one expression.
-    """
-    with np.errstate(divide="ignore", invalid="ignore"):
-        integrand = np.real(np.conj(r_rfft) * r_rfft / Sn_array)
-    integrand = np.where(Sn_array > 0.0, integrand, 0.0)
-    interior = np.sum(integrand[..., 1 : N // 2], axis=-1)
-    edges = 0.5 * (integrand[..., 0] + integrand[..., N // 2])
-    return 4.0 * dt / N * (interior + edges)
-
-
 def gaussian(
     w_a: Array,
     w_b: Array,
@@ -497,9 +447,10 @@ def gaussian(
     """Exact inner product via inverse-WDM and frequency-domain weighting.
 
     Inverse-transforms $w_a$ and $w_b$ to the frequency domain and
-    computes the standard noise-weighted inner product there.  Equals
-    the frequency-domain inner product to machine precision; exact
-    regardless of how steeply $S_n(f)$ varies.
+    computes the noise-weighted inner product there, DC and Nyquist at
+    half weight, so ``gaussian(r, r, ...)`` is the quadratic form of
+    :func:`loglike_gaussian`.  Exact regardless of how steeply $S_n(f)$
+    varies.
 
     Cost: $O(N \\log N_t)$ from the two inverse FFTs.
 
@@ -534,7 +485,7 @@ def gaussian(
     Sn_array = _check_psd_grid(Sn_array, N, "gaussian")
     a_rfft = inverse(w_a, Nf, Nt, dt, window=window)
     b_rfft = inverse(w_b, Nf, Nt, dt, window=window)
-    return _frequency_inner(a_rfft, b_rfft, Sn_array, dt, N)
+    return float(_frequency_inner(a_rfft, b_rfft, Sn_array, dt, N))
 
 
 def gaussian_from_func(
@@ -898,7 +849,7 @@ def loglike_gaussian_many(
     leading axis alone, so one data grid against a stack of templates works by
     broadcasting.
 
-    Shares :func:`_frequency_quadratic_axis` and :func:`_gaussian_logdet` with
+    Shares :func:`_frequency_inner` and :func:`_gaussian_logdet` with
     the scalar form, so the two cannot drift apart -- and unlike the diagonal
     flavours this one costs $O(N \\log N_t)$ per entry, so batching buys the
     per-call overhead only, not a change of complexity.
@@ -953,7 +904,7 @@ def loglike_gaussian_many(
             f"{Nf + 1} bands for Nf={Nf}; got {out_shape}"
         )
     r_rfft = inverse_many(np.ascontiguousarray(residual), Nf, Nt, dt, window=window)
-    quad = _frequency_quadratic_axis(r_rfft, Sn_array, dt, N)
+    quad = _frequency_inner(r_rfft, r_rfft, Sn_array, dt, N)
     if not include_logdet:
         return -0.5 * quad
     return -0.5 * quad - 0.5 * _gaussian_logdet(Sn_array, N)
@@ -977,12 +928,9 @@ def loglike_gaussian(
     \\qquad r = d - h.$$
 
     Both terms cover all $N$ active pixels, so this really is the log of a
-    normalized density.  Note the quadratic form is therefore **not**
-    ``gaussian(w_d - w_h, w_d - w_h, ...)``: :func:`gaussian` follows the
-    standard GW convention of dropping the DC and Nyquist bins, which would
-    leave the quadratic form over $N-2$ pixels while the determinant covers
-    $N$.  Here those two real-valued bins are included at half weight, which
-    reproduces $r^T C_a^{-1} r$ against a dense
+    normalized density.  The quadratic form is
+    ``gaussian(w_d - w_h, w_d - w_h, ...)``: the real-valued DC and Nyquist
+    bins carry half weight, which reproduces $r^T C_a^{-1} r$ against a dense
     :func:`domainia.wilson.matrix.build_C_wdm_active` solve to machine precision.
 
     The log-determinant is computed in the frequency domain.  Because
@@ -1041,7 +989,7 @@ def loglike_gaussian(
     N = n_samples(Nf, Nt)
     Sn_array = _check_psd_grid(Sn_array, N, "loglike_gaussian")
     r_rfft = inverse(_residual(w_d, w_h), Nf, Nt, dt, window=window)
-    quad = _frequency_quadratic(r_rfft, Sn_array, dt, N)
+    quad = float(_frequency_inner(r_rfft, r_rfft, Sn_array, dt, N))
     if not include_logdet:
         return -0.5 * quad
     # ln det(2 pi C_wdm) over all N active pixels.  Sn_array lives on the
