@@ -35,6 +35,7 @@ from typing import Any, NoReturn, Protocol, runtime_checkable
 import numpy as np
 from numpy.typing import NDArray
 
+from ._checks import require_int
 from .filter import phi_centered
 from .grid import delta_F, validate_dt, validate_grid
 
@@ -173,11 +174,10 @@ class Meyer(_Admissible):
     d: int = 4
 
     def __post_init__(self) -> None:
-        if isinstance(self.d, bool) or not isinstance(self.d, (int, np.integer)):
-            raise TypeError(f"Meyer d must be an int; got {type(self.d).__name__}")
-        if self.d < 1:
+        d = require_int("Meyer d", self.d)
+        if d < 1:
             raise ValueError(f"Meyer d must be >= 1; got {self.d}")
-        object.__setattr__(self, "d", int(self.d))
+        object.__setattr__(self, "d", d)
 
     @property
     def name(self) -> str:

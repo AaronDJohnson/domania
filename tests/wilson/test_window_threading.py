@@ -31,7 +31,7 @@ from .meyer_cases import THREADED, domainia_cases, psd, psd_ft, wilson_cases
 #: ``phi_fft_order``) and where ``.sample`` is called, behind ``sample_window``'s validation.
 SCANNED = ("wilson/transform.py", "wilson/matrix.py", "wilson/stationary.py", "wilson/noise.py",
            "wilson/evolutionary.py", "wilson/inner_product.py", "wilson/grid.py", "wilson/backend.py",
-           "wilson/special.py", "wilson/__init__.py",
+           "wilson/special.py", "wilson/__init__.py", "wilson/_checks.py",
            "domains.py", "maps/base.py", "maps/time.py", "maps/fourier.py", "variance.py",
            "covariance/evolutionary.py", "covariance/base.py", "covariance/diagonal.py",
            "covariance/dense.py", "covariance/blocktri.py", "covariance/stack.py", "testing.py",

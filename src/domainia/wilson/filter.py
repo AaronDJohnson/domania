@@ -24,6 +24,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.special import betainc
 
+from ._checks import require_int
 from .grid import delta_F, validate_dt, validate_grid
 
 type Array = NDArray[np.floating]
@@ -67,8 +68,7 @@ def nu_d(x: Array, d: int = 4) -> Array:
     >>> wilson.filter.nu_d(np.array([0.0, 0.5, 1.0]))
     array([0. , 0.5, 1. ])
     """
-    if isinstance(d, bool) or not isinstance(d, (int, np.integer)):
-        raise TypeError(f"d must be an integer, got {type(d).__name__}")
+    require_int("d", d)
     if d < 1:
         # betainc(0, 0, x) is NaN, so a bad d silently yields a NaN filter.
         raise ValueError(f"d must be >= 1, got {d}")

@@ -30,6 +30,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from domainia import wilson
+from domainia.wilson._checks import require_int
 from domainia.wilson.grid import packed_cells
 from domainia.wilson.windows import MEYER, Window, require_window
 
@@ -50,11 +51,10 @@ FOURIER_UNITS = ("rfft", "dt_rfft", "sigma0")
 
 
 def _int(name: str, value: object, *, minimum: int) -> int:
-    if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
-        raise TypeError(f"{name} must be an int; got {type(value).__name__}")
-    if int(value) < minimum:
+    v = require_int(name, value)
+    if v < minimum:
         raise ValueError(f"{name} must be >= {minimum}; got {value}")
-    return int(value)
+    return v
 
 
 def _positive_float(name: str, value: object) -> float:

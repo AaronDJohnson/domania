@@ -3,6 +3,9 @@ as the rest of domainia does."""
 
 from __future__ import annotations
 
+from decimal import Decimal
+from fractions import Fraction
+
 import numpy as np
 import pytest
 
@@ -54,16 +57,18 @@ def test_require_int_and_its_callers_raise_type_error():
 @pytest.mark.parametrize(("dt", "kind"), [
     (True, "bool"), (np.True_, "bool"), ("0.5", "str"), (None, "NoneType"),
     (1.0 + 0.0j, "complex"), (np.complex64(1.0), "complex64"), (np.array(1.0 + 0.0j), "ndarray"),
+    (Decimal("0.5"), "Decimal"), (np.array(0.5), "ndarray"), (np.array([0.5]), "ndarray"),
 ])
 def test_dt_of_the_wrong_kind_raises_type_error(dt, kind):
-    """``float()`` used to accept ``True`` (as 1.0), ``"0.5"`` and a NumPy complex scalar."""
+    """``float()`` used to accept ``True`` (as 1.0), ``"0.5"`` and a NumPy complex scalar; the
+    old check also let a ``Decimal``, a 0-d array and a size-1 array through."""
     with pytest.raises(TypeError, match=f"dt must be a real number, got {kind}"):
         validate_dt(dt)
     with pytest.raises(TypeError, match="dt must be a real number"):
         wilson.forward_time(np.zeros(128), 8, 16, dt)
 
 
-@pytest.mark.parametrize("dt", [0.5, 1, np.float32(0.1), np.float64(0.25), np.int64(2), np.array(0.5)])
+@pytest.mark.parametrize("dt", [0.5, 1, np.float32(0.1), np.float64(0.25), np.int64(2), Fraction(1, 2)])
 def test_real_dt_kinds_still_pass(dt):
     validate_dt(dt)
 

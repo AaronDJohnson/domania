@@ -38,6 +38,7 @@ from collections.abc import Callable
 import numpy as np
 from numpy.typing import NDArray
 
+from ._checks import require_int
 from .grid import (
     band_frequencies,
     delta_F,
@@ -369,8 +370,7 @@ def colored_noise(
     """
     # Public entry point: same checks as validate_grid/validate_dt, on N itself.
     # They only raise, so valid input takes the oracle's path bit for bit.
-    if isinstance(N, bool) or not isinstance(N, (int, np.integer)):
-        raise TypeError(f"N must be an integer, got {type(N).__name__}")
+    require_int("N", N)
     if N <= 0:
         raise ValueError(f"N must be positive, got {N}")
     if N % 2 != 0:

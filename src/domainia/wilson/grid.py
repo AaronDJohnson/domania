@@ -22,6 +22,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
+from ._checks import require_int as _require_int, validate_dt, validate_finite
 from .backend import Backend, get_backend
 
 type Array = NDArray[np.floating]
@@ -105,14 +106,6 @@ class Grid:
         return delta_T(self.Nf, self.dt)
 
 
-def _require_int(name: str, value: object) -> int:
-    """Return ``value`` as an ``int``, raising ``TypeError`` if it is not one
-    (``bool`` is rejected too)."""
-    if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
-        raise TypeError(f"{name} must be an integer, got {type(value).__name__}")
-    return int(value)
-
-
 def _require_even_positive_int(name: str, value: object) -> int:
     """Return ``value`` as an ``int``, requiring it to be positive and even.
     Same messages and exceptions as :func:`validate_grid`."""
@@ -153,112 +146,11 @@ def validate_grid(Nf: int, Nt: int) -> None:
     TypeError: Nf must be an integer, got float
     """
     for name, val in (("Nf", Nf), ("Nt", Nt)):
-        if isinstance(val, bool) or not isinstance(val, (int, np.integer)):
-            raise TypeError(f"{name} must be an integer, got {type(val).__name__}")
+        _require_int(name, val)
         if val <= 0:
             raise ValueError(f"{name} must be positive, got {val}")
         if val % 2 != 0:
             raise ValueError(f"{name} must be even, got {val}")
-
-
-def validate_dt(dt: float) -> None:
-    """Raise unless ``dt`` is a positive finite real number.
-
-    A negative or zero sampling interval produces a nonsensical frequency grid
-    (``delta_F`` flips sign or diverges) without raising anywhere, so the
-    transform happily returns numbers that mean nothing.
-
-    Parameters
-    ----------
-    dt : float
-        Sampling interval.
-
-    Raises
-    ------
-    TypeError
-        If ``dt`` is ``None``, a ``bool``, a string or complex (scalar or array):
-        ``float()`` would take ``True`` as 1.0 and ``"0.5"`` as 0.5 silently, and
-        drop the imaginary part of a NumPy complex scalar.
-    ValueError
-        If ``dt`` is not positive and finite.
-
-    Examples
-    --------
-    >>> import numpy as np; from domainia import wilson
-    >>> wilson.validate_dt(0.5)
-    >>> wilson.validate_dt(0.0)
-    Traceback (most recent call last):
-    ValueError: dt must be a positive finite number, got 0.0
-    >>> wilson.validate_dt(True)
-    Traceback (most recent call last):
-    TypeError: dt must be a real number, got bool
-    """
-    kind = getattr(getattr(dt, "dtype", None), "kind", None)
-    if dt is None or isinstance(dt, (bool, str, bytes, complex)) or kind in ("b", "c", "S", "U"):
-        raise TypeError(f"dt must be a real number, got {type(dt).__name__}")
-    value = float(dt)
-    if not np.isfinite(value) or value <= 0.0:
-        raise ValueError(f"dt must be a positive finite number, got {dt!r}")
-
-
-def validate_finite(values: object, context: str) -> None:
-    """Raise ``ValueError`` if ``values`` holds a ``nan`` or an ``inf``.
-
-    The WDM transform is *global* within a band: every coefficient is an
-    inner product against a window spanning many samples, and the
-    implementation routes each band through an FFT.  A single non-finite
-    entry therefore does not stay local.  Measured on an $N_f=8$, $N_t=16$
-    grid, one ``nan`` anywhere in the input series makes **all 144** output
-    coefficients ``nan`` -- and numpy emits no warning on the way, because
-    ``nan`` arithmetic inside an FFT is not an invalid operation.  The result
-    is a coefficient grid that is entirely meaningless yet raises nothing,
-    which is exactly the failure this rejects.
-
-    Detector data with gaps routinely arrives with ``nan`` fills, so this is
-    a live path rather than a theoretical one.  The check is one $O(N)$ pass
-    against an $O(N\\log N_t)$ transform, so it is not measurable in the
-    package's own benchmarks.
-
-    Deliberately stricter than :func:`sanitize_psd`, which maps ``inf`` to
-    ``0.0``: an infinite *PSD* sample has a physical reading ("no measurable
-    power in this bin"), an infinite *data* sample has none.
-
-    Parameters
-    ----------
-    values : array-like
-        Data, coefficient, or spectrum array.  Complex input is checked on
-        both components.
-    context : str
-        Name used in the error message.
-
-    Raises
-    ------
-    ValueError
-        If any entry is ``nan`` or infinite.
-
-    Examples
-    --------
-    >>> import numpy as np; from domainia import wilson
-    >>> wilson.validate_finite([1.0, 2.0], 'x')      # all finite: fine
-    >>> wilson.validate_finite([1.0, np.nan], 'x')   # doctest: +ELLIPSIS
-    Traceback (most recent call last):
-    ValueError: x: 1 of 2 entries are not finite (1 nan, 0 inf); first at index 1...
-    """
-    arr = np.asarray(values)
-    if arr.size == 0:
-        return
-    bad = ~np.isfinite(arr)
-    if not bad.any():
-        return
-    n_nan = int(np.count_nonzero(np.isnan(arr)))
-    first = int(np.flatnonzero(bad.ravel())[0])
-    raise ValueError(
-        f"{context}: {int(np.count_nonzero(bad))} of {arr.size} entries are "
-        f"not finite ({n_nan} nan, {int(np.count_nonzero(bad)) - n_nan} inf); "
-        f"first at index {first}. A non-finite sample does not stay local -- "
-        "it spreads through the transform's FFT to every coefficient, "
-        "silently. Fill or excise the gaps before transforming."
-    )
 
 
 def sanitize_psd(values: object, context: str) -> Array:
@@ -360,10 +252,9 @@ def n_samples(Nf: int, Nt: int) -> int:
     128
     """
     for name, val in (("Nf", Nf), ("Nt", Nt)):
-        if isinstance(val, bool) or not isinstance(val, (int, np.integer)):
-            # int() would silently truncate: n_samples(8.7, 16.2) == 128, and
-            # bool is an int subclass, so n_samples(True, 16) would give 16.
-            raise TypeError(f"{name} must be an integer, got {type(val).__name__}")
+        # int() would silently truncate: n_samples(8.7, 16.2) == 128, and
+        # bool is an int subclass, so n_samples(True, 16) would give 16.
+        _require_int(name, val)
     return int(Nf) * int(Nt)
 
 
