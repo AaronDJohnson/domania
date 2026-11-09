@@ -177,3 +177,7 @@ def test_argument_refusals():
         from_coordinates(R, WDMDomain(CellSet.bands(GRID, (2, 3))), ("A", "E"))
     with pytest.raises(TypeError, match="^domain must be a full-record domain"):
         from_coordinates(R, GRID, ("A", "E"))
+    with pytest.raises(ValueError, match="^domain: translate handles only WDMDomain.full"):
+        to_coordinates(y, WDMDomain(CellSet.bands(GRID, (2, 3))))
+    with pytest.raises(TypeError, match="^domain must be a full-record domain"):
+        to_coordinates(y, GRID)

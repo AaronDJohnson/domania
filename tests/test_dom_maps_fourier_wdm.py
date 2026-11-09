@@ -266,3 +266,7 @@ def test_jax_parity_with_the_map_as_a_jit_argument():
         got = jax.jit(lambda mm, vv: mm.apply(vv))(m.on(be), jnp.asarray(v))
         assert isinstance(got, jax.Array)
         np.testing.assert_allclose(np.asarray(got), want, rtol=0, atol=1e-12 * np.max(np.abs(want)))
+        ref = m.adjoint(want)
+        back = jax.jit(lambda mm, yy: mm.adjoint(yy))(m.on(be), jnp.asarray(want))
+        assert isinstance(back, jax.Array)
+        np.testing.assert_allclose(np.asarray(back), ref, rtol=0, atol=1e-12 * np.max(np.abs(ref)))

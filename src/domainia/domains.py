@@ -401,7 +401,7 @@ def _cells_and_window(cells: object, window: object = None, *,
                       default: Window = MEYER) -> tuple[CellSet, Window]:
     """``(cell set, window)`` for a consumer that takes ``cells`` and ``window=``
     (``EvolutionaryCovariance``, ``BandAveragedVariance``; ``MidpointVariance`` reads the
-    cells only).
+    cells only, with :func:`_cells_of`).
 
     A :class:`WDMDomain` gives its cells and its window; an explicit ``window`` must equal
     the domain's (``ValueError`` otherwise).  A :class:`CellSet` takes ``window``, where
@@ -419,6 +419,15 @@ def _cells_and_window(cells: object, window: object = None, *,
         return cells.cells, cells.window
     require_instance("cells", cells, CellSet, "a CellSet or a WDMDomain")
     return cells, require_window(default if window is None else window)
+
+
+def _cells_of(cells: object) -> CellSet:
+    """The cell set of a consumer that reads the cells only (``MidpointVariance``): a
+    :class:`WDMDomain`'s cells, or a :class:`CellSet` as it is.  Any other ``cells`` raises
+    the ``TypeError`` of :func:`_cells_and_window`."""
+    if isinstance(cells, WDMDomain):
+        return cells.cells
+    return require_instance("cells", cells, CellSet, "a CellSet or a WDMDomain")
 
 
 @dataclass(frozen=True)

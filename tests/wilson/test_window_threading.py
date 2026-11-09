@@ -63,6 +63,8 @@ CONSUMERS = frozenset({
     # are not seen, a false negative that the value tests in tests/test_dom_windows.py and
     # tests/test_translate.py cover.
     "WDMDomain", "EvolutionaryCovariance", "BandAveragedVariance",
+    # The helper those constructors resolve the window with; MidpointVariance uses _cells_of.
+    "_cells_and_window",
 })
 #: Names that hard-code a window inside a kernel: the default instance and the constructors.
 HARD_CODED = frozenset({"MEYER", "Meyer", "RampWindow", "SampledWindow"})

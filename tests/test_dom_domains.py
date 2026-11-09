@@ -24,7 +24,7 @@ def test_time_domain():
         TimeDomain(0, 1.0)
     with pytest.raises(ValueError):
         TimeDomain(8, -1.0)
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError, match="N must be an integer, got float"):
         TimeDomain(8.0, 1.0)
 
 
@@ -59,7 +59,7 @@ def test_fourier_units_carry_sigma0_and_the_rfft_scale():
     for units in ("rfft", "dt_rfft"):
         with pytest.raises(ValueError, match="sigma0"):
             FourierDomain(64, 0.5, 0, 33, units, sigma0=2.0)
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError, match="positional argument"):
         FourierDomain(64, 0.5, 0, 33, "sigma0", 2.0)                    # sigma0 is keyword-only
     a = FourierDomain(64, 0.5, 0, 33, "sigma0", sigma0=2)
     assert type(a.sigma0) is float and a.sigma0 == 2.0
@@ -185,7 +185,7 @@ def test_wdm_domain_and_channels():
     assert list(inspect.signature(WDMDomain).parameters) == ["cells", "window"]
     with pytest.raises(TypeError, match="Window"):
         WDMDomain(cells, 2.0)                       # the second field is the window now
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError, match="unexpected keyword argument 'scale'"):
         WDMDomain(cells, scale=2.0)                 # the field is gone
     ch = ChannelAxis(("A", "E"))
     assert ch.size == 2 and ChannelAxis().size == 0

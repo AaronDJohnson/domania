@@ -65,6 +65,9 @@ def test_wdm_maps_under_jit_with_the_map_as_argument():
     assert isinstance(inv, jax.Array)
     assert rel(inv, Mi.apply(y)) <= 1e-12
     assert rel(inv, d) <= 1e-12
+    adj = jax.jit(lambda m, v: m.adjoint(v))(Mi.on(JB), JB.asarray(d))
+    assert isinstance(adj, jax.Array)
+    assert rel(adj, Mi.adjoint(d)) <= 1e-12
 
 
 # -- evaluator paths (test_dom_cov_base::test_variances_from_callables_and_evaluators) ----

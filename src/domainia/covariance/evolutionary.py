@@ -131,7 +131,7 @@ class EvolutionaryCovariance(Covariance):
         if require_str("builder", builder) not in BUILDERS:
             raise ValueError(f"unknown builder {builder!r}; expected one of {BUILDERS}")
         require_callable("psd", psd)
-        cells, window = _cells_and_window(cells, window)
+        cells, window = _cells_and_window(cells, window=window)
         if require_str("assembly", assembly) not in ("blocktri", "dense"):
             raise ValueError(f"assembly must be 'blocktri' or 'dense'; got {assembly!r}")
         if builder == "direct" and assembly != "dense":

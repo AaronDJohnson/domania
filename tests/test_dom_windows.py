@@ -493,7 +493,11 @@ def test_the_window_is_static_under_jit():
     for impl in ("dense", "fft"):
         F = FourierToWDM(rec, fdom, impl)
         _close(np.asarray(apply(F.on(JB), jnp.asarray(z))), F.apply(z))
-    psd, _ = _stationary_psd()
+    psd, nu = _stationary_psd()
     v = BandAveragedVariance(psd, CELLS, window=ALT_WINDOW).on(JB)
     leaves, tree = jax.tree_util.tree_flatten(v)
     assert leaves == [] and jax.tree_util.tree_unflatten(tree, leaves).window is ALT_WINDOW
+    mv = MidpointVariance(psd, CELLS).on(JB)
+    leaves, tree = jax.tree_util.tree_flatten(mv)
+    assert leaves == [] and jax.tree_util.tree_unflatten(tree, leaves).cells == CELLS
+    np.testing.assert_array_equal(mv(nu), MidpointVariance(psd, CELLS)(nu))

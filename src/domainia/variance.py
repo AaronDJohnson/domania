@@ -26,7 +26,7 @@ from domainia import wilson
 from domainia.wilson.backend import Backend, pytree_dataclass
 from domainia.wilson.windows import Window
 
-from .domains import CellSet, _cells_and_window
+from .domains import CellSet, _cells_and_window, _cells_of
 from .maps.base import on_backend
 from .spectra import GenericPSD
 
@@ -65,7 +65,7 @@ class BandAveragedVariance:
 
     def __post_init__(self) -> None:
         _require_generic(self.psd, "band-averaged")
-        cells, window = _cells_and_window(self.cells, self.window)
+        cells, window = _cells_and_window(self.cells, window=self.window)
         object.__setattr__(self, "cells", cells)
         object.__setattr__(self, "window", window)
 
@@ -97,8 +97,7 @@ class MidpointVariance:
 
     def __post_init__(self) -> None:
         _require_generic(self.psd, "midpoint")
-        cells, _ = _cells_and_window(self.cells)
-        object.__setattr__(self, "cells", cells)
+        object.__setattr__(self, "cells", _cells_of(self.cells))
 
     def on(self, be: Backend) -> "MidpointVariance":
         """The variance for ``be``: it has no array leaves (the PSD runs on the host).  On

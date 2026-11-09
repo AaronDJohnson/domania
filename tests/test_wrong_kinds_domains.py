@@ -13,7 +13,7 @@ import pytest
 
 from domainia import wilson
 from domainia.domains import (CellSet, ChannelAxis, FourierDomain, TimeDomain, WDMDomain,
-                              _cells_and_window)
+                              _cells_and_window, _cells_of)
 
 GRID = wilson.Grid(8, 16, 0.5)
 CELLS = CellSet.all_active(GRID)
@@ -67,8 +67,9 @@ def test_cells_of_the_wrong_kind_take_the_got_form(bad):
     kind = type(bad).__name__
     with pytest.raises(TypeError, match=_exact(f"cells must be a CellSet, got {kind}")):
         WDMDomain(bad)
-    with pytest.raises(TypeError, match=_exact(f"cells must be a CellSet or a WDMDomain, got {kind}")):
-        _cells_and_window(bad)
+    for fn in (_cells_and_window, _cells_of):
+        with pytest.raises(TypeError, match=_exact(f"cells must be a CellSet or a WDMDomain, got {kind}")):
+            fn(bad)
 
 
 class _UnhashableWindow:

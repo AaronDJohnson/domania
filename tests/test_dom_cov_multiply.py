@@ -84,8 +84,9 @@ def test_multiply_is_the_dense_matrix_times_b(name):
 
 
 def test_block_tridiagonal_multiply_never_forms_the_dense_matrix(monkeypatch):
-    """With the dense routes made to raise, the ragged product still runs."""
-    covs = [BlockTridiagonalCovariance(_blocks, SIZES), EvolutionaryCovariance(PSD, CELLS)]
+    """With the dense routes made to raise, the ragged product still runs on both layouts."""
+    covs = [COVS[k]() for k in ("blocktri-ragged", "blocktri-padded", "evolutionary-blocktri",
+                                "evolutionary-padded")]
     bs = [_rng.standard_normal(c.n) for c in covs]
     want = [c.dense(NU) @ b for c, b in zip(covs, bs, strict=True)]
 
