@@ -19,7 +19,7 @@ import numpy as np
 from domainia.wilson._checks import require_int, require_str
 from domainia.wilson.backend import Backend, get_backend, pytree_dataclass
 
-from ..linalg import BandLayout, blocktri_factor, blocktri_solve, blocktri_whiten
+from ..linalg import BandLayout, _failed, blocktri_factor, blocktri_solve, blocktri_whiten
 from .base import Covariance, QuadForm, _check_leading, as_evaluator, factor_constants, quad_form
 
 __all__ = ["BlockTriCovFactor", "BlockTridiagonalCovariance", "blocks_to_dense", "blocktri_cov_factor",
@@ -113,7 +113,7 @@ class BlockTriCovFactor:
         if self.layout == "ragged":
             # A failed ragged factor stops at its first bad block, so its blocks do not add
             # up to n: skip the check and let ``fn`` raise the failure.
-            if bool(self.ok):
+            if not _failed(self):
                 _check_leading(b, self._b_shape(), f"BlockTriCovFactor.{what}")
             return fn(self.bt, b, be=be)
         C = factor_constants(self, C, what)

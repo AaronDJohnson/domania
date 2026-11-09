@@ -581,7 +581,7 @@ def gaussian_from_func(
     """
     N = n_samples(Nf, Nt)
     freqs = np.fft.rfftfreq(N, d=dt)
-    Sn_array = np.asarray(Sn_func(freqs), dtype=float)
+    Sn_array = np.asarray(sanitize_psd(Sn_func(freqs), "gaussian_from_func"), dtype=float)
     return gaussian(w_a, w_b, Nf, Nt, dt, Sn_array, window=window)
 
 

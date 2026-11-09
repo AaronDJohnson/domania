@@ -168,8 +168,9 @@ is, a `Grid` where a domain is), or an array whose dtype can never be (a complex
 array where real numbers are taken). `ValueError` means the right kind with a wrong value:
 shape, range, finiteness, integrality, an unknown option string, inactive cells, endpoints,
 or a domain or window mismatch. `WindowError` (a `ValueError`) means an inadmissible window,
-complex window samples included. Complex values on a time or WDM domain raise `ValueError`,
-because they are valid on a `FourierDomain`. Backend handles passed as `be=` are not checked.
+complex window samples included. In `domainia.translate`, complex values on a time or WDM
+domain raise `ValueError`, because they are valid on a `FourierDomain`. Backend handles passed
+as `be=` are not checked.
 
 ## Install and test
 

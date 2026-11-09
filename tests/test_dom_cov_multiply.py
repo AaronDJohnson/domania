@@ -292,6 +292,10 @@ def test_the_check_runs_on_jax_and_under_jit(jax_be):
     assert whiten(G, C, jnp.ones(14)).shape == (14,)
     with pytest.raises(ValueError, match=_refusal("BlockTriCovFactor.whiten", (14,), np.ones(15), end="")):
         whiten(G, C, jnp.ones(15))
+    ragged = COVS["blocktri-ragged"]().factor(nu)
+    assert solve(ragged, jnp.ones(14)).shape == (14,)
+    with pytest.raises(ValueError, match=_refusal("BlockTriCovFactor.solve", (14,), np.ones(15), end="")):
+        solve(ragged, jnp.ones(15))
     S = _two_channels().factor(jnp.asarray(NU2))
     with pytest.raises(ValueError, match=_refusal("StackFactor.quad", (2,), np.ones((3, N)), end="")):
         jax.jit(lambda S, b: S.quad(b))(S, jnp.ones((3, N)))

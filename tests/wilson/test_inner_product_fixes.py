@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from domainia.wilson.grid import active_mask
+from domainia.wilson import inner_product
 from domainia.wilson.inner_product import (
     loglike_whittle,
     loglike_whittle_many,
@@ -166,3 +167,11 @@ def test_rfft_packing_rejects_odd_N():
         rfft_to_real(np.fft.rfft(x[:5]), 5)
     with pytest.raises(ValueError, match="N must be even"):
         real_to_rfft(np.zeros(5), 5)
+
+
+def test_gaussian_from_func_refuses_a_complex_psd():
+    """A complex PSD callable raises TypeError, as ``gaussian`` does for the array."""
+    Nf, Nt = 8, 16
+    w = np.zeros((Nf, Nt))
+    with pytest.raises(TypeError, match="^gaussian_from_func: PSD must be a real numeric array, got dtype complex128$"):
+        inner_product.gaussian_from_func(w, w, Nf, Nt, 1.0, lambda f: np.ones_like(f) + 1e-3j)
