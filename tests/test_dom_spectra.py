@@ -23,7 +23,7 @@ def test_tabulated_spectrum_slices_by_absolute_bin_and_refuses_outside():
     assert np.array_equal(s.at([100, 149]), v[:, [0, 49]])
     assert np.array_equal(s.at([100.0]), v[:, [0]]) and s.at([]).shape == (2, 0)
     assert not np.shares_memory(s.values, v) and not s.values.flags.writeable   # a frozen copy
-    with pytest.raises(ValueError, match="integers"):
+    with pytest.raises(ValueError, match="bins must hold integer indices, got 100.5"):
         s.at([100.5])                                                            # never truncated
     with pytest.raises(ValueError, match="outside"):
         s.on(FourierDomain(4096, 5.0, 140, 20, "sigma0", sigma0=3.0))

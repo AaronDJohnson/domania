@@ -454,7 +454,7 @@ CONTRACT = "returned a dict that breaks the Operator output contract (see domain
     ("apply", lambda v: {k: np.ma.MaskedArray(a) for k, a in v.items()}, TypeError,
      "channel 'A': masked arrays are refused"),
     ("solve", lambda v: {k: a.astype(object) for k, a in v.items()}, TypeError,
-     "channel 'A': values must be numeric; got dtype object"),
+     "channel 'A': values must be numeric, got dtype object"),
     ("project", lambda v: {k: a[:-1] for k, a in v.items()}, ValueError,
      f"channel 'A': shape ({N - 1},), but this TimeDomain needs shape ({N},)"),
     ("apply", lambda v: {k: np.where(np.arange(N) == 3, np.nan, a) for k, a in v.items()}, ValueError,
@@ -523,7 +523,7 @@ def test_refusals():
     assert isinstance(on_str, Operator)
     for build in (translate_operator, TranslatedOperator):
         with pytest.raises(TypeError, match=r"^native\.domain must be a full-record domain \(TimeDomain, "
-                                            r"FourierDomain\.full or WDMDomain\.full\); got str$"):
+                                            r"FourierDomain\.full or WDMDomain\.full\), got str$"):
             build(on_str, WDM)
     with pytest.raises(ValueError, match="the operator has channels"):     # not the native's own check
         t.apply({"A": _y(WDM)["A"]})

@@ -41,6 +41,7 @@ import numpy as np
 
 from domainia import wilson
 from domainia.domains import ChannelAxis, FourierDomain, TimeDomain, WDMDomain
+from domainia.wilson._checks import REAL_KINDS, require_dtype
 
 __all__ = ["Domain", "Operator", "TranslatedOperator", "from_coordinates", "log_coordinate_scale",
            "to_coordinates", "transform", "translate_operator"]
@@ -65,7 +66,7 @@ def _record(domain: Any, role: str) -> tuple[int, float]:
                              f"active cell); got {domain.cells.size} of {g.N} cells")
         return g.N, g.dt
     raise TypeError(f"{role} must be a full-record domain (TimeDomain, FourierDomain.full or "
-                    f"WDMDomain.full); got {type(domain).__name__}")
+                    f"WDMDomain.full), got {type(domain).__name__}")
 
 
 def _check_pair(source: Any, target: Any, roles: tuple[str, str] = ("source", "target")) -> None:
@@ -112,7 +113,7 @@ def _relative(value: float, a: np.ndarray) -> str:
 def _stack(channel_data: Any, domain: Domain) -> tuple[tuple[str, ...], np.ndarray]:
     """Validate ``channel_data`` on ``domain``; ``(names, (C, *shape) float64/complex128)``."""
     if not isinstance(channel_data, Mapping):
-        raise TypeError(f"channel_data must be a mapping {{channel: array}}; got "
+        raise TypeError(f"channel_data must be a mapping {{channel: array}}, got "
                         f"{type(channel_data).__name__}")
     if not channel_data:
         raise ValueError("channel_data is empty: pass at least one channel")
@@ -122,7 +123,7 @@ def _stack(channel_data: Any, domain: Domain) -> tuple[tuple[str, ...], np.ndarr
     arrays: list[np.ndarray] = []
     for name, value in channel_data.items():
         if not isinstance(name, str):
-            raise TypeError(f"channel names must be strings; got {name!r}")
+            raise TypeError(f"channel names must be strings, got {name!r}")
         if not name:
             raise ValueError("channel names must be non-empty")
         if isinstance(value, np.ma.MaskedArray):
@@ -131,7 +132,7 @@ def _stack(channel_data: Any, domain: Domain) -> tuple[tuple[str, ...], np.ndarr
                             f"excise the masked samples first")
         a = np.asarray(value)
         if a.dtype.kind not in "iufc":
-            raise TypeError(f"channel {name!r}: values must be numeric; got dtype {a.dtype}")
+            raise TypeError(f"channel {name!r}: values must be numeric, got dtype {a.dtype}")
         if a.dtype.kind == "c" and not isinstance(domain, FourierDomain):
             raise ValueError(f"channel {name!r}: complex values on a real {kind}")
         if a.shape != shape:
@@ -259,7 +260,7 @@ def _channel_names(channel_names: Any) -> tuple[str, ...]:
     """``channel_names`` as a tuple, by the :class:`~domainia.domains.ChannelAxis` rules
     (non-empty strings, ``TypeError``; unique, ``ValueError``), and at least one name."""
     if isinstance(channel_names, str) or not isinstance(channel_names, (tuple, list)):
-        raise TypeError(f"channel_names must be a tuple of channel names; got "
+        raise TypeError(f"channel_names must be a tuple of channel names, got "
                         f"{type(channel_names).__name__}")
     names = ChannelAxis(tuple(channel_names)).names
     if not names:
@@ -318,7 +319,9 @@ def to_coordinates(channel_data: Mapping[str, Any], domain: Domain,
     otherwise); without it they follow the dict's order.  ``channel_data`` is validated
     exactly as :func:`transform` validates its input, with the same errors; ``domain``
     must be a full-record domain (``TypeError`` for a non-domain, ``ValueError`` for a
-    partial one, as :func:`log_coordinate_scale`).
+    partial one, as :func:`log_coordinate_scale`).  A Fourier coordinate that overflows
+    float64 (``sqrt(2)`` times a real or imaginary part above about 1.27e308) raises
+    ``ValueError`` instead of coming back as ``inf``.
     """
     _record(domain, "domain")
     want = None if channel_names is None else _channel_names(channel_names)
@@ -327,7 +330,18 @@ def to_coordinates(channel_data: Mapping[str, Any], domain: Domain,
         if set(names) != set(want):
             raise ValueError(f"channel_data has channels {names}; channel_names are {want}")
         X = X[[names.index(k) for k in want]]
-    return _real_coordinates(X, domain)
+        names = want
+    R = _real_coordinates(X, domain)
+    bad = ~np.isfinite(R)
+    if bad.any():
+        # X is finite (_stack checked it), so only the Fourier sqrt(2) scaling can overflow.
+        row, col = (int(i) for i in np.argwhere(bad)[0])
+        h = (domain.N - 1) // 2
+        k, part = (col, "real") if col <= h else (col - h, "imaginary")
+        limit = np.finfo(np.float64).max / np.sqrt(2.0)
+        raise ValueError(f"channel {names[row]!r}: sqrt(2) times the {part} part of rfft bin {k} "
+                         f"overflows float64 (a part above {limit:.3g}); rescale the data first")
+    return R
 
 
 def from_coordinates(R: Any, domain: Domain, channel_names: tuple[str, ...]) -> dict[str, np.ndarray]:
@@ -336,20 +350,18 @@ def from_coordinates(R: Any, domain: Domain, channel_names: tuple[str, ...]) -> 
 
     The layout is canonical, exactly: inactive WDM cells are 0 and the Fourier DC bin (and
     the even-``N`` Nyquist bin) are real, so :func:`transform` takes the result back.
-    Raises ``TypeError`` for a masked array, non-numeric values, or ``channel_names`` that
-    is not a tuple or list of non-empty strings; ``ValueError`` for duplicate or empty
-    ``channel_names``, complex or non-finite values, or a shape other than
-    ``(len(channel_names), N)``; ``domain`` as :func:`to_coordinates`.
+    Raises ``TypeError`` for a masked array, values that are not real numbers (a complex,
+    bool, str or object dtype: ``R`` is never complex), or ``channel_names`` that is not a
+    tuple or list of non-empty strings; ``ValueError`` for duplicate or empty
+    ``channel_names``, non-finite values, or a shape other than ``(len(channel_names), N)``;
+    ``domain`` as :func:`to_coordinates`.
     """
     N, _ = _record(domain, "domain")
     names = _channel_names(channel_names)
     if isinstance(R, np.ma.MaskedArray):
         raise TypeError("R: masked arrays are refused (numpy.asarray drops the mask)")
     a = np.asarray(R)
-    if a.dtype.kind not in "iufc":
-        raise TypeError(f"R must hold real coordinates; got dtype {a.dtype}")
-    if a.dtype.kind == "c":
-        raise ValueError("R must hold real coordinates; got complex values")
+    require_dtype("R", a, REAL_KINDS, "an array of real coordinates")
     if a.shape != (len(names), N):
         raise ValueError(f"R has shape {a.shape}; {len(names)} channel(s) on this "
                          f"{type(domain).__name__} need shape ({len(names)}, {N})")
@@ -439,7 +451,7 @@ class TranslatedOperator:
     def __post_init__(self) -> None:
         if isinstance(self.native, TranslatedOperator) or not isinstance(self.native, Operator):
             raise TypeError(f"native must be a native domainia.translate.Operator (translate_operator "
-                            f"re-targets a TranslatedOperator); got {type(self.native).__name__}")
+                            f"re-targets a TranslatedOperator), got {type(self.native).__name__}")
         _check_pair(self.native.domain, self.target, roles=("native.domain", "target"))
 
     @property
@@ -459,7 +471,7 @@ class TranslatedOperator:
 
     def _to_native(self, values: Any) -> dict[str, np.ndarray]:
         if not isinstance(values, Mapping):
-            raise TypeError(f"values must be a mapping {{channel: array}}; got {type(values).__name__}")
+            raise TypeError(f"values must be a mapping {{channel: array}}, got {type(values).__name__}")
         if set(values) != set(self.channel_names):
             raise ValueError(f"values have channels {tuple(values)}; the operator has channels "
                              f"{self.channel_names}")
@@ -508,7 +520,7 @@ def translate_operator(op: Operator, target: Domain) -> Operator:
     operator is reused, never nested); a target equal to the native domain returns the native
     operator itself, and a ``TranslatedOperator`` already on ``target`` returns itself."""
     if not isinstance(op, Operator):
-        raise TypeError(f"op must implement domainia.translate.Operator; got {type(op).__name__}")
+        raise TypeError(f"op must implement domainia.translate.Operator, got {type(op).__name__}")
     native = op.native if isinstance(op, TranslatedOperator) else op
     _check_pair(native.domain, target, roles=("native.domain", "target"))
     if target == native.domain:

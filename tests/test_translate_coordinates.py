@@ -165,7 +165,7 @@ def test_argument_refusals():
     with pytest.raises(ValueError, match=r"^R has shape \(1, 128\); 2 channel\(s\) on this WDMDomain need "
                                          r"shape \(2, 128\)$"):
         from_coordinates(R[:1], d, ("A", "E"))
-    with pytest.raises(ValueError, match="complex"):
+    with pytest.raises(TypeError, match="R must be an array of real coordinates, got dtype complex128"):
         from_coordinates(R + 0j, d, ("A", "E"))
     with pytest.raises(ValueError, match="not finite"):
         from_coordinates(np.where(np.arange(N) == 3, np.nan, R), d, ("A", "E"))

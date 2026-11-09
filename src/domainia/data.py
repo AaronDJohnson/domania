@@ -5,7 +5,9 @@ Each class is a JAX pytree (:func:`wilson.backend.pytree_dataclass`) whose only 
 vectors on one domain ``vmap``s and two different domains compile separately.
 
 Shapes: ``values[..., N]`` (no channel axis) or ``values[..., C, N]`` with
-``C = len(channels.names)``; ``N`` is ``domain.size``.  The shape is checked when
+``C = len(channels.names)``; ``N`` is ``domain.size``.  ``domain`` must be the class's own
+domain kind and ``channels`` a :class:`~domainia.domains.ChannelAxis` (``TypeError``
+otherwise; a tuple or a str of names is refused).  The shape is checked when
 ``values`` is a concrete array; JAX rebuilds pytrees with tracers or placeholder
 leaves (``tree_map``, ``vmap`` axis specs), and those are never checked.
 """
@@ -16,6 +18,7 @@ import dataclasses
 from dataclasses import dataclass
 from typing import Any
 
+from domainia.wilson._checks import require_instance
 from domainia.wilson.backend import is_tracer, pytree_dataclass
 
 from .domains import ChannelAxis, FourierDomain, TimeDomain, WDMDomain
@@ -55,8 +58,8 @@ class TimeSeries(_Data):
     channels: ChannelAxis = ChannelAxis()
 
     def __post_init__(self) -> None:
-        if not isinstance(self.domain, TimeDomain):
-            raise TypeError(f"TimeSeries.domain must be a TimeDomain; got {type(self.domain).__name__}")
+        require_instance("TimeSeries.domain", self.domain, TimeDomain, "a TimeDomain")
+        require_instance("TimeSeries.channels", self.channels, ChannelAxis, "a ChannelAxis")
         _check(self.values, self.domain.N, self.channels, "TimeSeries")
 
 
@@ -70,9 +73,8 @@ class FourierBins(_Data):
     channels: ChannelAxis = ChannelAxis()
 
     def __post_init__(self) -> None:
-        if not isinstance(self.domain, FourierDomain):
-            raise TypeError(f"FourierBins.domain must be a FourierDomain; got "
-                            f"{type(self.domain).__name__}")
+        require_instance("FourierBins.domain", self.domain, FourierDomain, "a FourierDomain")
+        require_instance("FourierBins.channels", self.channels, ChannelAxis, "a ChannelAxis")
         _check(self.values, self.domain.n, self.channels, "FourierBins")
 
 
@@ -86,6 +88,6 @@ class WDMCells(_Data):
     channels: ChannelAxis = ChannelAxis()
 
     def __post_init__(self) -> None:
-        if not isinstance(self.domain, WDMDomain):
-            raise TypeError(f"WDMCells.domain must be a WDMDomain; got {type(self.domain).__name__}")
+        require_instance("WDMCells.domain", self.domain, WDMDomain, "a WDMDomain")
+        require_instance("WDMCells.channels", self.channels, ChannelAxis, "a ChannelAxis")
         _check(self.values, self.domain.size, self.channels, "WDMCells")
