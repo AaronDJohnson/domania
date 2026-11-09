@@ -141,10 +141,13 @@ def test_validation():
         CellSet.bands(g, (3, 2))
     with pytest.raises(ValueError, match="exceeds"):
         CellSet.all_active(g).drop_columns(10, 7)
-    # non-integral, non-finite or boolean indices are refused, never truncated (2.9999999 -> 2)
-    for m_bad, n_bad in (((2.9999999,), (0,)), ((1,), (0.5,)), ((np.nan,), (0,)), ((True,), (0,))):
+    # non-integral or non-finite indices are refused, never truncated (2.9999999 -> 2)
+    for m_bad, n_bad in (((2.9999999,), (0,)), ((1,), (0.5,)), ((np.nan,), (0,))):
         with pytest.raises(ValueError, match="integer"):
             CellSet(g, m_bad, n_bad)
+    # a boolean index array is a wrong kind
+    with pytest.raises(TypeError, match="^m must be an integer index array, got dtype bool$"):
+        CellSet(g, (True,), (0,))
     assert CellSet(g, np.array([1.0, 2.0]), np.array([3.0, 3.0])) == CellSet(g, (1, 2), (3, 3))
 
 

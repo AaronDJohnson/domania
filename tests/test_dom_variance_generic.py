@@ -74,7 +74,7 @@ def test_cells_must_be_a_cell_set_or_a_wdm_domain(cls):
     v = cls(PSD, WDMDomain(CUT))
     assert v.cells == CUT and isinstance(v.cells, CellSet)
     np.testing.assert_array_equal(v(NU), cls(PSD, CUT)(NU))
-    with pytest.raises(TypeError, match=r"^cells must be a CellSet or a WDMDomain; got Grid$"):
+    with pytest.raises(TypeError, match=r"^cells must be a CellSet or a WDMDomain, got Grid$"):
         cls(PSD, GRID)
 
 

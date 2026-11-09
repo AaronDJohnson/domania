@@ -30,7 +30,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from domainia import wilson
-from domainia.wilson._checks import require_int
+from domainia.wilson._checks import (index_array, require_dtype, require_instance, require_int,
+                                     require_real, require_str)
 from domainia.wilson.grid import packed_cells
 from domainia.wilson.windows import MEYER, Window, require_window
 
@@ -58,7 +59,10 @@ def _int(name: str, value: object, *, minimum: int) -> int:
 
 
 def _positive_float(name: str, value: object) -> float:
-    v = float(value)  # type: ignore[arg-type]
+    """``value`` as a Python ``float`` (so ``rfft_scale`` is one too): ``TypeError`` unless it
+    is a real number (``require_real``: no ``bool``, ``str``, ``None``, complex or array), then
+    ``ValueError`` unless it is finite and > 0."""
+    v = require_real(name, value)
     if not math.isfinite(v) or v <= 0.0:
         raise ValueError(f"{name} must be finite and > 0; got {value!r}")
     return v
@@ -75,7 +79,7 @@ class TimeDomain:
     def __post_init__(self) -> None:
         object.__setattr__(self, "N", _int("N", self.N, minimum=1))
         object.__setattr__(self, "dt", _positive_float("dt", self.dt))
-        t0 = float(self.t0)
+        t0 = require_real("t0", self.t0)
         if not math.isfinite(t0):
             raise ValueError(f"t0 must be finite; got {self.t0!r}")
         object.__setattr__(self, "t0", t0)
@@ -113,6 +117,7 @@ class FourierDomain:
         n = _int("n", self.n, minimum=1)
         if k0 + n > N // 2 + 1:
             raise ValueError(f"bins [{k0}, {k0 + n}) exceed the {N // 2 + 1} rfft bins of N={N}")
+        require_str("units", self.units)
         if self.units not in FOURIER_UNITS:
             raise ValueError(f"units must be one of {FOURIER_UNITS}; got {self.units!r}")
         if self.units == "sigma0":
@@ -161,18 +166,12 @@ class FourierDomain:
 def _cell_index(name: str, value: object) -> IntArray:
     """``value`` as a fresh flat int64 array (a copy: the caller's array is never touched).
 
-    Integer dtypes pass; finite integral floats (``3.0``) are accepted; anything else
-    (``2.9999999``, NaN, booleans) raises instead of being truncated by the int64 cast.
+    Through ``index_array``: integer dtypes pass and finite integral floats (``3.0``) are
+    accepted; a float that is not integral or not finite (``2.9999999``, NaN) raises
+    ``ValueError`` instead of being truncated by the int64 cast; a bool, str, object or
+    complex array raises ``TypeError``.
     """
-    raw = np.asarray(value)
-    if raw.size and raw.dtype.kind not in "iu":
-        if raw.dtype.kind != "f":
-            raise ValueError(f"{name} must hold integer cell indices; got dtype {raw.dtype}")
-        bad = ~np.isfinite(raw) | (raw != np.trunc(raw))
-        if np.any(bad):
-            first = raw.reshape(-1)[np.flatnonzero(bad.reshape(-1))[0]]
-            raise ValueError(f"{name} must hold integer cell indices; got {first!r}")
-    return np.array(raw, dtype=np.int64).reshape(-1)
+    return np.array(index_array(name, value), dtype=np.int64).reshape(-1)
 
 
 def _active(m: IntArray, n: IntArray, Nf: int) -> BoolArray:
@@ -207,8 +206,7 @@ class CellSet:
     n: tuple[int, ...]
 
     def __post_init__(self) -> None:
-        if not isinstance(self.grid, wilson.Grid):
-            raise TypeError(f"grid must be a domainia.wilson.Grid; got {type(self.grid).__name__}")
+        require_instance("grid", self.grid, wilson.Grid, "a domainia.wilson.Grid")
         m = _cell_index("m", self.m)                            # copies: the flags below
         n = _cell_index("n", self.n)                            # must not touch the caller's
         if m.shape != n.shape:
@@ -282,6 +280,7 @@ class CellSet:
 
     def index_of(self, sub: CellSet) -> IntArray:
         """Positions of ``sub``'s cells within ``self`` (``sub`` must be a subset)."""
+        require_instance("sub", sub, CellSet, "a CellSet")
         if sub.grid != self.grid:
             raise ValueError("cell sets live on different grids")
         Nt = self.grid.Nt
@@ -296,13 +295,15 @@ class CellSet:
     @classmethod
     def all_active(cls, grid: wilson.Grid) -> CellSet:
         """Every active cell: ``wilson.grid.packed_cells(Nf, Nt)``."""
+        require_instance("grid", grid, wilson.Grid, "a domainia.wilson.Grid")
         m, n = packed_cells(grid.Nf, grid.Nt)
         return cls(grid, tuple(m.tolist()), tuple(n.tolist()))
 
     @classmethod
     def bands(cls, grid: wilson.Grid, bands: tuple[int, ...] | list[int]) -> CellSet:
         """Every active cell of the bands ``bands`` (strictly ascending)."""
-        b = np.asarray(bands, dtype=np.int64).reshape(-1)
+        require_instance("grid", grid, wilson.Grid, "a domainia.wilson.Grid")
+        b = index_array("bands", bands).reshape(-1)
         if b.size == 0 or np.any(np.diff(b) <= 0):
             raise ValueError(f"bands must be non-empty and strictly ascending; got {bands!r}")
         if b.min() < 0 or b.max() > grid.Nf:
@@ -318,9 +319,14 @@ class CellSet:
 
     @classmethod
     def from_mask(cls, grid: wilson.Grid, keep: BoolArray) -> CellSet:
-        """The cells where ``keep`` (a boolean mask over the ``N`` packed cells) is True."""
+        """The cells where ``keep`` (a boolean mask over the ``N`` packed cells) is True.
+
+        ``keep`` of another dtype (an index array such as ``np.arange(N)``) raises
+        ``TypeError``; a mask of the wrong shape raises ``ValueError``."""
+        require_instance("grid", grid, wilson.Grid, "a domainia.wilson.Grid")
         keep = np.asarray(keep)
-        if keep.dtype != np.bool_ or keep.shape != (grid.N,):
+        require_dtype("keep", keep, "b", "a boolean mask")
+        if keep.shape != (grid.N,):
             raise ValueError(f"keep must be a boolean mask of shape ({grid.N},)")
         m, n = packed_cells(grid.Nf, grid.Nt)
         return cls(grid, tuple(m[keep].tolist()), tuple(n[keep].tolist()))
@@ -371,14 +377,13 @@ class WDMDomain:
     window: Window = MEYER
 
     def __post_init__(self) -> None:
-        if not isinstance(self.cells, CellSet):
-            raise TypeError(f"cells must be a CellSet; got {type(self.cells).__name__}")
+        require_instance("cells", self.cells, CellSet, "a CellSet")
         require_window(self.window)
         try:
             hash(self.window)
         except TypeError:
             raise TypeError(f"window must be hashable (it is part of the domain's identity and "
-                            f"static under jax.jit); got an unhashable "
+                            f"static under jax.jit), got an unhashable "
                             f"{type(self.window).__name__}") from None
 
     @classmethod
@@ -412,21 +417,28 @@ def _cells_and_window(cells: object, window: object = None, *,
                 raise ValueError(f"window {w.name} is not the WDMDomain's window "
                                  f"{cells.window.name}: pass window=None to use the domain's")
         return cells.cells, cells.window
-    if not isinstance(cells, CellSet):
-        raise TypeError(f"cells must be a CellSet or a WDMDomain; got {type(cells).__name__}")
+    require_instance("cells", cells, CellSet, "a CellSet or a WDMDomain")
     return cells, require_window(default if window is None else window)
 
 
 @dataclass(frozen=True)
 class ChannelAxis:
-    """Named channels; ``ChannelAxis()`` means one channel and no channel axis."""
+    """Named channels; ``ChannelAxis()`` means one channel and no channel axis.
+
+    ``names`` is a tuple (or a list) of non-empty strings (``TypeError`` otherwise), all
+    different (``ValueError``).  A bare string is refused, not split into one name per
+    character: ``ChannelAxis("AE")`` raises ``TypeError``; write ``ChannelAxis(("A", "E"))``.
+    """
 
     names: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
+        if isinstance(self.names, str):
+            raise TypeError(f"names must be a tuple of channel names, "
+                            f"got {type(self.names).__name__}")
         names = tuple(self.names)
         if not all(isinstance(s, str) and s for s in names):
-            raise TypeError(f"channel names must be non-empty strings; got {self.names!r}")
+            raise TypeError(f"channel names must be non-empty strings, got {self.names!r}")
         if len(set(names)) != len(names):
             raise ValueError(f"channel names must be unique; got {names!r}")
         object.__setattr__(self, "names", names)
