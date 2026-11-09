@@ -115,6 +115,7 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
+from ._checks import REAL_KINDS, index_array, require_dtype, require_int
 from .backend import NUMPY, Backend, get_backend, is_tracer
 from .grid import (
     active_mask,
@@ -685,9 +686,11 @@ def inverse(
     Raises
     ------
     TypeError
-        If ``Nf`` or ``Nt`` is not an integer, or ``dt`` is not a real number.
+        If ``Nf`` or ``Nt`` is not an integer, ``dt`` is not a real number, or ``wmn``
+        is not a real numeric array: a complex grid would have its imaginary part
+        silently discarded, and a bool, str or object grid is refused too.
     ValueError
-        If the grid is invalid, if ``wmn`` is complex or wrongly shaped, or
+        If the grid is invalid, if ``wmn`` is wrongly shaped, or
         if it holds a ``nan`` or ``inf`` (see :func:`domainia.wilson.validate_finite`).
 
     Examples
@@ -698,17 +701,17 @@ def inverse(
     >>> w = wilson.forward(np.fft.rfft(x), Nf, Nt, dt)
     >>> bool(np.allclose(wilson.inverse(w, Nf, Nt, dt), np.fft.rfft(x)))
     True
+    >>> wilson.inverse(w + 0j, Nf, Nt, dt)
+    Traceback (most recent call last):
+    TypeError: wmn must be a real numeric array, got dtype complex128
     """
     validate_grid(Nf, Nt)
     validate_dt(dt)
     N = n_samples(Nf, Nt)
     be = be or get_backend(wmn)
     wmn = be.asarray(wmn)
-    if be.xp.iscomplexobj(wmn):
-        raise ValueError(
-            "wmn must be real; a complex grid would have its imaginary part "
-            "silently discarded"
-        )
+    # A complex grid would have its imaginary part silently discarded.
+    require_dtype("wmn", wmn, REAL_KINDS, "a real numeric array")
     if wmn.shape != (Nf + 1, Nt):
         raise ValueError(f"wmn must have shape ({Nf + 1}, {Nt}); got {wmn.shape}")
     _check_finite(wmn, "inverse: wmn")
@@ -768,11 +771,8 @@ def inverse_many(
     N = n_samples(Nf, Nt)
     be = be or get_backend(wmn)
     wmn = be.asarray(wmn)
-    if be.xp.iscomplexobj(wmn):
-        raise ValueError(
-            "wmn must be real; a complex grid would have its imaginary part "
-            "silently discarded"
-        )
+    # A complex grid would have its imaginary part silently discarded.
+    require_dtype("wmn", wmn, REAL_KINDS, "a real numeric array")
     if wmn.ndim != 3 or wmn.shape[1:] != (Nf + 1, Nt):
         raise ValueError(
             f"wmn must have shape (B, {Nf + 1}, {Nt}) for Nf={Nf}, Nt={Nt}; "
@@ -1033,6 +1033,8 @@ def atom_spectrum(m: int, n: int, Nf: int, Nt: int, dt: float, *,
     require_window(window)
     validate_grid(Nf, Nt)
     validate_dt(dt)
+    require_int("m", m)
+    require_int("n", n)
     if not 0 <= n < Nt:
         raise ValueError(f"n must lie in 0..{Nt - 1} on the ({Nf}, {Nt}) grid; got {n}")
     base = base_atom_spectra(Nf, Nt, dt, window=window) if base is None else base
@@ -1045,7 +1047,7 @@ def atom_spectrum(m: int, n: int, Nf: int, Nt: int, dt: float, *,
 
 
 def _check_interior_bands(bands: NDArray[np.integer], Nf: int) -> NDArray[np.integer]:
-    bands = np.asarray(bands, dtype=int).ravel()
+    bands = index_array("bands", bands).ravel()
     if bands.size == 0 or bands.min() < 1 or bands.max() > Nf - 1:
         raise ValueError(f"bands must be interior bands 1..{Nf - 1}; got {bands.tolist()}")
     return bands
@@ -1144,6 +1146,7 @@ def forward_bands(z: CArray, k0: int, bands: NDArray[np.integer], Nf: int, Nt: i
     """
     validate_grid(Nf, Nt)
     validate_dt(dt)
+    require_int("k0", k0)
     be = be or get_backend(z)
     bands = _check_interior_bands(bands, Nf)
     z = be.asarray(z)
@@ -1193,14 +1196,14 @@ def inverse_bands(w: Array, k0: int, n_bins: int, bands: NDArray[np.integer], Nf
     """
     validate_grid(Nf, Nt)
     validate_dt(dt)
+    require_int("k0", k0)
+    require_int("n_bins", n_bins)
     be = be or get_backend(w)
     bands = _check_interior_bands(bands, Nf)
     w = be.asarray(w)
-    if be.xp.iscomplexobj(w):
-        raise ValueError(
-            "w must be real; the adjoint identity holds only for real cells, so a "
-            "complex w would give a complex result that is not the adjoint of any cells"
-        )
+    # The adjoint identity holds only for real cells: a complex w would give a complex
+    # result that is not the adjoint of any cells.
+    require_dtype("w", w, REAL_KINDS, "a real numeric array")
     if w.shape[-2:] != (bands.size, Nt):
         raise ValueError(f"w must end in ({bands.size}, {Nt}); got {w.shape}")
     _check_finite(w, "inverse_bands: w")

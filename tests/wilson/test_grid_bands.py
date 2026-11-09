@@ -297,7 +297,7 @@ def test_inverse_bands_rejects_complex_and_non_finite_cells(backend):
     Nf, Nt, dt = 8, 16, 1.0
     bands = np.array([2, 3])
     w = np.ones((bands.size, Nt))
-    with pytest.raises(ValueError, match="w must be real"):
+    with pytest.raises(TypeError, match="w must be a real numeric array, got dtype complex128"):
         inverse_bands(backend.asarray(w + 1j), 0, 40, bands, Nf, Nt, dt)
     w[1, 4] = np.nan
     with pytest.raises(ValueError, match="inverse_bands: w: .* not finite"):

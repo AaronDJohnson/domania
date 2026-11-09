@@ -57,6 +57,7 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from ._checks import require_bool, require_str
 from .grid import active_mask, n_samples, sanitize_psd, validate_finite
 from .transform import inverse, inverse_many
 from .windows import MEYER, Window
@@ -73,6 +74,7 @@ def _cell_mask(cells: Cells, Nf: int, Nt: int) -> NDArray[np.bool_]:
     ``"interior"``: bands ``m = 1..Nf-1`` (vendored behaviour).  ``"active"``:
     :func:`domainia.wilson.grid.active_mask` -- every active cell, DC and Nyquist included.
     """
+    require_str("cells", cells)
     if cells == "interior":
         mask = np.zeros((Nf + 1, Nt), dtype=bool)
         mask[1:Nf] = True
@@ -704,6 +706,7 @@ def loglike_whittle_many(
     >>> ll.shape, bool(np.all(ll < 0))
     ((3,), True)
     """
+    include_logdet = require_bool("include_logdet", include_logdet)
     w_d, w_h = np.asarray(w_d), np.asarray(w_h)
     try:
         out_shape = np.broadcast_shapes(w_d.shape, w_h.shape)
@@ -776,6 +779,7 @@ def loglike_whittle(
     >>> bool(ll < 0)  # negative for a nonzero residual
     True
     """
+    include_logdet = require_bool("include_logdet", include_logdet)
     residual = _residual(w_d, w_h)
     quad = whittle(residual, residual, var, Nf, cells=cells)
     if include_logdet:
@@ -930,6 +934,7 @@ def loglike_gaussian_many(
     >>> ll.shape, bool(np.all(ll < 0))
     ((3,), True)
     """
+    include_logdet = require_bool("include_logdet", include_logdet)
     N = n_samples(Nf, Nt)
     Sn_array = _check_psd_grid(Sn_array, N, "loglike_gaussian_many")
     w_d, w_h = np.asarray(w_d), np.asarray(w_h)
@@ -1032,6 +1037,7 @@ def loglike_gaussian(
     """
     # The residual appears twice in <r|r>; inverse-transform it once rather
     # than letting gaussian() run two identical inverse WDM transforms.
+    include_logdet = require_bool("include_logdet", include_logdet)
     N = n_samples(Nf, Nt)
     Sn_array = _check_psd_grid(Sn_array, N, "loglike_gaussian")
     r_rfft = inverse(_residual(w_d, w_h), Nf, Nt, dt, window=window)

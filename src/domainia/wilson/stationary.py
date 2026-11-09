@@ -70,6 +70,7 @@ from collections.abc import Callable
 import numpy as np
 from numpy.typing import NDArray
 
+from ._checks import REAL_KINDS, require_dtype
 from .backend import Backend, get_backend, is_tracer
 from .grid import n_samples, sanitize_psd, validate_dt, validate_grid
 from .windows import MEYER, Window, sample_window
@@ -182,13 +183,15 @@ def _normalize_noise_to_sigma2(
 
     Raises
     ------
+    TypeError
+        If the PSD is not a real numeric array in any form: complex (even with a
+        zero imaginary part), bool, str or object.  It is rejected before any
+        cast, rather than truncated to its real part (with only a
+        ``ComplexWarning`` for callables and 1D arrays, silently for 2D ones), as
+        :func:`domainia.wilson.grid.sanitize_psd` does.
     ValueError
         If a 2D matrix input is not diagonal (i.e., the noise is not
-        stationary), if the input shape is not recognized, or if the PSD is
-        complex in any form (even with a zero imaginary part): it is
-        rejected before any cast, rather than truncated to its real part
-        (with only a ``ComplexWarning`` for callables and 1D arrays, silently
-        for 2D ones), as :func:`domainia.wilson.grid.sanitize_psd` does.
+        stationary), or if the input shape is not recognized.
     """
     context = "stationary noise input"
     if callable(noise):
@@ -245,13 +248,13 @@ def _normalize_noise_to_sigma2(
 
 
 def _reject_complex_psd(values: NDArray[np.generic], context: str) -> None:
-    """``ValueError`` for a complex PSD, with :func:`domainia.wilson.grid.sanitize_psd`'s message.
+    """``TypeError`` for a PSD that is not a real numeric array (complex, bool, str or
+    object), with :func:`domainia.wilson.grid.sanitize_psd`'s message.
 
     Checked on the raw input, before the ``float`` casts / ``np.real`` above
     would discard the imaginary part.
     """
-    if np.iscomplexobj(values):
-        raise ValueError(f"{context}: PSD must be real-valued, got a complex array")
+    require_dtype(f"{context}: PSD", values, REAL_KINDS, "a real numeric array")
 
 
 def _carriers(Nt: int) -> dict[tuple[int, int], CArray]:

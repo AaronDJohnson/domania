@@ -22,6 +22,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
+from ._checks import REAL_KINDS, require_dtype
 from ._checks import require_int as _require_int, validate_dt, validate_finite
 from .backend import Backend, get_backend
 
@@ -163,8 +164,8 @@ def sanitize_psd(values: object, context: str) -> Array:
     positive semi-definite.
 
     ``nan`` is *not* treated that way: it has no physical reading, so it raises.
-    Complex input raises too rather than being silently truncated to its real
-    part.
+    Complex input raises ``TypeError`` rather than being silently truncated to its
+    real part, and so does a bool, str or object array.
 
     The point of routing every module through here is **uniformity**. These
     paths previously disagreed: ``build_C_time`` and ``stationary`` mapped
@@ -190,8 +191,10 @@ def sanitize_psd(values: object, context: str) -> Array:
 
     Raises
     ------
+    TypeError
+        If ``values`` is not a real numeric array (a complex, bool, str or object dtype).
     ValueError
-        If any entry is negative, ``nan``, or complex.
+        If any entry is negative or ``nan``.
 
     Examples
     --------
@@ -201,10 +204,12 @@ def sanitize_psd(values: object, context: str) -> Array:
     >>> wilson.grid.sanitize_psd([-1.0], 'demo')
     Traceback (most recent call last):
     ValueError: demo: PSD has negative value(s); a power spectral density must be non-negative
+    >>> wilson.grid.sanitize_psd([1e-3 + 0j], 'demo')
+    Traceback (most recent call last):
+    TypeError: demo: PSD must be a real numeric array, got dtype complex128
     """
     arr = np.asarray(values)
-    if np.iscomplexobj(arr):
-        raise ValueError(f"{context}: PSD must be real-valued, got a complex array")
+    require_dtype(f"{context}: PSD", arr, REAL_KINDS, "a real numeric array")
     # Preserve single precision rather than forcing float64: a float32 PSD
     # paired with a float32 coefficient grid keeps the *whole* working set
     # single-precision. Forcing double here meant the variance grid stayed
@@ -442,7 +447,11 @@ def carrier_phase(m: int, Nt: int) -> Array:
     >>> import numpy as np; from domainia import wilson
     >>> wilson.grid.carrier_phase(1, 4)
     array([ 1., -1.,  1., -1.])
+    >>> wilson.grid.carrier_phase(1.0, 4)
+    Traceback (most recent call last):
+    TypeError: m must be an integer, got float
     """
+    _require_int("m", m)
     if m % 2 == 0:
         return np.ones(Nt)
     return 1.0 - 2.0 * (np.arange(Nt) % 2)
@@ -560,7 +569,12 @@ def edge_columns(Nt: int, lead: int, trail: int) -> tuple[int, ...]:
     >>> from domainia import wilson
     >>> wilson.grid.edge_columns(256, 8, 7)
     (0, 1, 2, 3, 4, 5, 6, 7, 249, 250, 251, 252, 253, 254, 255)
+    >>> wilson.grid.edge_columns(256, True, 7)
+    Traceback (most recent call last):
+    TypeError: lead must be an integer, got bool
     """
+    _require_int("lead", lead)
+    _require_int("trail", trail)
     return tuple(range(lead)) + tuple(range(Nt - trail, Nt))
 
 

@@ -40,6 +40,8 @@ from typing import Any, Literal
 
 import numpy as np
 
+from ._checks import require_str
+
 __all__ = [
     "NUMPY",
     "Backend",
@@ -238,6 +240,7 @@ class _NumpyBackend(Backend):
         upper triangle zeroed (``np.tril``; LAPACK never reads it, so solves are
         bit-identical to ``cho_solve`` on the raw factor).  A matrix that is not
         positive definite gives a NaN-filled ``L`` and ``ok=False``."""
+        require_str("impl", impl)
         A = np.asarray(A)
         try:
             if impl == "numpy":
@@ -360,6 +363,7 @@ class _JaxBackend(Backend):
         return getattr(self.fft, op)(x, n=n, axis=axis)
 
     def cholesky(self, A: Any, *, impl: Literal["numpy", "scipy"]) -> tuple[Any, Any]:
+        require_str("impl", impl)
         if impl not in ("numpy", "scipy"):
             raise ValueError(f"impl must be 'numpy' or 'scipy'; got {impl!r}")
         xp = self.xp
@@ -495,6 +499,8 @@ def get_backend(*arrays: Any, backend: str | Backend | None = None) -> Backend:
     """
     if isinstance(backend, Backend):
         return backend
+    if backend is not None:
+        require_str("backend", backend)
     if backend == "numpy":
         return NUMPY
     if backend == "jax":

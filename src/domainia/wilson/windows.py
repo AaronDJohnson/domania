@@ -35,7 +35,7 @@ from typing import Any, NoReturn, Protocol, runtime_checkable
 import numpy as np
 from numpy.typing import NDArray
 
-from ._checks import require_int
+from ._checks import require_callable, require_instance, require_int
 from .filter import phi_centered
 from .grid import delta_F, validate_dt, validate_grid
 
@@ -138,18 +138,17 @@ class _Admissible:
 
 def _check_name(name: Any) -> None:
     if not isinstance(name, str) or not name:
-        raise TypeError(f"window name must be a non-empty string; got {name!r}")
+        raise TypeError(f"window name must be a non-empty string, got {name!r}")
 
 
 def _check_callable(what: str, fn: Any) -> None:
-    if not callable(fn):
-        raise TypeError(f"{what} must be callable; got {type(fn).__name__}")
+    require_callable(what, fn)
     try:
         hash(fn)
     except TypeError:
-        raise TypeError(f"{what} must be hashable (a window is a cache key and static under jax.jit): "
-                        f"use a module-level function or a frozen dataclass instance; got an "
-                        f"unhashable {type(fn).__name__}") from None
+        raise TypeError(f"{what} must be hashable (a window is a cache key and static under "
+                        f"jax.jit), got an unhashable {type(fn).__name__}: use a module-level "
+                        f"function or a frozen dataclass instance") from None
 
 
 def _meyer_geometry(Nf: int, Nt: int, dt: float) -> tuple[np.ndarray, float, float, float]:
@@ -279,12 +278,10 @@ def require_window(obj: Any) -> Window:
     ``sample`` attributes, so it passes the protocol check, but it cannot be sampled.
     """
     if isinstance(obj, type):
-        raise TypeError(f"window must be a Window instance, not the class {obj.__qualname__}: "
+        raise TypeError(f"window must be a Window instance, got the class {obj.__qualname__}: "
                         f"pass an instance, e.g. Meyer() or domainia.wilson.MEYER")
-    if not isinstance(obj, Window):
-        raise TypeError(f"window must be a domainia.wilson Window (Meyer, RampWindow, "
-                        f"SampledWindow); got {type(obj).__name__}")
-    return obj
+    return require_instance("window", obj, Window,
+                            "a domainia.wilson Window (Meyer, RampWindow, SampledWindow)")
 
 
 def sample_window(window: Any, Nf: int, Nt: int, dt: float) -> Array:

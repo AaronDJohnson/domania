@@ -440,7 +440,7 @@ def empirical_variance(
     """
     validate_grid(Nf, Nt)
     validate_dt(dt)
-    if int(n_realizations) < 1:
+    if require_int("n_realizations", n_realizations) < 1:
         raise ValueError(f"n_realizations must be >= 1, got {n_realizations}")
     N = n_samples(Nf, Nt)
     rng = np.random.default_rng(seed)

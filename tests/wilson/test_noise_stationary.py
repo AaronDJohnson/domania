@@ -224,7 +224,7 @@ def _complex_psd_forms(Nf, Nt, dt, imag):
 @pytest.mark.parametrize("imag", [1e-3j, 0j])
 @pytest.mark.parametrize("build", ["build_lambda_blocks_full_active", "build_K_full_active"])
 def test_complex_psd_is_rejected(build, imag):
-    """A PSD is real: a complex one (even with a zero imaginary part) raises ValueError
+    """A PSD is real: a complex one (even with a zero imaginary part) raises TypeError
     in every input form, instead of being truncated to its real part (1D and callables
     used to warn ComplexWarning and go on; the 2D form took np.real silently)."""
     import warnings
@@ -233,7 +233,7 @@ def test_complex_psd_is_rejected(build, imag):
     for form, noise_in in _complex_psd_forms(Nf, Nt, dt, imag).items():
         with warnings.catch_warnings():
             warnings.simplefilter("error")          # a ComplexWarning must not stand in
-            with pytest.raises(ValueError, match="real-valued"):
+            with pytest.raises(TypeError, match="PSD must be a real numeric array, got dtype complex128"):
                 getattr(stat, build)(Nf, Nt, dt, noise_in)
                 pytest.fail(f"{build} accepted a complex {form} PSD")
 

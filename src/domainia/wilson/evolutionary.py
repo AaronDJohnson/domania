@@ -52,6 +52,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from ._checks import require_dtype, require_real
 from .backend import NUMPY, Backend, get_backend, pytree_dataclass
 from .grid import (
     _require_int,
@@ -451,8 +452,8 @@ def eq45_plan(Nf: int, Nt: int, dt: float, keep: BoolArray | None = None, *,
     Raises
     ------
     TypeError
-        If ``Nf``, ``Nt`` or ``P`` is not an integer (``bool`` included), ``dt`` is not a
-        real number, or ``keep`` is not a boolean mask.
+        If ``Nf``, ``Nt`` or ``P`` is not an integer (``bool`` included), ``dt`` or
+        ``t_max`` is not a real number, or ``keep`` is not a boolean mask.
     ValueError
         If the grid or ``dt`` is invalid, ``P < 1``, ``keep`` has the wrong shape, or a
         kept pair mid-time lies outside ``[0, t_max]``.
@@ -474,11 +475,11 @@ def eq45_plan(Nf: int, Nt: int, dt: float, keep: BoolArray | None = None, *,
     eta[[0, -1]] = 0.5
     base = base_atom_spectra(Nf, Nt, dt, window=window)
     keep = np.ones(m.size, bool) if keep is None else np.asarray(keep)
-    if keep.dtype != np.bool_:   # an index array (e.g. np.arange(N)) would silently drop cell 0
-        raise TypeError("keep must be a boolean mask over the packed cells")
+    # An index array (e.g. np.arange(N)) would silently drop cell 0.
+    require_dtype("keep", keep, "b", "a boolean mask over the packed cells")
     if keep.shape != (m.size,):
         raise ValueError(f"keep must be a mask over the {m.size} packed cells; got {keep.shape}")
-    t_max = float(T if t_max is None else t_max)
+    t_max = T if t_max is None else require_real("t_max", t_max)
     cells = np.flatnonzero(keep)
     pos = -np.ones(m.size, int)
     pos[cells] = np.arange(cells.size)
