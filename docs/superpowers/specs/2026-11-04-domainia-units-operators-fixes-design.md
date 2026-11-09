@@ -71,6 +71,9 @@ Three changes to the unreleased 2.0 branch:
   * `filter.py:65` (`nu_d`'s `d`, which mixes the kind and range checks).
   * `validate_dt` calls `float(dt)`.
   * The rest of domainia raises `TypeError` for a wrong kind (`domains._int`).
+    *(Note, 2026-11-08: overstated. At 779550d about 24 entry points raised a bare
+    `AttributeError` and about 26 scalar sites converted silently; spec 2026-11-08 §2 makes
+    it hold.)*
 * **Covariances:**
   * `factor(nu)` returns a `Factor` (`solve`, `quad`, `logdet`, `ok`), and `dense(nu)`
     works through `_matrix`. There is no multiply.

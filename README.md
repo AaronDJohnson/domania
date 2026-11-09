@@ -162,9 +162,14 @@ or Fourier.
 
 ## Errors
 
-Everything fails closed. `WindowError` (a `ValueError`) means an inadmissible window.
-`ValueError` covers shape, finiteness, inactive-cell, endpoint, domain or window
-mismatches. `TypeError` means the wrong kind of object.
+Everything fails closed. `TypeError` means the wrong kind of argument: a type that can never
+be valid in that place (a float or a `bool` where an integer is taken, a string where a flag
+is, a `Grid` where a domain is), or an array whose dtype can never be (a complex or bool
+array where real numbers are taken). `ValueError` means the right kind with a wrong value:
+shape, range, finiteness, integrality, an unknown option string, inactive cells, endpoints,
+or a domain or window mismatch. `WindowError` (a `ValueError`) means an inadmissible window,
+complex window samples included. Complex values on a time or WDM domain raise `ValueError`,
+because they are valid on a `FourierDomain`. Backend handles passed as `be=` are not checked.
 
 ## Install and test
 

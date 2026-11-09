@@ -297,6 +297,10 @@ README is rewritten for the general library.
 * `ValueError` for a shape, finiteness, inactive-entry or endpoint violation, or for a
   domain or window mismatch.
 * `TypeError` for a wrong kind of object.
+  *(Note, 2026-11-08: this held only in parts of the package until spec 2026-11-08 §2, which
+  makes it hold everywhere and counts an array's dtype as its kind. Its exceptions: complex
+  values on a time or WDM domain raise `ValueError`, complex window samples raise
+  `WindowError`, and `be=` backend handles are not checked.)*
 
 **Bit-identity baseline (first task, before any edit).** With the untouched code, record
 the outputs of every public function that consumes the window into
