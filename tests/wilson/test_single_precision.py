@@ -10,6 +10,7 @@ which it compares by tolerance.
 from __future__ import annotations
 
 import dataclasses
+import re
 
 import numpy as np
 import pytest
@@ -169,3 +170,125 @@ def test_jax_float32_runs_are_single_precision(name, jax_be, rng):
     assert isinstance(out, jax.Array), type(out)
     assert out.dtype == output_dtype(name, np.float32)
     assert rec.calls and all(dt in SINGLE for _, dt in rec.calls), rec.calls
+
+
+# ---------------------------------------------------------------------------
+# The single-precision guard (spec 2026-11-08 §1.4): a float32 run that overflows raises
+# ---------------------------------------------------------------------------
+
+
+def _overflowing() -> dict:
+    """``{entry point: (a, call(a, be))}``: a double-precision input ``a`` that stays finite
+    when rounded to single precision, and whose single-precision run overflows float32
+    inside the entry point.  The double-precision run is finite."""
+    rng = np.random.default_rng(3)
+    flat = np.full(N, 1e37)                    # rfft bin 0 is N * 1e37 = 1.3e39
+    impulse = np.zeros(N)
+    impulse[37] = 1e37                         # every rfft bin has modulus 1e37
+    bins = (rng.standard_normal(N // 2 + 1) + 1j * rng.standard_normal(N // 2 + 1)) * 1e36
+    w_flat = T.forward_time(flat, NF, NT, DT)  # its inverse has bin 0 = 1.3e39 again
+    w_impulse = T.forward_time(impulse, NF, NT, DT)
+    w_bands = T.forward_bands(bins * 1e3, 0, BANDS, NF, NT, 1e-4)
+
+    def two(a):
+        return np.stack([a, a])
+
+    return {
+        "forward_time": (flat, lambda a, be: T.forward_time(a, NF, NT, DT, be=be)),
+        "forward_time_many": (two(flat), lambda a, be: T.forward_time_many(a, NF, NT, DT, be=be)),
+        "forward": (bins, lambda a, be: T.forward(a, NF, NT, 1e4, be=be)),
+        "forward_many": (two(bins), lambda a, be: T.forward_many(a, NF, NT, 1e4, be=be)),
+        "inverse": (w_flat, lambda a, be: T.inverse(a, NF, NT, DT, be=be)),
+        "inverse_many": (two(w_flat), lambda a, be: T.inverse_many(a, NF, NT, DT, be=be)),
+        "inverse_time": (w_impulse, lambda a, be: T.inverse_time(a, NF, NT, DT, be=be)),
+        "inverse_time_many": (two(w_impulse),
+                              lambda a, be: T.inverse_time_many(a, NF, NT, DT, be=be)),
+        "forward_bands": (bins, lambda a, be: T.forward_bands(a, 0, BANDS, NF, NT, 1e4, be=be)),
+        "inverse_bands": (w_bands, lambda a, be: T.inverse_bands(a, 0, N // 2 + 1, BANDS, NF, NT,
+                                                                 1e-4, be=be)),
+    }
+
+
+def _single(a: np.ndarray) -> np.ndarray:
+    """``a`` rounded to single precision (float32, or complex64 for complex ``a``)."""
+    return a.astype(np.complex64 if np.iscomplexobj(a) else np.float32)
+
+
+def test_the_guard_reads_single_precision_results_only():
+    """A double result is not scanned at all, so float64 runs gain no pass; a single one is,
+    and its message names the entry point and float64."""
+    T._check_single_output(np.array([1.0, np.inf, np.nan]), "f")      # float64: skipped
+    T._check_single_output(np.array([np.inf + 0j]), "f")              # complex128: skipped
+    T._check_single_output(np.ones(3, np.float32), "f")               # finite: passes
+    msg = ("f: 2 of 3 entries of the single-precision result are not finite (1 nan, 1 inf), "
+           "from finite input: the computation overflowed float32, whose largest value is "
+           "3.4e38. Pass float64 (or complex128) input to compute in double.")
+    with pytest.raises(ValueError, match=f"^{re.escape(msg)}$"):
+        T._check_single_output(np.array([1.0, np.inf, np.nan], np.float32), "f")
+    with pytest.raises(ValueError, match=r"^f: 1 of 2 entries .* \(0 nan, 1 inf\)"):
+        T._check_single_output(np.array([1.0, np.inf], np.complex64), "f")
+
+
+def test_forward_bands_of_complex64_bins_at_a_large_dt_raises():
+    """At ``dt = 1e4`` the window samples (max 400) scale complex64 bins of amplitude 1e36
+    past float32's 3.4e38 inside ``forward_bands``, which returned NaN cells with only
+    ``RuntimeWarning``s.  The cells themselves fit float32: complex128 bins give them."""
+    z, call = _overflowing()["forward_bands"]
+    with np.errstate(over="ignore", invalid="ignore"):
+        with pytest.raises(ValueError, match="^forward_bands: .*float64"):
+            call(z.astype(np.complex64), NUMPY)
+    w = call(z, NUMPY)
+    assert w.dtype == np.float64 and np.all(np.isfinite(w))
+    assert np.max(np.abs(w)) < np.finfo(np.float32).max
+
+
+def test_forward_time_of_a_record_that_overflows_its_rfft_names_forward_time():
+    """The rfft of a float32 record of 1e37 overflows (bin 0 is 1.3e39).  ``forward``'s input
+    check used to report it as a gap: "forward: x_rfft: ... Fill or excise the gaps"."""
+    x = np.full(N, 1e37, dtype=np.float32)
+    with np.errstate(over="ignore", invalid="ignore"):
+        with pytest.raises(ValueError, match="^forward_time: .*float64") as info:
+            T.forward_time(x, NF, NT, DT)
+    assert "Fill or excise" not in str(info.value)
+
+
+def test_inverse_time_that_overflows_only_in_its_irfft_names_inverse_time():
+    """The cells of an impulse of height 1e37: ``inverse`` is finite (every bin has modulus
+    1e37), but the irfft's unnormalised sum, N * 1e37 = 1.3e39, overflows float32."""
+    w, _ = _overflowing()["inverse_time"]
+    w32 = w.astype(np.float32)
+    assert np.all(np.isfinite(T.inverse(w32, NF, NT, DT)))
+    with np.errstate(over="ignore", invalid="ignore"):
+        with pytest.raises(ValueError, match="^inverse_time: .*float64"):
+            T.inverse_time(w32, NF, NT, DT)
+
+
+@pytest.mark.parametrize("name", list(OUTPUT_DTYPE))
+def test_a_single_precision_run_that_overflows_raises_naming_its_entry_point(name):
+    """Every entry point checks the arrays it computes.  Its input is finite in single
+    precision, so the input check does not fire; the double run is finite."""
+    a, call = _overflowing()[name]
+    a32 = _single(a)
+    assert np.all(np.isfinite(a32))
+    with np.errstate(over="ignore", invalid="ignore"):
+        with pytest.raises(ValueError, match=f"^{name}: .* single-precision result .*float64"):
+            call(a32, NUMPY)
+    out = call(a, NUMPY)
+    assert out.dtype == output_dtype(name, np.float64) and np.all(np.isfinite(out))
+
+
+@pytest.mark.jax
+@pytest.mark.parametrize("name", list(OUTPUT_DTYPE))
+def test_the_guard_runs_on_concrete_jax_arrays_and_is_skipped_under_jit(name, jax_be):
+    """Eager JAX runs on concrete float32 arrays, so the guard reads them on the host as it
+    reads NumPy ones.  Under ``jax.jit`` the arrays are tracers with no values: nothing
+    raises, and the overflow comes back as ``inf``/``nan``."""
+    import jax
+
+    a, call = _overflowing()[name]
+    a32 = jax_be.asarray(_single(a))
+    with pytest.raises(ValueError, match=f"^{name}: .*float64"):
+        call(a32, jax_be)
+    out = jax.jit(lambda v: call(v, jax_be))(a32)
+    assert isinstance(out, jax.Array) and out.dtype == output_dtype(name, np.float32)
+    assert not np.all(np.isfinite(np.asarray(out)))

@@ -71,6 +71,18 @@ and on JAX.  Anything else, integers included, promotes to double.  It is
 opt-in by dtype rather than by flag, so the precision of a result is readable
 off its own ``.dtype``.
 
+A single-precision run that overflows raises ``ValueError`` instead of
+returning ``inf`` or ``nan``.  float32 tops out at 3.4e38 and the window
+samples grow with ``sqrt(dt)``, so finite input can overflow inside a product
+or an FFT (complex64 bins of order 1e36 at ``dt=1e4`` do, in
+``forward_bands``), and NumPy only warns on the way.  Each of the ten entry
+points (``forward``/``inverse``, their ``_time`` and ``_many`` forms, and
+``forward_bands``/``inverse_bands``) checks the single-precision arrays it
+computes, and the message names the function whose array overflowed and
+suggests float64 input.  The check is host work, like the input check: it is
+skipped for double results and under ``jax.jit``, where a tracer has no values
+to read and an overflow still comes back as ``inf``/``nan``.
+
 float64 runs are bit for bit what they were before the casts (a cast to
 float64 is a no-op, and no float64 expression is regrouped).  The Meyer
 baseline, ``tests/wilson/test_meyer_baseline.py``, pins them bit for bit
@@ -204,6 +216,36 @@ def _check_finite(values: NDArray[np.generic], context: str) -> None:
     """
     if not is_tracer(values):
         validate_finite(values, context)
+
+
+def _check_single_output(out: NDArray[np.generic], entry: str) -> None:
+    """Raise ``ValueError`` if a single-precision result of ``entry`` is not finite.
+
+    The entry points check their input first (:func:`_check_finite`), so a
+    ``nan`` or ``inf`` here was made by the transform itself: a float32
+    product, FFT or scaling overflowed.  NumPy only warns on the way and JAX
+    says nothing, so the caller would get ``nan`` cells.  Each entry point
+    checks the arrays it computes itself, so the message names the function
+    whose array overflowed (spec 2026-11-08 §1.4).
+
+    Host work, as :func:`_check_finite` is: skipped for a double-precision
+    result (float64 runs gain no pass) and for a JAX tracer.  It does not
+    change ``np.errstate``.
+    """
+    if _working_dtypes(out)[0] != np.float32 or is_tracer(out):
+        return
+    arr = np.asarray(out)
+    bad = ~np.isfinite(arr)
+    if not bad.any():
+        return
+    n_bad = int(np.count_nonzero(bad))
+    n_nan = int(np.count_nonzero(np.isnan(arr)))
+    raise ValueError(
+        f"{entry}: {n_bad} of {arr.size} entries of the single-precision result are not "
+        f"finite ({n_nan} nan, {n_bad - n_nan} inf), from finite input: the computation "
+        "overflowed float32, whose largest value is 3.4e38. Pass float64 (or complex128) "
+        "input to compute in double."
+    )
 
 
 def _set_rounded(a: Array, idx: object, v: Array, be: Backend) -> Array:
@@ -539,7 +581,9 @@ def forward(
             f"got {x_rfft.shape}"
         )
     _check_finite(x_rfft, "forward: x_rfft")
-    return _gather_bands(x_rfft, Nf, Nt, dt, be, window=window)
+    out = _gather_bands(x_rfft, Nf, Nt, dt, be, window=window)
+    _check_single_output(out, "forward")
+    return out
 
 
 def forward_many(
@@ -604,7 +648,9 @@ def forward_many(
             f"got {x_rfft.shape}"
         )
     _check_finite(x_rfft, "forward_many: x_rfft")
-    return _gather_bands(x_rfft, Nf, Nt, dt, be, window=window)
+    out = _gather_bands(x_rfft, Nf, Nt, dt, be, window=window)
+    _check_single_output(out, "forward_many")
+    return out
 
 
 def forward_time_many(
@@ -651,7 +697,10 @@ def forward_time_many(
             f"Nt={Nt}; got {x.shape}"
         )
     _check_finite(x, "forward_time_many: x")
-    return forward_many(be.fft.rfft(x, axis=-1), Nf, Nt, dt, be=be, window=window)
+    x_rfft = be.fft.rfft(x, axis=-1)
+    # Before forward_many's input check, which would report an overflow here as a gap.
+    _check_single_output(x_rfft, "forward_time_many")
+    return forward_many(x_rfft, Nf, Nt, dt, be=be, window=window)
 
 
 def inverse(
@@ -729,7 +778,7 @@ def inverse(
     X = be.xp.zeros(N // 2 + 1, dtype=cdtype)
     X = _scatter_interior_bands(X, wmn_work, Nf, Nt, phi_c, lam, be)
     X = _scatter_edge_bands(X, wmn_work, Nf, Nt, N, phi_c, lam, be)
-
+    _check_single_output(X, "inverse")
     return X
 
 
@@ -793,6 +842,7 @@ def inverse_many(
     X = be.xp.zeros((wmn.shape[0], N // 2 + 1), dtype=cdtype)
     X = _scatter_interior_bands(X, wmn_work, Nf, Nt, phi_c, lam, be)
     X = _scatter_edge_bands(X, wmn_work, Nf, Nt, N, phi_c, lam, be)
+    _check_single_output(X, "inverse_many")
     return X
 
 
@@ -833,7 +883,9 @@ def inverse_time_many(
     """
     N = n_samples(Nf, Nt)
     be = be or get_backend(wmn)
-    return be.fft.irfft(inverse_many(wmn, Nf, Nt, dt, be=be, window=window), n=N, axis=-1)
+    x = be.fft.irfft(inverse_many(wmn, Nf, Nt, dt, be=be, window=window), n=N, axis=-1)
+    _check_single_output(x, "inverse_time_many")
+    return x
 
 
 def forward_time(
@@ -897,7 +949,10 @@ def forward_time(
     # Check here rather than only on the rfft: reporting "index 5 of x" beats
     # reporting that every bin of the transformed spectrum went non-finite.
     _check_finite(x, "forward_time: x")
-    return forward(be.fft.rfft(x), Nf, Nt, dt, be=be, window=window)
+    x_rfft = be.fft.rfft(x)
+    # Before forward's input check, which would report an overflow here as a gap.
+    _check_single_output(x_rfft, "forward_time")
+    return forward(x_rfft, Nf, Nt, dt, be=be, window=window)
 
 
 def inverse_time(
@@ -942,7 +997,9 @@ def inverse_time(
     N = n_samples(Nf, Nt)
     be = be or get_backend(wmn)
     x_rfft = inverse(wmn, Nf, Nt, dt, be=be, window=window)
-    return be.fft.irfft(x_rfft, n=N)
+    x = be.fft.irfft(x_rfft, n=N)
+    _check_single_output(x, "inverse_time")
+    return x
 
 
 # ---------------------------------------------------------------------------
@@ -1162,7 +1219,9 @@ def forward_bands(z: CArray, k0: int, bands: NDArray[np.integer], Nf: int, Nt: i
     phase = _band_phase(bands, Nt, phi).astype(cdtype)
     Y = be.fft.ifft(phi.astype(rdtype) * z[..., ell], axis=-1)
     # Wilson units: the unit-norm-atom cells times sqrt(2 dt / N) (band_atoms' docstring).
-    return be.xp.real(phase * Y) * rdtype.type(np.sqrt(2.0 * dt / n_samples(Nf, Nt)))
+    out = be.xp.real(phase * Y) * rdtype.type(np.sqrt(2.0 * dt / n_samples(Nf, Nt)))
+    _check_single_output(out, "forward_bands")
+    return out
 
 
 def inverse_bands(w: Array, k0: int, n_bins: int, bands: NDArray[np.integer], Nf: int,
@@ -1221,4 +1280,6 @@ def inverse_bands(w: Array, k0: int, n_bins: int, bands: NDArray[np.integer], Nf
     for b in range(bands.size):
         out = be.add_at(out, (..., ell[b]), V[..., b, :], copy=False)
     # rfft units: N / (2 dt) times the adjoint of forward_bands' sqrt(2 dt / N).
-    return out * rdtype.type(np.sqrt(n_samples(Nf, Nt) / (2.0 * dt)))
+    out = out * rdtype.type(np.sqrt(n_samples(Nf, Nt) / (2.0 * dt)))
+    _check_single_output(out, "inverse_bands")
+    return out
