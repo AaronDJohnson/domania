@@ -69,6 +69,7 @@ Everything else goes: the likelihoods, factorisations, covariance classes, opera
 * **Order.** The tasks run one at a time, in order. Most files are edited by several tasks (see "Files edited by several tasks" below). Every Old text is quoted from the tree after the task before.
 
   Steps state pass counts only for the task's own test files. For the rest they say "passes", because suite totals drift between tasks. The totals the prototype saw are labelled "(prototype)".
+  The suite totals in each task's **Verify** line are the prototype's too. A fix-up commit during execution may shift them; that is not a failure if the task's own tests and the replay pass.
 * **The replay gate.** `tests/wilson/test_meyer_baseline.py` replays `tests/wilson/meyer_cases.py` against `tests/wilson/data/meyer_baseline.npz`.
   * From Task 1 on, it passes at 1e-12 with 0 mismatches at the end of every task.
   * Never re-record the npz.
