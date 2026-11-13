@@ -44,6 +44,9 @@ def test_the_comparator():
     for k, got in ((a, w + 2 * RTOL * peak), (a, nan), (a, w.astype(np.float32)), (a, w[:2]),
                    (z, np.full(3, 2 * RTOL * peak)), (i, np.arange(3) + 1), (i, np.arange(3.0))):
         assert mismatches({**want, k: got}, want) == [k]
+    s = a.replace("8x16", "16x32")                # a's family, an array 1e-6 as large as a
+    small = {**want, s: 1e-6 * w}
+    assert mismatches({**small, s: 1e-6 * w + 0.5 * RTOL * peak}, small) == [s]
     with pytest.raises(AssertionError, match="baseline keys differ"):
         mismatches({a: w}, want)
     assert mismatches({}, {k: w for k in ("domainia::TimeToWDM.apply::8x16::dt=1.0",

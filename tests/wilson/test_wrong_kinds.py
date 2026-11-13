@@ -68,6 +68,8 @@ def test_dt_of_the_wrong_kind_raises_type_error(dt, kind):
         validate_dt(dt)
     with pytest.raises(TypeError, match="dt must be a real number"):
         wilson.forward_time(np.zeros(128), 8, 16, dt)
+    with pytest.raises(TypeError, match="dt must be a real number"):
+        wilson.evolutionary.time_domain_factor(8, dt, np.add)
 
 
 @pytest.mark.parametrize("dt", [0.5, 1, np.float32(0.1), np.float64(0.25), np.int64(2), Fraction(1, 2)])
@@ -77,8 +79,9 @@ def test_real_dt_kinds_still_pass(dt):
 
 @pytest.mark.parametrize("dt", [0.0, -1.0, np.inf, np.nan])
 def test_dt_out_of_range_stays_a_value_error(dt):
-    with pytest.raises(ValueError, match="dt must be a positive finite number"):
-        validate_dt(dt)
+    for check in (validate_dt, lambda dt: wilson.evolutionary.time_domain_factor(8, dt, np.add)):
+        with pytest.raises(ValueError, match="dt must be a positive finite number"):
+            check(dt)
 
 
 def test_nu_d_splits_the_kind_and_range_checks():

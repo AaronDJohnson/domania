@@ -39,6 +39,12 @@ def _grid(role: str, kind: Any, wdm: Any, N: int) -> tuple[int, int] | None:
         return None
     if wdm is None:
         raise ValueError(f"a 'wdm' {role} needs {role}_wdm=(Nf, Nt)")
+    try:
+        n = len(wdm)
+    except TypeError:
+        raise TypeError(f"{role}_wdm must be an (Nf, Nt) pair, got {type(wdm).__name__}") from None
+    if n != 2:
+        raise ValueError(f"{role}_wdm must be an (Nf, Nt) pair, got {wdm!r}")
     Nf, Nt = wdm
     wilson.grid.validate_grid(Nf, Nt)
     if Nf * Nt != N:
@@ -100,15 +106,19 @@ def transform(x: Any, source: str, target: str, *, N: int, dt: float,
     for each leading index); a larger one is refused, naming the cell or bin.
 
     Raises ``TypeError`` for a masked or non-numeric ``x`` (bool, str, object), a non-string
-    ``source``/``target``, or a non-integer ``N``, ``Nf`` or ``Nt``; ``ValueError`` for an
-    unknown domain, a missing or misplaced or bad WDM grid, a bad ``N`` or ``dt``, complex
-    ``x`` on time or WDM, a wrong trailing shape, a non-finite value, or a residue above
-    :data:`RESIDUE`.  A real ``x`` on frequency is taken as complex.
+    ``source``/``target``, a WDM grid that is not a sequence, a non-integer ``N``, ``Nf`` or
+    ``Nt``, a non-real ``dt`` or a non-window ``window``; ``ValueError`` for an unknown domain,
+    a missing or misplaced WDM grid or one that is not a valid ``(Nf, Nt)`` pair, ``N < 1``, a
+    non-positive or non-finite ``dt``, complex ``x`` on time or WDM, a wrong trailing shape, a
+    non-finite value, or a residue above :data:`RESIDUE`; and ``WindowError``, a
+    ``ValueError``, for a window inadmissible on a WDM grid.  A real ``x`` on frequency is
+    taken as complex.
     """
     N = require_int("N", N)
     if N < 1:
         raise ValueError(f"N must be positive, got {N}")
     wilson.grid.validate_dt(dt)
+    wilson.windows.require_window(window)
     dt = float(dt)
     sg, tg = _grid("source", source, source_wdm, N), _grid("target", target, target_wdm, N)
     y = _checked(x, source, N, sg)

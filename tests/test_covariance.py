@@ -177,21 +177,22 @@ def test_wdm_covariance_of_an_evolutionary_model(monkeypatch):
             for v in (got[a, a], one[0, 0]):
                 np.testing.assert_allclose(v[mask], want[mask], rtol=1e-14, atol=0)
                 assert not np.any(v[~mask])
-    points = []
+    points = ([], [])
 
-    def counted(f, t):
-        points.append(np.broadcast(f, t).size)
-        return S(f, t)
-    models = (counted, lambda f, t: delayed(f))
+    def counted(f, t, stationary=False):
+        points[stationary].append(f.size if stationary else np.broadcast(f, t).size)
+        return delayed(f) if stationary else S(f, t)
+    models = (counted, lambda f, t: counted(f, t, True))
     want = [wdm_covariance(s, Nf=NF, Nt=NT, dt=DT) for s in models]
     # 25 bins per band on NF x NT: one call on 2 columns, then 1 band x 5 columns or 2 bands x
-    # 32 columns per call.
-    for chunk, calls in ((125, 1 + 17 * 7), (2000, 1 + 9)):
+    # 32 columns per call; 5 or all 17 bands of a stationary model per call.
+    for chunk, calls in ((125, [1 + 17 * 7, 1 + 4]), (2000, [1 + 9, 1 + 1])):
         monkeypatch.setattr("domainia._covariance.CHUNK", chunk)
-        points.clear()
-        for s, C in zip(models, want):
+        for s, C, p in zip(models, want, points):
+            p.clear()
             assert np.array_equal(wdm_covariance(s, Nf=NF, Nt=NT, dt=DT), C)
-        assert max(points) <= chunk and len(points) == calls
+            assert max(p) <= chunk
+        assert [len(p) for p in points] == calls
 
 
 def test_linear_and_exactly_hermitian_and_a_zero_point_passes():
@@ -204,16 +205,17 @@ def test_linear_and_exactly_hermitian_and_a_zero_point_passes():
     for name, route in ROUTES.items():
         both = route(lambda f: delayed(f) + second(f))
         assert error(both, route(delayed) + route(second)) < 1e-14, name
-        for C in (route(rounded), route(plus(0, 1, 5e-13)), route(plus(1, 1, 5e-13j))):
+        for C in (route(rounded), route(plus(0, 1, 5e-13)), route(plus(1, 1, 7e-13j))):
             assert np.array_equal(C, np.conj(np.swapaxes(C, 0, 1))), name
             assert not np.any(np.einsum("aa...->a...", C).imag), name
         assert not np.any(route(lambda f: 0.0 * delayed(f))), name
 
 
-def test_every_refusal():
+def test_every_refusal(monkeypatch):
     """Each failure of the model check, made per point (spec 3.1), raises the right kind, as do
-    a bad grid, dt or window; a WDM model is checked in every chunk, and refused if its K, or
-    its size-1 time axis, changes between calls."""
+    a bad grid, dt or window, a masked output and a model that writes into t; a WDM model is
+    checked in every chunk, and refused if its K, or its size-1 time axis, changes between
+    calls."""
     def dip(f):
         """``delayed``, 1e-6 as large at DC, with a 1e-16 asymmetry there: 1.7e-9 of that point's
         largest entry, though below 1e-15 of the model's largest."""
@@ -225,6 +227,7 @@ def test_every_refusal():
         (lambda f: delayed(f).real > 0, TypeError, "must be a numeric array, got dtype bool"),
         (lambda f: delayed(f).astype(str), TypeError, "numeric"),
         (lambda f: delayed(f).astype(object), TypeError, "numeric"),
+        (lambda f: np.ma.divide(delayed(f), f), TypeError, "is a masked array"),
         (psd, ValueError, r"must have shape \(K, K, "),
         (lambda f: 1.0, ValueError, r"got \(\)"),
         (lambda f: delayed(f)[:2], ValueError, r"got \(2, 3, "),
@@ -233,7 +236,8 @@ def test_every_refusal():
         (plus(2, 1, np.inf), ValueError, "not finite"),
         (plus(0, 1, 1e-9), ValueError, r"\|S\[0, 1\] - conj\(S\[1, 0\]\)\| is 1e-09 of"),
         (plus(1, 1, 1e-9j), ValueError, r"\|Im S\[1, 1\]\| is 1e-09 of"),
-        (plus(2, 2, -3.0), ValueError, r"-Re S\[2, 2\] is 1 of"),
+        (plus(2, 2, -3.0), ValueError,
+         r"-Re S\[2, 2\] is 1 of max \|S_cd\| there; at most 1e-12 is accepted$"),
         (dip, ValueError, r"\|S\[0, 1\] - conj\(S\[1, 0\]\)\| is 1.7e-09 of"),
     ]
     for S, err, match in cases:
@@ -249,6 +253,7 @@ def test_every_refusal():
                            ({"Nt": 32.0}, TypeError, "Nt must be an integer"),
                            ({"dt": 0.0}, ValueError, "dt must be"),
                            ({"window": "meyer"}, TypeError, "window must be"),
+                           ({"S": lambda f, t: np.add(t, 1.0, out=t)}, ValueError, "read-only"),
                            ({"S": lambda f, t: plus(0, 1, 1e-9)(f) if t.size > 2 else delayed(f)},
                             ValueError, r"\[chunk from band 0, column 0\] at point \(0, 0, "),
                            ({"S": lambda f, t: delayed(f)[:1, :1] if t.size > 2 else delayed(f)},
@@ -257,3 +262,7 @@ def test_every_refusal():
                             ValueError, r"must have shape \(K, K, 17, 1, 25\)")):
         with pytest.raises(err, match=match):
             wdm_covariance(**{"S": lambda f, t: delayed(f), "Nf": NF, "Nt": NT, "dt": DT, **kw})
+    monkeypatch.setattr("domainia._covariance.CHUNK", 125)            # 1 band x 5 columns a call
+    late = lambda f, t: plus(0, 1, 1e-9 * (f.min() > 0.02) * (t >= 7 * NF * DT))(f + 0 * t)
+    with pytest.raises(ValueError, match=r"\[chunk from band 4, column 5\] at point \(0, 2, 0\)"):
+        wdm_covariance(late, Nf=NF, Nt=NT, dt=DT)

@@ -90,7 +90,8 @@ def test_a_residue_up_to_1e_10_of_the_peak_is_accepted_and_the_copy_is_canonical
         assert np.array_equal(transform(r, kind, "time", **_kw(kind, "time")),
                               transform(x, kind, "time", **_kw(kind, "time")))
         r[(2, 1, *at)] += 1e-6 * peak * unit
-        with pytest.raises(ValueError, match=rf"^x\[2, 1\]: .*{name} is 1e-06 of the slice's peak"):
+        with pytest.raises(ValueError, match=rf"^x\[2, 1\]: .*{name} is 1e-06 of the slice's peak; "
+                                             r"at most 1e-10 is accepted$"):
             transform(r, kind, "time", **_kw(kind, "time"))
     real = np.arange(65)                                                         # integers too
     assert np.array_equal(transform(real, "frequency", "frequency", **_kw("frequency", "frequency")),
@@ -113,11 +114,18 @@ def test_every_refusal():
     cases = [
         (t, "fourier", "time", {}, ValueError, "source must be one of"),
         (t, "time", 3, {}, TypeError, "target must be a string"),
+        (t, 3, "time", {}, TypeError, "source must be a string"),
+        (t, "time", "frequency", {"source_wdm": G}, ValueError, "source_wdm is only for"),
+        (t, "time", "wdm", {"target_wdm": 4}, TypeError, r"target_wdm must be an \(Nf, Nt\) pair"),
+        (t, "time", "wdm", {"target_wdm": (4, 8, 1)}, ValueError, r"must be an \(Nf, Nt\) pair"),
+        (t, "time", "wdm", {"target_wdm": (8.0, 16)}, TypeError, "Nf must be an integer"),
         (t, "time", "wdm", {"target_wdm": None}, ValueError, r"needs target_wdm=\(Nf, Nt\)"),
         (t, "time", "frequency", {"target_wdm": G}, ValueError, "target_wdm is only for"),
         (t, "time", "wdm", {"target_wdm": (8, 15)}, ValueError, "Nt must be even"),
         (t, "time", "wdm", {"target_wdm": (4, 16)}, ValueError, "N=128"),
         (t, "time", "wdm", {"N": 128.0}, TypeError, "N must be an integer"),
+        (t, "time", "wdm", {"N": 0}, ValueError, "N must be positive"),
+        (t, "time", "frequency", {"window": "garbage"}, TypeError, "window must be a domainia.wilson"),
         (t, "time", "wdm", {"dt": 0.0}, ValueError, "dt must be"),
         (t[:-1], "time", "wdm", {}, ValueError, r"shape \(127,\)"),
         (w.T, "wdm", "time", {}, ValueError, r"shape \(16, 9\)"),
