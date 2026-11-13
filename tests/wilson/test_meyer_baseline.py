@@ -1,33 +1,19 @@
-"""The default window reproduces the Meyer baseline recorded at d991ac4 bit for bit.
+"""The default window reproduces the Meyer baseline recorded at d991ac4, to 1e-12 of each
+array's scale (domainia 3.0 spec, section 6.1).
 
-Except the ``meyer_cases.RESCALED`` families, which changed units on purpose.  Their
-values are now Wilson coefficients, ``got = f(N, dt) * recorded`` to 1e-13, with the same
-dtype; the ``meyer_cases.RETIRED`` families (``gaussian``'s, changed on purpose with no such
-rule) are not replayed; every other array is still ``np.array_equal``.
-``meyer_cases.mismatches`` is the one comparator, shared with ``meyer_cases.py --check``.
+``meyer_cases.mismatches`` is the one comparator, shared with ``meyer_cases.py --check``.  The
+``meyer_cases.DROPPED`` families, of code that 3.0 deletes, are set aside; every other recorded
+key is recomputed under its old name.
 """
 
 from __future__ import annotations
 
-from collections import Counter
-from types import SimpleNamespace
-
 import numpy as np
 import pytest
 
-import domainia.covariance
-import domainia.domains
-import domainia.maps
-import domainia.spectra
-import domainia.testing
-import domainia.variance
 from domainia import wilson
 
-from .meyer_cases import BASELINE, RESCALED, THREADED, compute, mismatches, rescale_factor
-
-DM = SimpleNamespace(domains=domainia.domains, maps=domainia.maps, spectra=domainia.spectra,
-                     variance=domainia.variance, covariance=domainia.covariance,
-                     testing=domainia.testing)
+from .meyer_cases import BASELINE, DROPPED, RTOL, THREADED, compute, mismatches
 
 
 @pytest.fixture(scope="module")
@@ -36,45 +22,45 @@ def baseline() -> dict[str, np.ndarray]:
         return {k: z[k] for k in z.files}
 
 
-def test_the_rescaled_families_are_exactly_the_spec_table(baseline):
-    """Five families, each present on every grid and dt of the baseline."""
-    assert set(RESCALED) == {("domainia", "FourierToWDM.dense"), ("domainia", "FourierToWDM.fft"),
-                             ("domainia", "FourierToWDM.adjoint"),
-                             ("wilson", "transform.forward_bands"),
-                             ("wilson", "transform.inverse_bands")}
-    rescaled = [k for k in baseline if rescale_factor(k) is not None]
-    per_family = Counter(tuple(k.split("::")[:2]) for k in rescaled)
-    assert per_family == {fam: 3 * 2 for fam in RESCALED}           # 3 grids x 2 dt each
-    assert rescale_factor("domainia::FourierToWDM.fft::16x32::dt=0.25") == np.sqrt(2 * 0.25 / 512)
-    assert rescale_factor("wilson::transform.inverse_bands::32x8::dt=1.0") == 1.0
-    assert rescale_factor("wilson::transform.forward::8x16::dt=1.0") is None
+def test_the_dropped_families_are_96_of_the_1504_keys(baseline):
+    """maps 54, inner_product 24 and the band-limited entry points 18."""
+    assert len(baseline) == 1504
+    assert sum(k.startswith(DROPPED) for k in baseline) == 96
 
 
-def test_the_rescaled_comparison_rejects_nan_and_a_wrong_factor():
-    """``mismatches`` on a RESCALED key: ``f * want`` passes, while a NaN in ``got`` (one entry,
-    or every entry) and a wrong factor are reported."""
-    key = "domainia::FourierToWDM.fft::16x32::dt=0.25"
-    f = rescale_factor(key)
-    want = {key: np.random.default_rng(0).standard_normal((3, 32))}
-    assert mismatches({key: f * want[key]}, want) == []
-    one_nan = f * want[key]
-    one_nan[1, 7] = np.nan
-    assert mismatches({key: one_nan}, want) == [key]
-    assert mismatches({key: np.full_like(want[key], np.nan)}, want) == [key]
-    assert mismatches({key: 2.0 * f * want[key]}, want) == [key]
+def test_the_comparator():
+    """dtype and shape exact, integers exact, floats to ``RTOL`` of the array's largest value,
+    an all-zero array to ``RTOL`` of its function's; a NaN fails."""
+    a, z, i = ("wilson::noise.band_averaged_variance::8x16::dt=1.0",
+               "wilson::noise.band_averaged_variance::8x16::dt=0.25",
+               "wilson::evolutionary.wrap_cut_columns::8x16::dt=1.0")
+    w = np.random.default_rng(0).standard_normal((3, 4))
+    want = {a: w, z: np.zeros(3), i: np.arange(3)}
+    peak = float(np.max(np.abs(w)))
+    nan = w.copy()
+    nan[1, 2] = np.nan
+    assert mismatches({a: w + 0.5 * RTOL * peak, z: np.full(3, 0.5 * RTOL * peak), i: np.arange(3)},
+                      want) == []
+    for k, got in ((a, w + 2 * RTOL * peak), (a, nan), (a, w.astype(np.float32)), (a, w[:2]),
+                   (z, np.full(3, 2 * RTOL * peak)), (i, np.arange(3) + 1), (i, np.arange(3.0))):
+        assert mismatches({**want, k: got}, want) == [k]
+    with pytest.raises(AssertionError, match="baseline keys differ"):
+        mismatches({a: w}, want)
+    assert mismatches({}, {k: w for k in ("domainia::TimeToWDM.apply::8x16::dt=1.0",
+                                          "wilson::inner_product.gaussian::8x16::dt=1.0")}) == []
 
 
-def test_default_window_reproduces_the_meyer_baseline_bit_for_bit(baseline):
-    assert not mismatches(compute(wilson, DM, {}, {}), baseline)
+def test_default_window_reproduces_the_meyer_baseline(baseline):
+    assert not mismatches(compute(wilson, {}, {}), baseline)
 
 
-def test_explicit_meyer_reproduces_the_baseline_bit_for_bit(baseline):
-    got = compute(wilson, DM, {"window": wilson.MEYER}, {}, only=THREADED)
+def test_explicit_meyer_reproduces_the_baseline(baseline):
+    got = compute(wilson, {"window": wilson.MEYER}, {}, only=THREADED)
     want = {k: v for k, v in baseline.items()
             if k.startswith("wilson::") and k.split("::")[1].startswith(THREADED)}
     assert want and not mismatches(got, want)
 
 
 def test_explicit_meyer_on_both_layers_reproduces_the_whole_baseline(baseline):
-    got = compute(wilson, DM, {"window": wilson.MEYER}, {"window": wilson.MEYER})
+    got = compute(wilson, {"window": wilson.MEYER}, {"window": wilson.MEYER})
     assert not mismatches(got, baseline)

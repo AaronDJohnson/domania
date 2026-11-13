@@ -7,18 +7,11 @@ from __future__ import annotations
 import ast
 from functools import lru_cache
 from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 import domainia
-import domainia.covariance
-import domainia.domains
-import domainia.maps
-import domainia.spectra
-import domainia.testing
-import domainia.variance
 from domainia import wilson
 from domainia.testing import ALT_WINDOW, smoothstep
 from domainia.wilson import MEYER, Meyer, RampWindow, SampledWindow, WindowError
@@ -335,10 +328,8 @@ def test_every_kernel_validates_the_window_it_is_given(case):
         case({"window": InadmissibleWindow()})
 
 
-_DM = SimpleNamespace(domains=domainia.domains, maps=domainia.maps, spectra=domainia.spectra,
-                      variance=domainia.variance, covariance=domainia.covariance, testing=domainia.testing)
-#: The domainia-layer cases: ``kw`` goes to ``WDMDomain`` and to the cell-based constructors.
-_DCASES = domainia_cases(_DM, wilson, 8, 16, 1.0)
+#: The domainia-layer cases: ``kw`` goes to every window-taking call.
+_DCASES = domainia_cases(wilson, 8, 16, 1.0)
 
 
 @pytest.mark.parametrize("case", [c for _, c in _DCASES], ids=[n for n, _ in _DCASES])

@@ -1,9 +1,9 @@
-"""Bit-identity cases for the Meyer window (domainia 2.0 spec, section 5).
+"""Replay cases for the Meyer baseline (domainia 2.0 spec, section 5; 3.0 spec, section 6.1).
 
 Every public function that consumes the window, on fixed grids and seeded inputs.
-``wilson_cases`` covers the kernels and ``domainia_cases`` the domainia layer.  Each
-case is ``(name, fn)``: ``fn(kw)`` calls the function with the extra keywords ``kw``
-(``{}`` on the old code, ``{"window": ...}`` after the refactor).
+``wilson_cases`` covers the kernels and ``domainia_cases`` the cases recorded on the domainia
+layer.  Each case is ``(name, fn)``: ``fn(kw)`` calls the function with the extra keywords
+``kw`` (``{}``, or ``{"window": ...}``).
 
 ``data/meyer_baseline.npz`` was recorded once against the untouched code of commit
 d991ac4 (the old ``wdm`` layout) by this module's own history: commit 24c4e55 holds
@@ -13,24 +13,19 @@ can never re-record it.  Re-recording means checking out 24c4e55 and running its
 ``wilson/tests/meyer_cases.py --write`` there.
 
 The gate is ``tests/wilson/test_meyer_baseline.py``: it recomputes every case through
-``domainia.wilson`` and compares with :func:`mismatches`: ``np.array_equal`` (same dtype)
-on every array except the :data:`RESCALED` families.  Those changed units on purpose
-(every WDM value is now a Wilson coefficient) and are compared as
-``got = f * recorded`` to 1e-13.  The :data:`RETIRED` families changed on purpose with no
-such rule and are not replayed.  ``python tests/wilson/meyer_cases.py --check`` is the
-same replay as a script, with the same comparator.  The arrays are bit-exact only in the
-recording environment (the ``wdmrel`` env's NumPy pocketfft and BLAS on the machine that
-recorded them).
+``domainia.wilson`` and compares with :func:`mismatches`, to :data:`RTOL` of each array's
+scale.  The :data:`DROPPED` families, of code that domainia 3.0 deletes, are set aside.  The
+cases of deleted classes keep their recorded names and are computed by the kept kernels
+(:func:`domainia_cases`).  ``python tests/wilson/meyer_cases.py --check`` is the same replay
+as a script, with the same comparator.
 """
 
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -40,73 +35,51 @@ DTS = (1.0, 0.25)
 #: Dense O(N^2) outputs are recorded on this grid only (keeps the npz small).
 DENSE_GRID = (8, 16)
 BASELINE = Path(__file__).resolve().parent / "data" / "meyer_baseline.npz"
-#: Case-name prefixes whose kernels take ``window=`` (extended task by task).  The single
-#: source for ``test_meyer_baseline.py`` and ``test_window_threading.py``.
-THREADED = ("transform.", "matrix.", "stationary.", "noise.", "evolutionary.", "inner_product.")
+#: Case-name prefixes whose kernels take ``window=``.  The single source for
+#: ``test_meyer_baseline.py`` and ``test_window_threading.py``.
+THREADED = ("transform.", "matrix.", "stationary.", "noise.", "evolutionary.")
+#: Baseline key prefixes of code that domainia 3.0 deletes: maps (54 keys), inner_product (24)
+#: and the band-limited entry points (18).  They are not replayed.
+DROPPED = ("domainia::TimeToWDM.", "domainia::WDMToTime.", "domainia::FourierToWDM.",
+           "wilson::inner_product.", "wilson::transform.band_atoms::",
+           "wilson::transform.forward_bands::", "wilson::transform.inverse_bands::")
+#: The comparison: ``max |got - want| <= RTOL * s`` (see :func:`mismatches`).
+RTOL = 1e-12
 
 Case = tuple[str, Callable[[dict], Any]]
 
 
-def _wilson_units(N: int, dt: float) -> float:
-    """The unit-norm atoms' cells times this are Wilson coefficients (rfft-unit bins)."""
-    return float(np.sqrt(2.0 * dt / N))
-
-
-#: ``(layer, case) -> f(N, dt)`` with ``got = f * recorded``: the families whose units changed
-#: on purpose (every WDM value is now a Wilson coefficient).  The recording used ``"rfft"``
-#: units (``u = 1``).
-#: ``inverse_bands`` has ``f = 1``: its input ``wb = forward_bands(xr, ...)`` is recomputed on
-#: every run, so the new ``sqrt(2 dt / N)`` of ``wb`` and ``sqrt(N / (2 dt))`` of
-#: ``inverse_bands`` cancel, to rounding (compared by tolerance, not bits).
-RESCALED: dict[tuple[str, str], Callable[[int, float], float]] = {
-    ("domainia", "FourierToWDM.dense"): _wilson_units,
-    ("domainia", "FourierToWDM.fft"): _wilson_units,
-    ("domainia", "FourierToWDM.adjoint"): _wilson_units,           # kappa once
-    ("wilson", "transform.forward_bands"): _wilson_units,
-    ("wilson", "transform.inverse_bands"): lambda N, dt: 1.0,
-}
-#: The RESCALED comparison: ``max |got - f want| <= RESCALED_RTOL * max |f want|``.
-RESCALED_RTOL = 1e-13
-#: ``(layer, case)`` families whose values changed on purpose with no closed-form rule, so they
-#: are no longer compared: ``gaussian`` now keeps the DC and Nyquist bins at half weight.
-#: ``test_window_threading.py`` pins both to the dense WDM form instead.
-RETIRED = {("wilson", "inner_product.gaussian"), ("wilson", "inner_product.gaussian_from_func")}
-#: ``"{layer}::{case}::{Nf}x{Nt}::dt={dt!r}"`` plus :func:`flatten`'s ``[i]`` suffixes.
-_KEY = re.compile(r"(?P<layer>[^:]+)::(?P<case>[^:]+)::(?P<Nf>\d+)x(?P<Nt>\d+)::dt=(?P<dt>[^\[]+)")
-
-
-def rescale_factor(key: str) -> float | None:
-    """``f(N, dt)`` of a baseline key in :data:`RESCALED`, else ``None`` (compared bit for bit)."""
-    m = _KEY.match(key)
-    if m is None:
-        raise ValueError(f"not a baseline key: {key!r}")
-    f = RESCALED.get((m["layer"], m["case"]))
-    return None if f is None else f(int(m["Nf"]) * int(m["Nt"]), float(m["dt"]))
+def _family(key: str) -> str:
+    """``"layer::case"``: the function that recorded ``key``."""
+    return "::".join(key.split("::")[:2])
 
 
 def mismatches(got: dict[str, np.ndarray], want: dict[str, np.ndarray]) -> list[str]:
-    """The keys of ``want`` that ``got`` does not reproduce (the keys must be the same).  The
-    :data:`RETIRED` families are dropped from both first.
+    """The keys of ``want`` that ``got`` does not reproduce.  ``want``'s :data:`DROPPED` keys are
+    set aside; the other keys must be exactly ``got``'s.
 
-    Same dtype everywhere; ``np.array_equal`` except for the :data:`RESCALED` keys, which
-    need ``max |got - f want| <= RESCALED_RTOL * max |f want|`` (a NaN anywhere fails it).
+    dtype and shape must match and integers must be equal.  Floats and complex numbers need
+    ``max |got - want| <= RTOL * s``: ``s`` is ``max |want|`` over the array, or, for an all-zero
+    array, over every array of the same function in ``want``.  A NaN fails.
     """
-    got, want = ({k: v for k, v in d.items() if _KEY.match(k).group("layer", "case") not in RETIRED}
-                 for d in (got, want))
+    want = {k: v for k, v in want.items() if not k.startswith(DROPPED)}
     if sorted(got) != sorted(want):
         raise AssertionError(f"baseline keys differ: {sorted(set(got) ^ set(want))[:10]}")
+    scale: dict[str, float] = {}
+    for k, w in want.items():
+        scale[_family(k)] = max(scale.get(_family(k), 0.0), float(np.max(np.abs(w), initial=0.0)))
     bad = []
-    for k in want:
-        g, w = got[k], want[k]
-        f = rescale_factor(k)
+    for k, w in want.items():
+        g = got[k]
         if g.dtype != w.dtype or g.shape != w.shape:
             bad.append(k)
-        elif f is None:
+        elif w.dtype.kind not in "fc":
             if not np.array_equal(g, w):
                 bad.append(k)
-        elif not (np.max(np.abs(g - f * w), initial=0.0)                 # NaN-safe: a NaN fails
-                  <= RESCALED_RTOL * np.max(np.abs(f * w), initial=0.0)):
-            bad.append(k)
+        else:
+            s = float(np.max(np.abs(w), initial=0.0)) or scale[_family(k)]
+            if not np.max(np.abs(g - w), initial=0.0) <= RTOL * s:       # a NaN fails
+                bad.append(k)
     return bad
 
 
@@ -116,11 +89,11 @@ def psd(f: Any) -> np.ndarray:
     return 1.0 / (1.0 + (4.0 * f) ** 2) + 0.1
 
 
-def psd_ft(T: float) -> Callable[[Any, Any], np.ndarray]:
+def psd_ft(T: float, depth: float = 0.5) -> Callable[[Any, Any], np.ndarray]:
     """A strictly positive evolutionary PSD ``Sn(f, t)`` (elementwise, broadcasting)."""
 
     def Sn(f: Any, t: Any) -> np.ndarray:
-        return psd(f) * (1.0 + 0.5 * np.sin(2.0 * np.pi * np.asarray(t, dtype=float) / T))
+        return psd(f) * (1.0 + depth * np.sin(2.0 * np.pi * np.asarray(t, dtype=float) / T))
 
     return Sn
 
@@ -130,7 +103,7 @@ def _seed(Nf: int, Nt: int, dt: float) -> int:
 
 
 def wilson_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
-    """The kernel window consumers of ``wl`` (old ``wdm`` or ``domainia.wilson``)."""
+    """The kernel window consumers of ``wl`` (``domainia.wilson``)."""
     N = Nf * Nt
     T = N * dt
     rng = np.random.default_rng(_seed(Nf, Nt, dt))
@@ -141,14 +114,11 @@ def wilson_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
     S = psd(np.fft.rfftfreq(N, dt))
     Sn = psd_ft(T)
     chi = np.hanning(N)
-    bands = np.array([1, 2])
     # Fixed WDM-domain inputs, computed once with the default (Meyer) window.
-    w = wl.forward_time(x, Nf, Nt, dt)
-    Wm = wl.forward_time_many(X, Nf, Nt, dt)
-    wb = wl.transform.forward_bands(xr, 0, bands, Nf, Nt, dt)
+    w = wl.forward(xr, Nf, Nt, dt)
+    Wm = np.stack([wl.forward(r, Nf, Nt, dt) for r in Xr])
     mask = wl.active_mask(Nf, Nt)
-    Tr, M, St, No, E, I = (wl.transform, wl.matrix, wl.stationary, wl.noise,
-                           wl.evolutionary, wl.inner_product)
+    Tr, M, St, No, E = wl.transform, wl.matrix, wl.stationary, wl.noise, wl.evolutionary
     K0 = St.build_K_full_active(Nf, Nt, dt, psd)[0]
     B0 = St.build_lambda_blocks_full_active(Nf, Nt, dt, psd)
     cases: list[Case] = [
@@ -163,10 +133,6 @@ def wilson_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
         ("transform.base_atom_spectra", lambda kw: Tr.base_atom_spectra(Nf, Nt, dt, **kw)),
         ("transform.atom_spectrum", lambda kw: [Tr.atom_spectrum(m, n, Nf, Nt, dt, **kw)
                                                 for m, n in ((1, 3), (0, 2), (Nf, 2))]),
-        ("transform.band_atoms", lambda kw: Tr.band_atoms(bands, Nf, Nt, dt, **kw)),
-        ("transform.forward_bands", lambda kw: Tr.forward_bands(xr, 0, bands, Nf, Nt, dt, **kw)),
-        ("transform.inverse_bands", lambda kw: Tr.inverse_bands(wb, 0, N // 2 + 1, bands, Nf, Nt, dt,
-                                                                **kw)),
         ("stationary.build_lambda_blocks_full_active",
          lambda kw: St.build_lambda_blocks_full_active(Nf, Nt, dt, psd, **kw)),
         ("stationary.build_K_full_active", lambda kw: St.build_K_full_active(Nf, Nt, dt, psd, **kw)),
@@ -180,16 +146,11 @@ def wilson_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
         # w2 is a length-N time-domain weight (rho_p = sum_t w2(t) g_p(t)^2 / dt).
         ("evolutionary.energy_fraction", lambda kw: E.energy_fraction(x ** 2, Nf, Nt, dt, **kw)),
         ("evolutionary.apply_time_mask", lambda kw: E.apply_time_mask(Wm[:, mask], chi, Nf, Nt, dt, **kw)),
-        # nan (inactive cells) -> -1: np.array_equal treats nan != nan; the fractions lie in [0, 1].
+        # nan (inactive cells) -> -1, as recorded; the fractions lie in [0, 1].
         ("evolutionary.wrap_fractions",
          lambda kw: np.nan_to_num(E.wrap_fractions(Nf, Nt, dt, **kw), nan=-1.0)),
         ("evolutionary.wrap_cut_columns", lambda kw: np.asarray(E.wrap_cut_columns(Nf, Nt, dt, **kw))),
         ("evolutionary.eq45_plan", lambda kw: E.eq45_plan(Nf, Nt, dt, **kw).base),
-        ("inner_product.gaussian", lambda kw: I.gaussian(w, Wm[0], Nf, Nt, dt, S, **kw)),
-        ("inner_product.gaussian_from_func", lambda kw: I.gaussian_from_func(w, Wm[0], Nf, Nt, dt, psd, **kw)),
-        ("inner_product.loglike_gaussian", lambda kw: I.loglike_gaussian(w, Wm[0], Nf, Nt, dt, S, **kw)),
-        ("inner_product.loglike_gaussian_many",
-         lambda kw: I.loglike_gaussian_many(Wm, Wm[::-1], Nf, Nt, dt, S, **kw)),
     ]
     if (Nf, Nt) == DENSE_GRID:
         cases += [
@@ -203,44 +164,35 @@ def wilson_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
     return cases
 
 
-def domainia_cases(dm: Any, wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
-    """The domainia-layer window consumers.  ``dm`` has the attributes ``domains``, ``maps``,
-    ``spectra``, ``variance``, ``covariance`` and ``testing`` (the domainia modules).
-    ``kw`` goes to ``WDMDomain`` and to the cell-based constructors."""
-    g = wl.Grid(Nf, Nt, dt)
-    N = g.N
-    T = N * dt
-    rng = np.random.default_rng(7 + _seed(Nf, Nt, dt))
-    x = rng.standard_normal(N)
-    X = rng.standard_normal((2, N))
-    D = dm.domains
-    cells = D.CellSet.all_active(g)
-    band_cells = D.CellSet.bands(g, (1, 2))
-    time = D.TimeDomain(N, dt)
-    four = D.FourierDomain(N, dt, 0, N // 2 + 1, "rfft")
-    y = rng.standard_normal(cells.size)
-    xt = rng.standard_normal(N)                    # time-domain input of WDMToTime.adjoint
-    wf = rng.standard_normal(band_cells.size)      # cell input of FourierToWDM.adjoint
-    gen = dm.spectra.GenericPSD(
-        lambda f, t, nu: psd(f) * (1.0 + nu[0] * np.sin(2.0 * np.pi * np.asarray(t, dtype=float) / T)))
-    nu = np.array([0.4])
-    Cov = dm.covariance.EvolutionaryCovariance
+def domainia_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
+    """The cases recorded on the domainia layer, under their recorded names.  The classes
+    that recorded them are computed by the kernels they wrapped: ``EvolutionaryCovariance``
+    by ``eq45_plan`` (``P = 24``) + ``eq45_coeffs_interp`` + ``eq45_blocks_cheb`` and by
+    ``eq45_direct``, ``BandAveragedVariance`` by ``noise.evolutionary_band_variance`` on the
+    active cells.  ``kw`` goes to every window-taking call."""
+    from domainia import testing
 
-    def W(c: Any, kw: dict) -> Any:
-        return D.WDMDomain(c, **kw)
+    N = Nf * Nt
+    rng = np.random.default_rng(7 + _seed(Nf, Nt, dt))
+    rng.standard_normal(5 * N + 2 * Nt)        # the recorded maps cases' inputs: Sigma unchanged
+    Sn = psd_ft(N * dt, depth=0.4)
+    E = wl.evolutionary
+    m, n = np.nonzero(wl.active_mask(Nf, Nt))
+
+    def interp(kw: dict) -> Any:
+        plan = E.eq45_plan(Nf, Nt, dt, **kw)
+        return E.eq45_blocks_cheb(plan, E.eq45_coeffs_interp(Sn, plan.f, plan.t_max, plan.P,
+                                                             k=plan.k_used))
+
+    def cells() -> Any:
+        """Every active cell as a ``CellSet``, which ``testing`` takes for now (imported on
+        call, so collecting this module never needs ``domainia.domains``)."""
+        from domainia.domains import CellSet
+        return CellSet.all_active(wl.Grid(Nf, Nt, dt))
 
     cases: list[Case] = [
-        ("TimeToWDM.apply", lambda kw: dm.maps.TimeToWDM(time, W(cells, kw)).apply(x)),
-        ("TimeToWDM.apply_many", lambda kw: dm.maps.TimeToWDM(time, W(cells, kw)).apply(X)),
-        ("TimeToWDM.adjoint", lambda kw: dm.maps.TimeToWDM(time, W(cells, kw)).adjoint(y)),
-        ("TimeToWDM.rows", lambda kw: dm.maps.TimeToWDM(time, W(cells, kw)).rows([0, 5, cells.size - 1])),
-        ("WDMToTime.apply", lambda kw: dm.maps.WDMToTime(W(cells, kw), time).apply(y)),
-        ("WDMToTime.adjoint", lambda kw: dm.maps.WDMToTime(W(cells, kw), time).adjoint(xt)),
-        ("FourierToWDM.dense", lambda kw: dm.maps.FourierToWDM(four, W(band_cells, kw)).apply(np.fft.rfft(x))),
-        ("FourierToWDM.fft", lambda kw: dm.maps.FourierToWDM(four, W(band_cells, kw), "fft").apply(np.fft.rfft(x))),
-        ("FourierToWDM.adjoint", lambda kw: dm.maps.FourierToWDM(four, W(band_cells, kw)).adjoint(wf)),
-        ("BandAveragedVariance", lambda kw: dm.variance.BandAveragedVariance(gen, cells, **kw)(nu)),
-        ("EvolutionaryCovariance.interp", lambda kw: Cov(gen, cells, builder="interp", **kw).blocks(nu)),
+        ("BandAveragedVariance", lambda kw: wl.noise.evolutionary_band_variance(Nf, Nt, dt, Sn, **kw)[m, n]),
+        ("EvolutionaryCovariance.interp", interp),
     ]
     if (Nf, Nt) == DENSE_GRID:
         # A seeded non-identity SPD Sigma: with Sigma = I the congruence is dt I for any window.
@@ -248,10 +200,10 @@ def domainia_cases(dm: Any, wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
         Sigma = B @ B.T / N + np.eye(N)
         cases += [
             ("EvolutionaryCovariance.direct",
-             lambda kw: Cov(gen, cells, builder="direct", assembly="dense", **kw).dense(nu)),
-            ("testing.dense_W", lambda kw: dm.testing.dense_W(cells, **kw)),
-            ("testing.wdm_congruence", lambda kw: dm.testing.wdm_congruence(Sigma, cells, **kw)),
-            ("testing.eq45_dense", lambda kw: dm.testing.eq45_dense(cells, gen.bind(nu), **kw)),
+             lambda kw: E.eq45_direct(E.eq45_plan(Nf, Nt, dt, P=2, **kw), Sn)),
+            ("testing.dense_W", lambda kw: testing.dense_W(cells(), **kw)),
+            ("testing.wdm_congruence", lambda kw: testing.wdm_congruence(Sigma, cells(), **kw)),
+            ("testing.eq45_dense", lambda kw: testing.eq45_dense(cells(), Sn, **kw)),
         ]
     return cases
 
@@ -273,16 +225,16 @@ def flatten(key: str, value: Any) -> dict[str, np.ndarray]:
     return {key: np.asarray(value)}
 
 
-def compute(wl: Any, dm: Any, wilson_kw: dict, domainia_kw: dict, *,
+def compute(wl: Any, wilson_kw: dict, domainia_kw: dict, *,
             only: tuple[str, ...] | None = None) -> dict[str, np.ndarray]:
     """Every case on every grid and ``dt``.  ``only`` keeps the cases whose name starts
-    with one of the prefixes (``"transform."``, ``"TimeToWDM."``, ...)."""
+    with one of the prefixes (``"transform."``, ...)."""
     out: dict[str, np.ndarray] = {}
     for Nf, Nt in GRIDS:
         for dt in DTS:
             tag = f"{Nf}x{Nt}::dt={dt!r}"
             for layer, cases, kw in (("wilson", wilson_cases(wl, Nf, Nt, dt), wilson_kw),
-                                     ("domainia", domainia_cases(dm, wl, Nf, Nt, dt), domainia_kw)):
+                                     ("domainia", domainia_cases(wl, Nf, Nt, dt), domainia_kw)):
                 for name, case in cases:
                     if only is None or name.startswith(only):
                         out.update(flatten(f"{layer}::{name}::{tag}", case(kw)))
@@ -290,32 +242,18 @@ def compute(wl: Any, dm: Any, wilson_kw: dict, domainia_kw: dict, *,
 
 
 def main() -> None:
-    """``--check``: replay the baseline through the current ``domainia.wilson`` layout.
-
-    The baseline was recorded at d991ac4 by this module's own history (24c4e55 holds
-    the recorder); re-recording means checking out 24c4e55.  The gate is
-    ``tests/wilson/test_meyer_baseline.py``; this is the same replay as a script, with the
-    same comparator (:func:`mismatches`).
-    """
+    """``--check``: replay the baseline through the current ``domainia.wilson``, with
+    :func:`mismatches` (the gate is ``tests/wilson/test_meyer_baseline.py``)."""
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--check", action="store_true", required=True,
-                   help="recompute and compare (bit for bit, RESCALED by tolerance)")
+                   help="recompute and compare, to RTOL of each array's scale")
     p.parse_args()
     src = str(Path(__file__).resolve().parents[2] / "src")
     if src not in sys.path:
         sys.path.insert(0, src)
-    import domainia.covariance
-    import domainia.domains
-    import domainia.maps
-    import domainia.spectra
-    import domainia.testing
-    import domainia.variance
     from domainia import wilson
 
-    dm = SimpleNamespace(domains=domainia.domains, maps=domainia.maps, spectra=domainia.spectra,
-                         variance=domainia.variance, covariance=domainia.covariance,
-                         testing=domainia.testing)
-    out = compute(wilson, dm, {}, {})
+    out = compute(wilson, {}, {})
     with np.load(BASELINE) as z:
         stored = {k: z[k] for k in z.files}
     try:
@@ -324,7 +262,7 @@ def main() -> None:
         raise SystemExit(str(exc)) from None
     if bad:
         raise SystemExit(f"{len(bad)} arrays differ from the baseline: {bad[:10]}")
-    print(f"baseline reproduces: {len(out)} arrays, except the RETIRED families")
+    print(f"baseline reproduces: {len(out)} arrays ({len(stored) - len(out)} DROPPED keys set aside)")
 
 
 if __name__ == "__main__":
