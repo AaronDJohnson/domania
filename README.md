@@ -67,8 +67,9 @@ assert np.array_equal(D, D.transpose(1, 0, 2, 3)) and not D[:, :, 0, 1].any()
   `Nf * Nt == N`. The atoms have unit norm (`sum(w**2) == dt * sum(x**2)`), and the inactive
   WDM cells (bands 0 and `Nf` at odd `n`) are 0 in every output of `transform` and
   `wdm_covariance`.
-- A model `S(f)` or `S(f, t)` (`t` in seconds from the first sample) returns `(K, K, ...)`
-  with `S[b, a] = conj(S[a, b])`, oriented so that `E[X_a conj(X_b)] = (N dt / 2) S_ab`.
+- A model `S(f)` or `S(f, t)` (`t` in seconds from the first sample) returns `(K, K, ...)`,
+  or `(K, K, 1)` if it is constant, with `S[b, a] = conj(S[a, b])`, oriented so that
+  `E[X_a conj(X_b)] = (N dt / 2) S_ab`.
 - With `H = (S + S^H) / 2`, `frequency_covariance` is `(N dt / 2) H(f_k)`, real at DC and
   even-`N` Nyquist, and `wdm_covariance` is `½ BA_m[Re H(·, n Nf dt)]`, the band average of
   WDM Paper II, Eq. 36. Both are linear in `S`, exactly Hermitian (or symmetric), and fp64.

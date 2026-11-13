@@ -211,6 +211,15 @@ def test_linear_and_exactly_hermitian_and_a_zero_point_passes():
         assert not np.any(route(lambda f: 0.0 * delayed(f))), name
 
 
+def test_a_constant_model_may_return_K_K_1():
+    """A model constant in f may return (K, K, 1) on either route, and gives what its explicitly
+    broadcast output gives, bit for bit."""
+    flat = lambda f: delayed(f, delays=np.zeros(K), p=lambda f: np.full(np.shape(f), 1e-2))
+    S0 = flat(np.zeros(1))
+    for name, route in ROUTES.items():
+        assert np.array_equal(route(lambda f: S0), route(flat)), name
+
+
 def test_every_refusal(monkeypatch):
     """Each failure of the model check, made per point (spec 3.1), raises the right kind, as do
     a bad grid, dt or window, a masked output and a model that writes into t; a WDM model is

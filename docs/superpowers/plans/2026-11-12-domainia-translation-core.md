@@ -15853,9 +15853,9 @@ After Task 13, an Opus review of the whole branch read the end state through fou
 
 ### Open points left for the user
 
-None of these was changed, because each is a semantics or scope choice:
+None of these was changed during execution, because each is a semantics or scope choice. Point 1 was decided afterwards:
 
-1. **A constant model on the WDM route.** `frequency_covariance` accepts a `(K, K, 1)` output, but `wdm_covariance(lambda f, t: S0(f), …)` refuses it: `_hermitian` requires 2 + len(points) axes, while spec §3.1 says the output must be "broadcastable". Left-padding the point axes in `_hermitian` would be a one-line change.
+1. **A constant model on the WDM route.** `frequency_covariance` accepted a `(K, K, 1)` output, but `wdm_covariance(lambda f, t: S0(f), …)` refused it: `_hermitian` required 2 + len(points) axes. Spec §3.1's "broadcastable to `(K, K, *broadcast(f, t).shape)`" does not cover it under NumPy's right-aligned broadcasting unless K = 1. **Resolved 2026-11-13, at the user's request ("allow (K, K, 1) on the WDM route"):** `_hermitian` reads a `(K, K, 1)` output as constant on any grid. Nothing else is left-padded, so `(K, K)` and `(K, K, J)` are still refused.
 2. **Spec §6.1's oracle comparisons.** §6.1 says to move the exact comparisons against oracle copies (`test_evolutionary_kernels.py`, `test_noise_stationary.py`) to the tolerance helper. They are not moved. They are bit-exact today on NumPy 2.1–2.5, and on 1.26.4 too.
 3. **§3.3's columns.** `test_dom_testing`'s columns against §3.3's `wrap_cut_columns` sentence is the header's recorded decision. The spec text may want the edit.
 4. **NumPy-integer grid sizes.** `validate_grid` admits a NumPy integer `Nf`/`Nt`, and arithmetic in its dtype can overflow (`np.int8`, `np.int16`). Converting to `int` in `validate_grid` would fix this package-wide.

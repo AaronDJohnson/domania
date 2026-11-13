@@ -31,7 +31,8 @@ def _hermitian(out: Any, points: tuple[int, ...], name: str) -> np.ndarray:
     """``H = (S + S^H) / 2`` at each point of a model's output ``S = out``, after the check.
 
     ``S`` must be numeric and not masked (else ``TypeError``), of shape ``(K, K, *p)`` with
-    K >= 1 and ``p`` equal to ``points`` up to axes of size 1, and finite (else ``ValueError``).
+    K >= 1 and ``p`` equal to ``points`` up to axes of size 1, or ``(K, K, 1)``, a constant
+    read as size 1 on every axis of ``points``, and finite (else ``ValueError``).
     At each point, with ``tol = TOL * max_cd |S_cd|`` there, ``|S_ab - conj(S_ba)|`` (a != b),
     ``|Im S_aa|`` and ``-Re S_aa`` must not exceed ``tol`` (else ``ValueError``, naming the
     first entry), so a point whose entries are all 0 passes.  ``H`` has ``S``'s shape, so a
@@ -42,11 +43,13 @@ def _hermitian(out: Any, points: tuple[int, ...], name: str) -> np.ndarray:
                         "it first")
     S = np.asarray(out)
     require_dtype(name, S, "iufc", "a numeric array")
+    if S.ndim == 3 and S.shape[2] == 1:                  # a constant model, on any grid
+        S = S.reshape(S.shape[:2] + (1,) * len(points))
     if (S.ndim != 2 + len(points) or not 0 < S.shape[0] == S.shape[1]
             or any(s not in (1, p) for s, p in zip(S.shape[2:], points))):
         shape = ", ".join(map(str, points))
         raise ValueError(f"{name} must have shape (K, K, {shape}) with K >= 1 (an axis after "
-                         f"the first two may be 1); got {S.shape}")
+                         f"the first two may be 1) or (K, K, 1); got {np.shape(out)}")
     if not np.isfinite(S).all():
         at = tuple(np.argwhere(~np.isfinite(S))[0].tolist())
         raise ValueError(f"{name} is not finite at {at}")
@@ -112,8 +115,8 @@ def wdm_covariance(S: Callable[[np.ndarray, np.ndarray], Any], *, Nf: int, Nt: i
     from the record's first sample]: once on band 0 and two columns, then once per chunk of at
     most ``max(CHUNK, J)`` points, J being a band's frequency samples.  A model that returns a
     size-1 time axis on that first call (a stationary ``lambda f, t: S0(f)``) gets every column
-    in each chunk and must keep that axis.  A refusal names its point from the chunk's first
-    band and column.
+    in each chunk and must keep that axis.  A constant model may return ``(K, K, 1)`` instead.
+    A refusal names its point from the chunk's first band and column.
 
     Raises ``TypeError`` for a non-callable ``S``, a non-integer ``Nf`` or ``Nt``, a non-real
     ``dt``, a non-window ``window`` or a masked or non-numeric output; ``ValueError`` for a bad
