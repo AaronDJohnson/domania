@@ -16,11 +16,9 @@ REPO = Path(__file__).resolve().parents[1]
 SRC = REPO / "src"
 
 PUBLIC = {
-    "CellSet", "ChannelAxis", "CovarianceOperator", "DenseOperator", "FourierBins", "FourierDomain",
-    "Grid", "MEYER", "Meyer", "Operator", "RampWindow", "SampledWindow", "TimeDomain", "TimeSeries",
-    "TranslatedOperator", "WDMCells", "WDMDomain", "Window", "WindowError", "__version__", "data",
-    "domains", "from_coordinates", "linalg", "log_coordinate_scale", "operator_matrix", "operators",
-    "to_coordinates", "transform", "translate", "translate_operator", "wilson",
+    "CellSet", "ChannelAxis", "FourierBins", "FourierDomain", "Grid", "MEYER", "Meyer", "RampWindow",
+    "SampledWindow", "TimeDomain", "TimeSeries", "WDMCells", "WDMDomain", "Window", "WindowError",
+    "__version__", "data", "domains", "transform", "translate", "wilson",
 }
 
 
@@ -58,10 +56,6 @@ def test_the_public_names():
             "require_window", "sample_window", "pack", "unpack"} <= set(wilson.__all__)
     assert wilson.pack is wilson.grid.pack and wilson.unpack is wilson.grid.unpack
     assert domainia.MEYER is wilson.MEYER and domainia.Grid is wilson.Grid
-    assert {"from_coordinates", "to_coordinates"} <= set(translate.__all__)
-    assert domainia.operators.__all__ == ["CovarianceOperator", "DenseOperator", "operator_matrix"]
-    assert domainia.to_coordinates is translate.to_coordinates
-    assert domainia.CovarianceOperator is domainia.operators.CovarianceOperator
 
 
 def test_no_release_leftovers():
@@ -86,16 +80,14 @@ def test_importing_every_module_resolves_to_src_and_does_not_import_jax():
     assert out.returncode == 0, out.stderr
     info = json.loads(out.stdout.strip().splitlines()[-1])
     assert Path(info["file"]).resolve().is_relative_to(SRC.resolve())
-    assert {"domainia.translate", "domainia.wilson", "domainia.wilson.backend", "domainia.linalg",
-            "domainia.covariance.base", "domainia.maps.time", "domainia.testing"} <= set(info["modules"])
+    assert {"domainia.translate", "domainia.wilson", "domainia.wilson.backend", "domainia.maps.time",
+            "domainia.testing"} <= set(info["modules"])
     assert info["jax"] == []
 
 
-def test_importing_domainia_leaves_the_covariance_layer_unimported():
-    """The package docstring's promise, with domainia.operators imported: a fresh
-    ``import domainia`` imports none of domainia.covariance, domainia.maps,
-    domainia.variance, domainia.spectra and domainia.testing (CovarianceOperator imports
-    domainia.covariance when it is built)."""
+def test_importing_domainia_leaves_the_unlisted_modules_unimported():
+    """The package docstring's promise: a fresh ``import domainia`` imports none of
+    domainia.maps, domainia.variance, domainia.spectra and domainia.testing."""
     env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PYTHONSAFEPATH")}
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["PYTHONPATH"] = str(SRC)
@@ -105,5 +97,5 @@ def test_importing_domainia_leaves_the_covariance_layer_unimported():
                          capture_output=True, text=True)
     assert out.returncode == 0, out.stderr
     loaded = set(json.loads(out.stdout.strip().splitlines()[-1]))
-    assert {"domainia.operators", "domainia.translate"} <= loaded
-    assert not {m.split(".")[1] for m in loaded} & {"covariance", "maps", "spectra", "testing", "variance"}
+    assert "domainia.translate" in loaded
+    assert not {m.split(".")[1] for m in loaded} & {"maps", "spectra", "testing", "variance"}

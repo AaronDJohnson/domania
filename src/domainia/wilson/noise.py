@@ -29,8 +29,8 @@ Every kernel here that reaches the window takes ``window=`` (a
 computes in the Wilson basis of that window.
 
 Argument order follows the package convention: the grid first
-(``Nf, Nt, dt``), then the PSD. It matches :mod:`domainia.wilson.matrix` and
-:mod:`domainia.wilson.inner_product`, so the PSD is always the trailing argument.
+(``Nf, Nt, dt``), then the PSD. It matches :mod:`domainia.wilson.matrix`, so the PSD is
+always the trailing argument.
 """
 
 from __future__ import annotations

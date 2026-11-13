@@ -57,8 +57,8 @@ $\\|g_{0n}\\|^2 = 2$, used to be selectable via ``normalize_edges=False``
 throughout the package.  It bought nothing but a way to get the edge bands
 silently wrong: the two conventions differ by a factor of two on the edge
 bands and nowhere else, no downstream function could detect a mismatch, and
-every non-trivial consumer (``matrix``, ``stationary``, ``inner_product``)
-either assumed or hard-coded the normalized one anyway.
+every non-trivial consumer (``matrix``, ``stationary``) either assumed or
+hard-coded the normalized one anyway.
 
 Precision
 ---------

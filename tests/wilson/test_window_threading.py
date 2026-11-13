@@ -23,13 +23,11 @@ from .meyer_cases import THREADED, domainia_cases, psd, psd_ft, wilson_cases
 #: must never be scanned: they are where the Meyer samples come from (``phi_centered``,
 #: ``phi_fft_order``) and where ``.sample`` is called, behind ``sample_window``'s validation.
 SCANNED = ("wilson/transform.py", "wilson/matrix.py", "wilson/stationary.py", "wilson/noise.py",
-           "wilson/evolutionary.py", "wilson/inner_product.py", "wilson/grid.py", "wilson/backend.py",
+           "wilson/evolutionary.py", "wilson/grid.py", "wilson/backend.py",
            "wilson/special.py", "wilson/__init__.py", "wilson/_checks.py",
            "domains.py", "maps/base.py", "maps/time.py", "maps/fourier.py", "variance.py",
-           "covariance/evolutionary.py", "covariance/base.py", "covariance/diagonal.py",
-           "covariance/dense.py", "covariance/blocktri.py", "covariance/stack.py", "testing.py",
-           "linalg.py", "data.py", "spectra.py", "__init__.py", "maps/__init__.py",
-           "covariance/__init__.py", "translate.py", "operators.py")
+           "testing.py", "data.py", "spectra.py", "__init__.py", "maps/__init__.py",
+           "translate.py")
 #: The two modules that legitimately sample the Meyer window directly.
 UNSCANNED = frozenset({"wilson/filter.py", "wilson/windows.py"})
 #: Meyer sampling helpers: only ``wilson/filter.py`` (and ``wilson/windows.py``) may call them.
@@ -47,7 +45,6 @@ CONSUMERS = frozenset({
     "band_averaged_variance", "evolutionary_band_variance", "empirical_variance",
     "energy_fraction", "apply_time_mask", "wrap_fractions", "wrap_cut_columns", "exact_covariance",
     "eq45_plan",
-    "gaussian", "gaussian_from_func", "loglike_gaussian", "loglike_gaussian_many",
     "dense_W", "wdm_congruence", "eq45_dense", "_dense_atoms",
     # The window-taking constructors must receive ``window=`` by keyword: building one without
     # it drops the window.  Known limits of this name-based rule: a positional window
@@ -55,7 +52,7 @@ CONSUMERS = frozenset({
     # ``cls(...)`` inside a classmethod and a call to such a classmethod (``WDMDomain.full(...)``)
     # are not seen, a false negative that the value tests in tests/test_dom_windows.py and
     # tests/test_translate.py cover.
-    "WDMDomain", "EvolutionaryCovariance", "BandAveragedVariance",
+    "WDMDomain", "BandAveragedVariance",
     # The helper those constructors resolve the window with; MidpointVariance uses _cells_of.
     "_cells_and_window",
 })
@@ -91,7 +88,7 @@ RTOL = 1e-13
 RTOL_ATOM = 1e-12
 
 T, M = wilson.transform, wilson.matrix
-St, No, E, I = wilson.stationary, wilson.noise, wilson.evolutionary, wilson.inner_product
+St, No, E = wilson.stationary, wilson.noise, wilson.evolutionary
 
 
 class CountingWindow:
@@ -256,11 +253,9 @@ def test_the_scan_covers_every_module_but_filter_and_windows():
     # The window-taking constructors of the domainia layer.
     ("WDMDomain(cells, window=window)", False),
     ("D.WDMDomain(cells, window=self.dst.window)", False),
-    ("EvolutionaryCovariance(psd, cells, builder='direct', window=self.window)", False),
     ("BandAveragedVariance(psd, cells, window=window)", False),
     ("WDMDomain(cells)", True),
     ("domains.WDMDomain(cells, ALT_WINDOW)", True),           # positional: flagged
-    ("EvolutionaryCovariance(psd, cells, builder='direct')", True),
     ("BandAveragedVariance(psd, cells)", True),
     ("WDMDomain(cells, window=wilson.MEYER)", True),
 ])
@@ -796,35 +791,3 @@ def test_eq45_plan_carries_the_window_to_every_eq45_builder(window, Nf, Nt, dt):
                                     E.eq45_gram_gather(gplan, np.log(psd(plan.f))))
         _close(_assemble_gram(gplan, *blocks, ref.shape[0]), ref, RTOL_KERNEL,
                f"eq45_blocks_gram{tag}")
-
-
-@pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
-@pytest.mark.parametrize("Nf, Nt, dt", GRIDS)
-def test_gaussian_forms_are_the_dense_wdm_forms(window, Nf, Nt, dt):
-    """``gaussian`` and ``gaussian_from_func`` are ``a_a^T C_a^{-1} b_a``; ``loglike_gaussian``
-    and ``loglike_gaussian_many`` (also the per-row ``loglike_gaussian``, and one data grid
-    against a stack of templates) are ``-r_a^T C_a^{-1} r_a / 2 - ln det(2 pi C_a) / 2``."""
-    N = Nf * Nt
-    mask = wilson.active_mask(Nf, Nt)
-    Ca = _dense(window, Nf, Nt, dt)[3]
-    w = np.random.default_rng(N + Nf + 5).standard_normal((4, Nf + 1, Nt))
-    S = psd(np.fft.rfftfreq(N, dt))
-    ab = w[0][mask] @ np.linalg.solve(Ca, w[1][mask])
-    _close(I.gaussian(w[0], w[1], Nf, Nt, dt, S, window=window), ab, RTOL_KERNEL, "gaussian")
-    _close(I.gaussian_from_func(w[0], w[1], Nf, Nt, dt, psd, window=window), ab, RTOL_KERNEL,
-           "gaussian_from_func")
-    r = (w[:2] - w[2:])[:, mask]
-    quad = np.einsum("bi,bi->b", r, np.linalg.solve(Ca, r.T).T)
-    logdet = np.linalg.slogdet(2.0 * np.pi * Ca)[1]
-    _close(I.loglike_gaussian(w[0], w[2], Nf, Nt, dt, S, include_logdet=False, window=window),
-           -0.5 * quad[0], RTOL_KERNEL, "loglike_gaussian(include_logdet=False)")
-    _close(I.loglike_gaussian(w[0], w[2], Nf, Nt, dt, S, window=window),
-           -0.5 * quad[0] - 0.5 * logdet, RTOL_KERNEL, "loglike_gaussian")
-    many = I.loglike_gaussian_many(w[:2], w[2:], Nf, Nt, dt, S, window=window)
-    _close(many, -0.5 * quad - 0.5 * logdet, RTOL_KERNEL, "loglike_gaussian_many")
-    rows = [I.loglike_gaussian(a, b, Nf, Nt, dt, S, window=window) for a, b in zip(w[:2], w[2:])]
-    _close(many, np.array(rows), RTOL_KERNEL, "loglike_gaussian_many(per-row loglike_gaussian)")
-    r1 = (w[0] - w[2:])[:, mask]                                      # one data grid, two templates
-    quad1 = np.einsum("bi,bi->b", r1, np.linalg.solve(Ca, r1.T).T)
-    _close(I.loglike_gaussian_many(w[0], w[2:], Nf, Nt, dt, S, window=window),
-           -0.5 * quad1 - 0.5 * logdet, RTOL_KERNEL, "loglike_gaussian_many(broadcast)")

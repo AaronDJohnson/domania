@@ -170,9 +170,9 @@ def sanitize_psd(values: object, context: str) -> Array:
     The point of routing every module through here is **uniformity**. These
     paths previously disagreed: ``build_C_time`` and ``stationary`` mapped
     non-finite to ``0.0``, ``noise.band_averaged_variance`` dropped the bin
-    from a weighted average (a different answer), and
-    ``inner_product.loglike_gaussian`` propagated it to ``+inf``. The same PSD
-    gave three answers depending on which function you called.
+    from a weighted average (a different answer), and the Gaussian log-likelihood
+    propagated it to ``+inf``. The same PSD gave three answers depending on which
+    function you called.
 
     Negative samples are rejected outright: a negative PSD is not a convention,
     it is a bug in the caller's model.

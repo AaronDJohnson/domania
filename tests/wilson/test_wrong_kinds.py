@@ -123,13 +123,11 @@ def test_eq45_plan_P_range_and_numpy_int():
 # The other wilson sites
 # ---------------------------------------------------------------------------
 
-_T, _IP = wilson.transform, wilson.inner_product
+_T = wilson.transform
 _Z = np.fft.rfft(np.random.default_rng(0).standard_normal(128))     # rfft bins of an 8 x 16 grid
 _BANDS = np.array([2, 3])
 _W_BANDS = _T.forward_bands(_Z, 0, _BANDS, 8, 16, 1.0)
 _W = wilson.forward_time(np.random.default_rng(1).standard_normal(128), 8, 16, 1.0)
-_VAR = wilson.whittle_variance(8, 16, 1.0, np.ones_like)
-_SN = np.ones(65)
 
 
 def _exact(message):
@@ -241,62 +239,6 @@ def test_eq45_plan_keep_message_names_the_dtype():
     with pytest.raises(TypeError, match=_exact("keep must be a boolean mask over the packed cells, "
                                                "got dtype int64")):
         wilson.evolutionary.eq45_plan(8, 16, 1.0, np.ones(128, np.int64))
-
-
-#: The loglike functions that take ``include_logdet``.
-_LOGLIKE = {
-    "loglike_whittle": lambda flag: _IP.loglike_whittle(_W, 0 * _W, _VAR, 8, include_logdet=flag),
-    "loglike_whittle_many": lambda flag: _IP.loglike_whittle_many(_W, np.zeros((2, 9, 16)), _VAR, 8,
-                                                                  include_logdet=flag),
-    "loglike_band_averaged": lambda flag: _IP.loglike_band_averaged(_W, 0 * _W, _VAR, 8,
-                                                                    include_logdet=flag),
-    "loglike_evolutionary_whittle": lambda flag: _IP.loglike_evolutionary_whittle(_W, 0 * _W, _VAR, 8,
-                                                                                  include_logdet=flag),
-    "loglike_gaussian": lambda flag: _IP.loglike_gaussian(_W, 0 * _W, 8, 16, 1.0, _SN, include_logdet=flag),
-    "loglike_gaussian_many": lambda flag: _IP.loglike_gaussian_many(_W, np.zeros((2, 9, 16)), 8, 16, 1.0,
-                                                                    _SN, include_logdet=flag),
-}
-
-
-@pytest.mark.parametrize(("flag", "kind"), [
-    ("no", "str"), (0, "int"), (1, "int"), (np.int64(1), "int64"), (0.5, "float"), (None, "NoneType"),
-], ids=["str", "0", "1", "np.int64", "float", "None"])
-@pytest.mark.parametrize("entry", list(_LOGLIKE))
-def test_include_logdet_of_the_wrong_kind_raises_type_error(entry, flag, kind):
-    """A truthy ``"no"`` used to include the log-determinant."""
-    with pytest.raises(TypeError, match=_exact(f"include_logdet must be a bool, got {kind}")):
-        _LOGLIKE[entry](flag)
-
-
-@pytest.mark.parametrize("entry", list(_LOGLIKE))
-def test_include_logdet_takes_a_numpy_bool(entry):
-    for flag in (True, False):
-        assert np.array_equal(_LOGLIKE[entry](np.bool_(flag)), _LOGLIKE[entry](flag))
-    assert not np.array_equal(_LOGLIKE[entry](True), _LOGLIKE[entry](False))
-
-
-_CELLS = {
-    "whittle": lambda c: _IP.whittle(_W, _W, _VAR, 8, cells=c),
-    "whittle_many": lambda c: _IP.whittle_many(_W[None], _W[None], _VAR, 8, cells=c),
-    "loglike_whittle": lambda c: _IP.loglike_whittle(_W, 0 * _W, _VAR, 8, cells=c),
-    "loglike_whittle_many": lambda c: _IP.loglike_whittle_many(_W, np.zeros((2, 9, 16)), _VAR, 8, cells=c),
-}
-
-
-@pytest.mark.parametrize(("cells", "kind"), [(1, "int"), (None, "NoneType"), (b"active", "bytes"),
-                                             (("active",), "tuple")], ids=["int", "None", "bytes", "tuple"])
-@pytest.mark.parametrize("entry", list(_CELLS))
-def test_cells_of_the_wrong_kind_raise_type_error(entry, cells, kind):
-    with pytest.raises(TypeError, match=_exact(f"cells must be a string, got {kind}")):
-        _CELLS[entry](cells)
-
-
-@pytest.mark.parametrize("entry", list(_CELLS))
-def test_cells_keep_their_choices(entry):
-    for cells in ("active", "interior"):
-        assert np.array_equal(_CELLS[entry](np.str_(cells)), _CELLS[entry](cells))
-    with pytest.raises(ValueError, match=_exact("cells must be 'active' or 'interior'; got 'edges'")):
-        _CELLS[entry]("edges")
 
 
 @pytest.mark.parametrize(("value", "kind"), [(1, "int"), (b"numpy", "bytes"), (True, "bool"),

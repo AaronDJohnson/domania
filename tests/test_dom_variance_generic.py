@@ -1,5 +1,5 @@
 """BandAveragedVariance and MidpointVariance of a GenericPSD (replaces the golden
-test_dom_variance), and DiagonalCovariance over them."""
+test_dom_variance)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ import numpy as np
 import pytest
 
 from domainia import wilson
-from domainia.covariance import DiagonalCovariance
 from domainia.domains import CellSet, WDMDomain
 from domainia.spectra import GenericPSD
 from domainia.variance import BandAveragedVariance, MidpointVariance
@@ -76,18 +75,3 @@ def test_cells_must_be_a_cell_set_or_a_wdm_domain(cls):
     np.testing.assert_array_equal(v(NU), cls(PSD, CUT)(NU))
     with pytest.raises(TypeError, match=r"^cells must be a CellSet or a WDMDomain, got Grid$"):
         cls(PSD, GRID)
-
-
-def test_diagonal_covariance_of_a_variance_carries_its_cells_and_factors():
-    cov = DiagonalCovariance(BandAveragedVariance(PSD, CUT), CUT.size)
-    assert cov.cells == CUT
-    v = BandAveragedVariance(PSD, CUT)(NU)
-    F = cov.factor(NU)
-    b = np.random.default_rng(1).standard_normal(CUT.size)
-    assert float(F.logdet) == pytest.approx(float(np.sum(np.log(v))), rel=1e-13)
-    assert float(F.quad(b)) == pytest.approx(float(np.sum(b * b / v)), rel=1e-13)
-
-
-def test_callable_and_array_variances_carry_no_cells():
-    assert DiagonalCovariance(np.ones(3), 3).cells is None
-    assert DiagonalCovariance(lambda nu, be: be.asarray(np.ones(3)), 3).cells is None

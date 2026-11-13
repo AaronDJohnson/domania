@@ -400,8 +400,8 @@ class WDMDomain:
 def _cells_and_window(cells: object, window: object = None, *,
                       default: Window = MEYER) -> tuple[CellSet, Window]:
     """``(cell set, window)`` for a consumer that takes ``cells`` and ``window=``
-    (``EvolutionaryCovariance``, ``BandAveragedVariance``; ``MidpointVariance`` reads the
-    cells only, with :func:`_cells_of`).
+    (``BandAveragedVariance``; ``MidpointVariance`` reads the cells only, with
+    :func:`_cells_of`).
 
     A :class:`WDMDomain` gives its cells and its window; an explicit ``window`` must equal
     the domain's (``ValueError`` otherwise).  A :class:`CellSet` takes ``window``, where

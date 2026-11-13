@@ -98,14 +98,3 @@ def white_noise(simple_grid):
     """Deterministic white-noise realization on ``simple_grid``."""
     rng = np.random.default_rng(42)
     return rng.standard_normal(simple_grid.N)
-
-
-@pytest.fixture
-def gaussian_pulse(simple_grid):
-    """Gaussian-windowed monochromatic signal localized in interior bands."""
-    g = simple_grid
-    t = np.arange(g.N) * g.dt
-    f_center = 0.25 * g.f_nyq
-    return np.exp(-(((t - g.T / 2) / (g.T / 8)) ** 2)) * np.cos(
-        2 * np.pi * f_center * t
-    )

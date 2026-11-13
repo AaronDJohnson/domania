@@ -16,12 +16,9 @@ Move data and covariance between the time, Fourier and time-frequency domains.
   `wilson.sample_window` is the kernels' validated entry point, also for a `Window` of your
   own.
 * `domainia.translate` is the translation layer. `transform` moves `{channel: array}`
-  dicts between the full-record domains, and `translate_operator` puts a covariance
-  operator native to one domain into another lazily: no dense matrix, and the
-  coordinate Jacobian is in `log_determinant`.
-* `domainia.domains`, `domainia.data`, `domainia.maps`, `domainia.covariance`,
-  `domainia.variance` and `domainia.spectra` cover partial domains (WDM cell sets, Fourier
-  bands): maps between them, block-tridiagonal / dense / diagonal / evolutionary covariances
+  dicts between the full-record domains.
+* `domainia.domains`, `domainia.data`, `domainia.maps`, `domainia.variance` and
+  `domainia.spectra` cover partial domains (WDM cell sets, Fourier bands): maps between them
   and cell variances.
 
 ## Quick start
@@ -49,9 +46,6 @@ The WDM layout holds the `N = Nf * Nt` active cells; the inactive edge cells are
 maps and covariances on `WDMDomain.full(grid)` use the packed `(N,)` layout (the active cells
 in band order); convert with `domainia.wilson.pack(w, Nf, Nt)` and
 `domainia.wilson.unpack(y, Nf, Nt)`.
-Coordinates scale as `exp(log_coordinate_scale(domain))` relative to the time
-samples: 1 for time, `sqrt(dt)` for WDM (any window), `dt * sqrt(N)` for Fourier (in the
-real coordinates `Re X_0`, `sqrt(2) Re/Im X_k`, `Re X_{N/2}` for even `N`).
 
 `transform` is NumPy only: a JAX array is copied to host NumPy, and `transform` cannot be
 traced under `jax.jit` or `jax.grad` (JAX raises its `TracerArrayConversionError`, a
@@ -109,56 +103,6 @@ finite; it is part of the domain's equality and hash), and the other units take 
 `TimeToWDM(time, dst).apply(x)` for every `units` value, and
 `FourierZeroPad` and `FourierCrop` return the rfft of the zero-padded or cropped record in
 the source's units (`sigma0` included).
-
-## Operators
-
-An `Operator` lives on one full-record domain and acts on `{channel: array}` dicts:
-`apply`, `solve`, `project`, `quadratic_form`, `log_determinant`, plus `domain`,
-`channel_names` and `degrees_of_freedom`. `translate_operator(op, target)` returns a
-`TranslatedOperator` that keeps only its native operator and `target`. Translating a
-`TranslatedOperator` again re-targets the native operator (it never nests), and
-translating to the native domain returns the native operator itself.
-
-`Operator` is a `runtime_checkable` `Protocol`, so it is duck-typed: any object with these
-members is one, with no base class. Its methods act on the stacked real coordinates `r` of
-all channels; each channel's real coordinates are the time samples, the active WDM cells,
-or for Fourier `Re X_0`, `sqrt(2) Re/Im X_k` on the interior bins and `Re X_{N/2}` (even
-`N`). `C` is symmetric positive semi-definite on that stacked vector, and channels may be
-correlated at each point. `apply` is `C r`, `project` the orthogonal projector onto the
-range of `C` and `solve` the Moore–Penrose pseudo-inverse `C^+ r`; `quadratic_form`
-(`r^T C^+ r`), `log_determinant` (the log pseudo-determinant) and `degrees_of_freedom` (the
-rank) are totals over the stacked vector. The dicts that `apply`, `solve` and `project`
-return must meet `transform`'s exact input rules, or `TranslatedOperator` raises an error
-that names the native method. The full contract is the `domainia.translate.Operator`
-docstring, and `domainia.testing.PointwiseOperator` is a minimal reference implementation:
-
-```python
-import numpy as np
-from domainia import Grid, TimeDomain, WDMDomain, transform, translate_operator
-from domainia.testing import PointwiseOperator
-
-Nf, Nt, dt = 16, 64, 0.5
-N = Nf * Nt
-time, wdm = TimeDomain(N, dt), WDMDomain.full(Grid(Nf, Nt, dt))
-op = PointwiseOperator(time, {"A": np.full(N, 2.0)})   # C = 2 I on the time samples
-on_wdm = translate_operator(op, wdm)                   # lazy: holds op and wdm only
-x = {"A": np.random.default_rng(0).standard_normal(N)}
-w = transform(x, time, wdm)
-assert np.isclose(on_wdm.quadratic_form(w), op.quadratic_form(x))
-assert np.isclose(on_wdm.log_determinant(), op.log_determinant() + N * np.log(dt))
-```
-
-`domainia.operators` makes operators out of explicit matrices and domainia covariances.
-`DenseOperator(matrix, domain, channel_names)` is a symmetric positive semi-definite matrix
-on the stacked real coordinates (channel-major, in `channel_names` order).
-`CovarianceOperator(cov, nu, support, channel_names)` fixes a `domainia.covariance`
-covariance at the noise state `nu` on its WDM `support` (a `WDMDomain`, possibly partial);
-its `domain` is the full-record WDM domain. `operator_matrix(op)` reads any operator back as
-its matrix in those coordinates, with one `apply` per column (small grids only).
-`domainia.translate.to_coordinates` and `from_coordinates` convert between `{channel: array}`
-dicts and the `(K, N)` coordinate rows, in `channel_names` order. Each of these works with
-`translate_operator`, so a covariance matrix or a domainia covariance can be seen from time
-or Fourier.
 
 ## Errors
 

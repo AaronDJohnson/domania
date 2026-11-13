@@ -1,4 +1,4 @@
-"""The window through the domainia layer: WDMDomain, maps, variances, covariance, oracles."""
+"""The window through the domainia layer: WDMDomain, maps, variances, oracles."""
 
 from __future__ import annotations
 
@@ -11,11 +11,9 @@ import pytest
 from dom_db_inputs import DenseCov, jax_or_skip
 
 from domainia import testing, wilson
-from domainia.covariance import (ChannelStack, Covariance, DenseCovariance, DiagonalCovariance,
-                                 EvolutionaryCovariance)
 from domainia.domains import CellSet, FourierDomain, TimeDomain, WDMDomain
-from domainia.maps import (Compose, FourierCrop, FourierToWDM, Identity, PushedCovariance, Restrict,
-                           TimeToWDM, WDMToTime)
+from domainia.maps import (Compose, FourierCrop, FourierToWDM, Identity, Restrict, TimeToWDM,
+                           WDMToTime)
 from domainia.spectra import GenericPSD
 from domainia.testing import ALT_WINDOW
 from domainia.variance import BandAveragedVariance, MidpointVariance
@@ -220,9 +218,6 @@ def test_equal_but_distinct_windows_are_one_basis():
         np.testing.assert_array_equal(Restrict(src, dst).apply(y), y[:, pos])
     C = Compose(Restrict(alt, WDMDomain(cut, window=ALT_WINDOW)), TimeToWDM(TIME, alt_rt))
     np.testing.assert_array_equal(C.apply(X), TimeToWDM(TIME, alt).apply(X)[pos])
-    psd, _ = _stationary_psd()
-    ev = EvolutionaryCovariance(psd, CELLS, window=meyer4)
-    assert Identity(WDMDomain(CELLS)).push(ev).cov is ev
     # an evaluable chained push across equal windows: the restricted Meyer congruence
     S = DenseCov(np.diag(1.0 + np.arange(N) / N))
     inner = TimeToWDM(TIME, WDMDomain(CELLS, window=meyer4)).push(S)
@@ -246,54 +241,6 @@ def test_restrict_checks_the_windows_on_every_construction_route():
     np.testing.assert_array_equal(dataclasses.replace(R).pos, R.pos)            # same basis: fine
 
 
-def test_a_map_refuses_a_covariance_built_for_another_window():
-    """domainia 2.0 spec, section 2: a covariance built for one window raises ValueError on
-    a domain with another.  ``push`` is where a covariance meets a map's (WDM) source domain."""
-    psd, _ = _stationary_psd()
-    meyer, alt = WDMDomain(CELLS), WDMDomain(CELLS, window=ALT_WINDOW)
-    cut = CELLS.drop_columns(2, 2)
-    ev = EvolutionaryCovariance(psd, CELLS, window=ALT_WINDOW)
-    dg = DiagonalCovariance(BandAveragedVariance(psd, CELLS, window=ALT_WINDOW), CELLS.size)
-    assert dg.window is ALT_WINDOW
-    for cov in (ev, dg):
-        for m in (Restrict(meyer, WDMDomain(cut)), Identity(meyer), WDMToTime(meyer, TIME),
-                  Compose(Restrict(meyer, WDMDomain(cut)), Identity(meyer))):
-            with pytest.raises(ValueError, match=BOTH):
-                m.push(cov)
-        with pytest.raises(ValueError, match=BOTH):
-            PushedCovariance(Identity(meyer), cov)
-        for m in (Restrict(alt, WDMDomain(cut, window=ALT_WINDOW)), Identity(alt), WDMToTime(alt, TIME)):
-            assert m.push(cov).cov is cov                          # one basis: the push is built
-    # MEYER covariances on a MEYER domain, window-free covariances, and non-WDM sources pass
-    assert Identity(meyer).push(EvolutionaryCovariance(psd, CELLS)).map.src == meyer
-    for cov in (DiagonalCovariance(np.ones(CELLS.size), CELLS.size),
-                DiagonalCovariance(MidpointVariance(psd, CELLS), CELLS.size)):
-        assert cov.window is None and Identity(alt).push(cov).cov is cov
-    assert Identity(TIME).push(DenseCov(np.eye(N))).size == N
-
-
-def test_a_covariance_on_wdm_cells_is_refused_by_a_map_from_another_domain():
-    """A covariance that carries a Wilson window lives on WDM cells: a map whose source is a
-    time or Fourier domain refuses it at ``push`` (ValueError), so ``TimeToWDM(...).push(ev)``
-    fails at construction, not with a shape error later."""
-    psd, _ = _stationary_psd()
-    meyer = WDMDomain(CELLS)
-    rec = FourierDomain(N, DT, 0, N // 2 + 1, "rfft")
-    ev = EvolutionaryCovariance(psd, CELLS)
-    dg = DiagonalCovariance(BandAveragedVariance(psd, CELLS), CELLS.size)
-    pushed = TimeToWDM(TIME, meyer).push(DenseCov(np.eye(N)))
-    for cov in (ev, dg, pushed):
-        assert cov.window is MEYER
-        for m in (TimeToWDM(TIME, meyer), Identity(TIME),
-                  FourierToWDM(rec, WDMDomain(CellSet.bands(GRID, (2, 3)))),
-                  Compose(WDMToTime(meyer, TIME), TimeToWDM(TIME, meyer))):    # src TIME
-            with pytest.raises(ValueError, match=r"lives on WDM cells.*WDMDomain"):
-                m.push(cov)
-            with pytest.raises(ValueError, match=r"lives on WDM cells.*WDMDomain"):
-                PushedCovariance(m, cov)
-    assert WDMToTime(meyer, TIME).push(ev).cov is ev               # a WDM source is fine
-
-
 def test_a_pushed_covariance_lives_in_its_destination_window():
     """A covariance pushed onto WDM cells is in the basis of the map's ``dst.window``: a second
     push through a map of another window is refused, through one of the same window it is the
@@ -313,52 +260,8 @@ def test_a_pushed_covariance_lives_in_its_destination_window():
     _close(got, W @ S.S @ W.T)
 
 
-def test_covariance_windows_are_read_only_and_declared_on_the_base():
-    """``Covariance.window`` is ``None`` unless a subclass knows its cells' basis; the
-    evolutionary and diagonal covariances report their evaluator's window, read-only."""
-    psd, _ = _stationary_psd()
-    ev = EvolutionaryCovariance(psd, CELLS, window=ALT_WINDOW)
-    dg = DiagonalCovariance(BandAveragedVariance(psd, CELLS, window=ALT_WINDOW), CELLS.size)
-    for cov in (ev, dg, EvolutionaryCovariance(psd, CELLS, builder="direct", assembly="dense",
-                                               window=ALT_WINDOW)):
-        assert cov.window is ALT_WINDOW
-        with pytest.raises(AttributeError):
-            cov.window = MEYER
-    assert ev.window is ev.block_evaluator.window
-    assert Covariance.window is None and DenseCovariance(np.eye(3), 3, chol_impl="numpy").window is None
-    assert DiagonalCovariance(lambda nu, be: np.ones(3), 3).window is None
-
-
-def test_a_diagonal_covariance_reports_the_window_of_a_plain_callable_variance():
-    """The window is read from the variance as given, not from the evaluator that wraps it: a
-    plain ``fn(nu, be)`` carrying a ``.window`` reports it; a non-``Window`` one reports ``None``."""
-    def fn(nu, be):
-        return np.ones(3)
-
-    fn.window = ALT_WINDOW
-    dg = DiagonalCovariance(fn, 3)
-    assert dg.window is ALT_WINDOW
-    with pytest.raises(AttributeError):
-        dg.window = MEYER
-    fn.window = "meyer"
-    assert DiagonalCovariance(fn, 3).window is None
-
-
-def test_a_channel_stack_reports_its_channels_common_window():
-    psd, _ = _stationary_psd()
-    ev_alt = EvolutionaryCovariance(psd, CELLS, window=ALT_WINDOW)
-    dg_alt = DiagonalCovariance(BandAveragedVariance(psd, CELLS, window=_roundtrip(ALT_WINDOW)),
-                                CELLS.size)
-    free = DiagonalCovariance(np.ones(CELLS.size), CELLS.size)
-    assert ChannelStack([ev_alt, dg_alt], 1).window is ALT_WINDOW                 # equal windows
-    assert ChannelStack([ev_alt, EvolutionaryCovariance(psd, CELLS)], 1).window is None  # differ
-    assert ChannelStack([ev_alt, free], 1).window is None
-    assert ChannelStack([free, ev_alt], 1).window is None
-    assert ChannelStack([EvolutionaryCovariance(psd, CELLS)], 1).window is MEYER
-
-
 # ---------------------------------------------------------------------------
-# Variances, covariance, oracles
+# Variances and oracles
 # ---------------------------------------------------------------------------
 
 
@@ -384,61 +287,27 @@ def test_the_cell_set_consumers_take_a_wdm_domain_and_its_window():
     psd, nu = _stationary_psd()
     cut = CELLS.drop_columns(2, 1)
     dom = WDMDomain(cut, window=ALT_WINDOW)
-    ev = EvolutionaryCovariance(psd, dom)
-    assert ev.window is ALT_WINDOW and ev.cells == cut
-    np.testing.assert_array_equal(ev.dense(nu), EvolutionaryCovariance(psd, cut, window=ALT_WINDOW).dense(nu))
     bv = BandAveragedVariance(psd, dom)
     assert bv.window is ALT_WINDOW and bv.cells == cut
     np.testing.assert_array_equal(bv(nu), BandAveragedVariance(psd, cut, window=ALT_WINDOW)(nu))
     mv = MidpointVariance(psd, dom)
     assert mv.cells == cut
     np.testing.assert_array_equal(mv(nu), MidpointVariance(psd, cut)(nu))
-    dg = DiagonalCovariance(bv, cut.size)
-    assert dg.window is ALT_WINDOW and dg.cells == cut
     # the domain's own window passed again (equal, not identical) is accepted
-    assert EvolutionaryCovariance(psd, dom, window=_roundtrip(ALT_WINDOW)).window is ALT_WINDOW
-    assert BandAveragedVariance(psd, dom, window=ALT_WINDOW).window is ALT_WINDOW
+    assert BandAveragedVariance(psd, dom, window=_roundtrip(ALT_WINDOW)).window is ALT_WINDOW
 
 
 def test_a_wdm_domain_with_another_explicit_window_is_refused():
     psd, _ = _stationary_psd()
     alt = WDMDomain(CELLS, window=ALT_WINDOW)
-    for build in (EvolutionaryCovariance, BandAveragedVariance):
-        with pytest.raises(ValueError, match=r"^window meyer\(d=4\) is not the WDMDomain's window "
-                                             r"wide-smoothstep: pass window=None"):
-            build(psd, alt, window=MEYER)
-        with pytest.raises(ValueError, match=r"window wide-smoothstep is not the WDMDomain's window meyer"):
-            build(psd, WDMDomain(CELLS), window=ALT_WINDOW)
-        with pytest.raises(TypeError, match="Window"):
-            build(psd, alt, window="meyer")
-    assert EvolutionaryCovariance(psd, CELLS, window=None).window is MEYER     # None on a CellSet
-    assert BandAveragedVariance(psd, CELLS, window=None).window is MEYER
-
-
-def test_evolutionary_covariance_stationary_limit_with_another_window():
-    psd = GenericPSD(lambda f, t, nu: (1.0 + np.asarray(f, float) ** 2) ** nu[0] + 0.0 * np.asarray(t, float))
-    nu = np.array([-1.2])
-    exact = wilson.matrix.build_C_wdm_active(NF, NT, DT, lambda f: psd(f, 0.0, nu), window=ALT_WINDOW)
-    got = EvolutionaryCovariance(psd, CELLS, builder="direct", assembly="dense", window=ALT_WINDOW).dense(nu)
-    assert np.max(np.abs(got - exact)) < 1e-10 * np.max(np.abs(exact))
-    assert EvolutionaryCovariance(psd, CELLS, window=ALT_WINDOW).window is ALT_WINDOW
-
-
-def test_evolutionary_covariance_interp_builder_uses_its_window():
-    """The default ``interp`` builder (Chebyshev blocks, block-tridiagonal and dense assembly)
-    in the stationary limit, on all cells and on a cut cell set."""
-    psd, nu = _stationary_psd()
-    exact = _exact(psd, nu)
-    for assembly in ("blocktri", "dense"):
-        got = EvolutionaryCovariance(psd, CELLS, assembly=assembly, window=ALT_WINDOW).dense(nu)
-        assert np.max(np.abs(got - exact)) < 1e-10 * np.max(np.abs(exact)), assembly
-    cut = CELLS.drop_columns(2, 1)
-    pos = cut.packed_positions()
-    got = EvolutionaryCovariance(psd, cut, window=ALT_WINDOW).dense(nu)
-    assert np.max(np.abs(got - exact[np.ix_(pos, pos)])) < 1e-10 * np.max(np.abs(exact))
-    assert EvolutionaryCovariance(psd, CELLS).window is MEYER
+    with pytest.raises(ValueError, match=r"^window meyer\(d=4\) is not the WDMDomain's window "
+                                         r"wide-smoothstep: pass window=None"):
+        BandAveragedVariance(psd, alt, window=MEYER)
+    with pytest.raises(ValueError, match=r"window wide-smoothstep is not the WDMDomain's window meyer"):
+        BandAveragedVariance(psd, WDMDomain(CELLS), window=ALT_WINDOW)
     with pytest.raises(TypeError, match="Window"):
-        EvolutionaryCovariance(psd, CELLS, window=wilson.Meyer)
+        BandAveragedVariance(psd, alt, window="meyer")
+    assert BandAveragedVariance(psd, CELLS, window=None).window is MEYER     # None on a CellSet
 
 
 def test_testing_oracles_take_the_window():

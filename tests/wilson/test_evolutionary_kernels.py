@@ -190,7 +190,7 @@ def test_eq45_plan_rejects_a_non_boolean_keep():
 
 @pytest.mark.parametrize("Nt_grid, keep_cols, r", [(NT, None, 1.0), (NT + 4, None, (NT + 4) / NT)])
 def test_bessel_blocks_match_the_direct_sum_and_gram(Nt_grid, keep_cols, r):
-    """bessel (exact Chebyshev) vs direct sum vs gram, log-linear S, both <= 1e-12."""
+    """bessel (exact Chebyshev) and interp vs direct sum vs gram, log-linear S, all <= 1e-12."""
     ac, ad = -2.0, 1.2
     plan = E.eq45_plan(NF, Nt_grid, DT, t_max=Nt_grid * NF * DT)
     T_obs = N * DT
@@ -199,6 +199,8 @@ def test_bessel_blocks_match_the_direct_sum_and_gram(Nt_grid, keep_cols, r):
     C = _assemble(plan, diag, up)
     D = E.eq45_direct(plan, _loglinear(ac, ad, T_obs))
     assert np.max(np.abs(C - D)) <= 1e-12 * np.abs(D).max()
+    coeffs = E.eq45_coeffs_interp(_loglinear(ac, ad, T_obs), plan.f, plan.t_max, plan.P, k=plan.k_used)
+    assert np.max(np.abs(_assemble(plan, *E.eq45_blocks_cheb(plan, coeffs)) - D)) <= 1e-12 * np.abs(D).max()
     gp = E.eq45_gram_plan(plan)
     al = ac + ad * (gp.gT / T_obs - 0.5)
     gd, gu = E.eq45_blocks_gram(gp, al, E.eq45_gram_gather(gp, L))

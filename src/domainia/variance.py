@@ -11,8 +11,7 @@ window of the cells' basis: the ``WDMDomain``'s window, or ``window=`` (default 
 
 Both are pytrees (``domainia.wilson.backend.pytree_dataclass``; the window is static
 metadata), but evaluating them calls the PSD on the host, so neither is jittable
-(``jittable = False``): a ``DiagonalCovariance`` built on one factorises eagerly on every
-backend.
+(``jittable = False``).
 """
 
 from __future__ import annotations
@@ -72,8 +71,7 @@ class BandAveragedVariance:
     def on(self, be: Backend) -> "BandAveragedVariance":
         """The variance for ``be``: it has no array leaves (the PSD runs on the host).  On
         NumPy this returns ``self``; on JAX it calls ``require_x64`` and returns a re-validated
-        copy (``dataclasses.replace`` with no changes).  ``as_evaluator`` recognises a variance
-        by this method."""
+        copy (``dataclasses.replace`` with no changes)."""
         return on_backend(self, be, ())
 
     def __call__(self, nu: Any, *, channel: int = 0, be: Backend | None = None) -> Any:
@@ -102,8 +100,7 @@ class MidpointVariance:
     def on(self, be: Backend) -> "MidpointVariance":
         """The variance for ``be``: it has no array leaves (the PSD runs on the host).  On
         NumPy this returns ``self``; on JAX it calls ``require_x64`` and returns a re-validated
-        copy (``dataclasses.replace`` with no changes).  ``as_evaluator`` recognises a variance
-        by this method."""
+        copy (``dataclasses.replace`` with no changes)."""
         return on_backend(self, be, ())
 
     def __call__(self, nu: Any, *, channel: int = 0, be: Backend | None = None) -> Any:

@@ -160,6 +160,27 @@ def test_unrepresentable_delta_F_raises_instead_of_returning_zeros(dt):
             pytest.fail(f"{name} returned for dt={dt!r}")
 
 
+def test_delta_F_rejects_unrepresentable_widths():
+    from domainia.wilson.grid import delta_F
+
+    assert delta_F(8, 1.0) == 0.0625
+    with pytest.raises(ValueError, match="not representable"):
+        delta_F(8, 5e-324)
+    with pytest.raises(ValueError, match="Nf must be even"):
+        delta_F(7, 1.0)
+
+
+def test_rfft_packing_rejects_odd_N():
+    from domainia.wilson.matrix import real_to_rfft, rfft_to_real
+
+    x = np.random.default_rng(0).standard_normal(32)
+    assert np.allclose(real_to_rfft(rfft_to_real(np.fft.rfft(x), 32), 32), np.fft.rfft(x))
+    with pytest.raises(ValueError, match="N must be even"):
+        rfft_to_real(np.fft.rfft(x[:5]), 5)
+    with pytest.raises(ValueError, match="N must be even"):
+        real_to_rfft(np.zeros(5), 5)
+
+
 def test_atoms_are_the_rows_of_the_transform():
     Nf, Nt, dt = 8, 16, 0.5
     Wa = active_W(Nf, Nt, dt)

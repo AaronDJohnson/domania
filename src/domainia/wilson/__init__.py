@@ -45,24 +45,6 @@ Noise variance grids:
 * :func:`empirical_variance`
 * :func:`evaluate_psd_on_band_grid`
 
-Inner products and log-likelihoods (in :mod:`domainia.wilson.inner_product`):
-
-* :func:`inner_product.whittle`
-* :func:`inner_product.band_averaged`
-* :func:`inner_product.evolutionary_whittle`
-* :func:`inner_product.gaussian`, :func:`inner_product.gaussian_from_func`
-* :func:`inner_product.loglike_whittle`
-* :func:`inner_product.loglike_band_averaged`
-* :func:`inner_product.loglike_evolutionary_whittle`
-* :func:`inner_product.loglike_gaussian`
-
-Batched over a stack of coefficient grids (one call, ``(B,)`` out):
-
-* :func:`inner_product.whittle_many`,
-  :func:`inner_product.loglike_whittle_many` -- these cover the
-  ``band_averaged`` and ``evolutionary_whittle`` flavours too, which differ
-  only in the variance grid
-
 Explicit matrix construction (in :mod:`domainia.wilson.matrix`):
 
 * :func:`matrix.build_W`, :func:`matrix.active_W`
@@ -102,7 +84,6 @@ from . import (
     backend,
     evolutionary,
     filter,
-    inner_product,
     matrix,
     noise,
     special,
@@ -180,7 +161,6 @@ __all__ = [
     "forward_many",
     "forward_time",
     "forward_time_many",
-    "inner_product",
     "inverse",
     "inverse_many",
     "inverse_time",

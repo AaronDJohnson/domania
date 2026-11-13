@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import math
 import re
 
 import numpy as np
@@ -12,7 +11,7 @@ import pytest
 from domainia import wilson
 from domainia.domains import CellSet, FourierDomain, TimeDomain, WDMDomain
 from domainia.testing import ALT_WINDOW
-from domainia.translate import log_coordinate_scale, transform
+from domainia.translate import transform
 from domainia.wilson import MEYER
 
 NF, NT, DT = 8, 16, 0.25
@@ -83,31 +82,13 @@ def test_every_pair_round_trips_and_agrees_with_the_route_through_time(src, dst)
 
 
 @pytest.mark.parametrize("name", RECORDS)
-def test_parseval_scales_match_log_coordinate_scale(name):
+def test_parseval_scales(name):
+    """The energy scales by 1 on time, ``dt`` on WDM (any window) and ``dt^2 N`` on Fourier."""
     t, data, d = RECORDS[name]
     on = transform(data, t, d)
+    scale = {TimeDomain: 1.0, WDMDomain: t.dt, FourierDomain: t.dt ** 2 * t.N}[type(d)]
     for k, x in data.items():
-        want = math.exp(2.0 * log_coordinate_scale(d)) * float(np.sum(x ** 2))
-        assert _energy(d, on[k]) == pytest.approx(want, rel=1e-12)
-
-
-@pytest.mark.parametrize("n, dt", [(N, DT), (15, 0.5)])
-def test_log_coordinate_scale_values(n, dt):
-    assert log_coordinate_scale(TimeDomain(n, dt)) == 0.0
-    assert log_coordinate_scale(FourierDomain.full(n, dt)) == pytest.approx(
-        math.log(dt) + 0.5 * math.log(n), rel=1e-15)
-    if n % 2 == 0:
-        assert log_coordinate_scale(WDM) == pytest.approx(0.5 * math.log(DT), rel=1e-15)
-        assert log_coordinate_scale(WDM_ALT) == log_coordinate_scale(WDM)
-
-
-def test_log_coordinate_scale_refuses_what_transform_refuses():
-    with pytest.raises(ValueError, match="FourierDomain.full"):
-        log_coordinate_scale(FourierDomain(N, DT, 0, 10, "dt_rfft"))
-    with pytest.raises(ValueError, match="WDMDomain.full"):
-        log_coordinate_scale(WDMDomain(CellSet.bands(GRID, (2, 3))))
-    with pytest.raises(TypeError, match="domain"):
-        log_coordinate_scale(GRID)
+        assert _energy(d, on[k]) == pytest.approx(scale * float(np.sum(x ** 2)), rel=1e-12)
 
 
 def test_an_odd_record_has_no_nyquist_bin():

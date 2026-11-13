@@ -41,9 +41,7 @@ kind        apply                       push(cov) (``PushedCovariance``)
 
 A covariance without ``matvec`` -- every covariance on WDM cells -- cannot be pushed through
 a real or analysis map: ``PushedCovariance.rows``/``matvec`` raise a ``TypeError`` (the
-WDM -> time push ``W^T Lambda W / dt^2`` is not available).  Fix the
-covariance at a noise state as a :class:`domainia.operators.CovarianceOperator` and see it
-from time through :func:`domainia.translate.translate_operator` instead.
+WDM -> time push ``W^T Lambda W / dt^2`` is not available).
 """
 
 from __future__ import annotations
@@ -224,9 +222,8 @@ class PushedCovariance:
     ``"analysis"`` -- ``F[idx] Sigma F^H``; ``"complex"`` --
     ``(A M' A^H)[idx]``.
 
-    A covariance that carries a Wilson ``window`` (``EvolutionaryCovariance``, a
-    ``DiagonalCovariance`` over a ``BandAveragedVariance``, a ``PushedCovariance`` onto WDM
-    cells) lives on WDM cells in that window's basis: on a map whose ``src`` is not a
+    A covariance that carries a Wilson ``window`` (a ``PushedCovariance`` onto WDM cells)
+    lives on WDM cells in that window's basis: on a map whose ``src`` is not a
     ``WDMDomain``, or is one with another window, it raises ``ValueError``.  A ``map`` that is
     not a :class:`LinearMap`, or a ``cov`` with neither ``matvec`` (:class:`SupportsMatvec`)
     nor ``dense`` (:class:`SupportsDense`), raises ``TypeError``.
@@ -263,19 +260,13 @@ class PushedCovariance:
         return self.map.shape[0]
 
     def _matvec(self) -> Any:
-        """``cov.matvec``, or a TypeError: a covariance on WDM cells (``DiagonalCovariance``,
-        ``EvolutionaryCovariance``, ...) has no fixed-noise-state ``matvec``, so the
-        WDM -> time push ``W^T Lambda W / dt^2`` is not available; the error names the
-        route: :class:`domainia.operators.CovarianceOperator`, then
-        :func:`domainia.translate.translate_operator`."""
+        """``cov.matvec``, or a TypeError: without it the WDM -> time push
+        ``W^T Lambda W / dt^2`` is not available."""
         fn = getattr(self.cov, "matvec", None)
         if fn is None:
             raise TypeError(f"{type(self.cov).__name__} has no matvec: a push through a "
                             f"{self.map.kind!r} map needs a fixed-noise-state SupportsMatvec "
-                            "(X -> X Sigma), so the WDM -> time push is not available; fix the "
-                            "covariance at a noise state as a domainia.operators.CovarianceOperator "
-                            "(a domainia.translate.Operator) and see it from time with "
-                            "domainia.translate.translate_operator")
+                            "(X -> X Sigma), so the WDM -> time push is not available")
         return fn
 
     def rows(self, idx: Any, be: Backend | None = None) -> Any:
