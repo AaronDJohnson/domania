@@ -25,7 +25,8 @@ Move data and covariance between the time, Fourier and time-frequency domains.
 
 ```python
 import numpy as np
-from domainia import FourierDomain, Grid, Meyer, TimeDomain, WDMDomain, transform
+from domainia import FourierDomain, Grid, Meyer, TimeDomain, WDMDomain
+from domainia.translate import transform
 
 Nf, Nt, dt = 16, 64, 0.5
 N = Nf * Nt
@@ -62,7 +63,8 @@ fix:
 
 ```python
 import numpy as np
-from domainia import FourierDomain, Grid, TimeDomain, WDMDomain, transform, wilson
+from domainia import FourierDomain, Grid, TimeDomain, WDMDomain, wilson
+from domainia.translate import transform
 
 Nf, Nt, dt = 16, 64, 0.5
 N = Nf * Nt

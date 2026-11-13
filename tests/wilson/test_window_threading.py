@@ -27,7 +27,7 @@ SCANNED = ("wilson/transform.py", "wilson/matrix.py", "wilson/stationary.py", "w
            "wilson/special.py", "wilson/__init__.py", "wilson/_checks.py",
            "domains.py", "maps/base.py", "maps/time.py", "maps/fourier.py", "variance.py",
            "testing.py", "data.py", "spectra.py", "__init__.py", "maps/__init__.py",
-           "translate.py")
+           "translate.py", "_transform.py")
 #: The two modules that legitimately sample the Meyer window directly.
 UNSCANNED = frozenset({"wilson/filter.py", "wilson/windows.py"})
 #: Meyer sampling helpers: only ``wilson/filter.py`` (and ``wilson/windows.py``) may call them.

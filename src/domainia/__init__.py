@@ -16,7 +16,9 @@ Modules
   with the Meyer window (:data:`MEYER`); every kernel that samples the window takes
   ``window=`` (any admissible :class:`Window`: ``Meyer(d)``, ``RampWindow``,
   ``SampledWindow``).
-* :mod:`domainia.translate`: ``transform`` (``{channel: array}`` dicts) between the
+* :func:`transform`: data arrays, with any leading axes, between time, frequency and WDM
+  (:mod:`domainia._transform`).
+* :mod:`domainia.translate`: the 2.0 ``transform`` of ``{channel: array}`` dicts between the
   full-record ``TimeDomain``, ``FourierDomain.full`` and ``WDMDomain.full``.
 * :mod:`domainia.domains`: ``TimeDomain``, ``FourierDomain``, ``CellSet``, ``WDMDomain``,
   ``ChannelAxis`` (frozen, hashable: static under ``jax.jit``).
@@ -29,9 +31,9 @@ Modules
 from __future__ import annotations
 
 from . import data, domains, translate, wilson
+from ._transform import transform
 from .data import FourierBins, TimeSeries, WDMCells
 from .domains import CellSet, ChannelAxis, FourierDomain, TimeDomain, WDMDomain
-from .translate import transform
 from .wilson import MEYER, Grid, Meyer, RampWindow, SampledWindow, Window, WindowError
 
 __version__ = "2.0.0"
