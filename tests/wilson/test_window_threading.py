@@ -41,7 +41,7 @@ CONSUMERS = frozenset({
     "band_averaged_variance", "evolutionary_band_variance", "empirical_variance",
     "energy_fraction", "apply_time_mask", "wrap_fractions", "wrap_cut_columns", "exact_covariance",
     "eq45_plan",
-    "dense_W", "wdm_congruence", "eq45_dense",
+    "dense_W", "wdm_congruence", "eq45_dense", "wdm_covariance",
 })
 #: Names that hard-code a window inside a kernel: the default instance and the constructors.
 HARD_CODED = frozenset({"MEYER", "Meyer", "RampWindow", "SampledWindow"})

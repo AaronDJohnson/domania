@@ -11,13 +11,15 @@ Modules
   (:mod:`domainia._transform`).
 * :func:`frequency_covariance`: a stationary K x K noise model as its covariance per rfft bin
   (:mod:`domainia._covariance`).
+* :func:`wdm_covariance`: an evolutionary (or stationary) K x K noise model as its covariance
+  per WDM cell (:mod:`domainia._covariance`).
 * Not imported here: :mod:`domainia.testing` (dense oracles and test windows).
 """
 
 from __future__ import annotations
 
 from . import wilson
-from ._covariance import frequency_covariance
+from ._covariance import frequency_covariance, wdm_covariance
 from ._transform import transform
 from .wilson import MEYER, Grid, Meyer, RampWindow, SampledWindow, Window, WindowError
 
@@ -34,5 +36,6 @@ __all__ = [
     "__version__",
     "frequency_covariance",
     "transform",
+    "wdm_covariance",
     "wilson",
 ]

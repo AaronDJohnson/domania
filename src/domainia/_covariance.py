@@ -14,11 +14,17 @@ from typing import Any
 import numpy as np
 
 from .wilson._checks import require_callable, require_dtype, require_int, validate_dt
+from .wilson.grid import active_mask, band_frequencies, delta_T, validate_grid
+from .wilson.windows import MEYER, Window, sample_window
 
-__all__ = ["frequency_covariance"]
+__all__ = ["frequency_covariance", "wdm_covariance"]
 
 #: The model check's tolerance at a point, as a fraction of that point's largest |S_cd|.
 TOL = 1e-12
+#: The most points (bands x columns x frequency samples) per call of a WDM model.  At K = 3 a
+#: call needs about 26 MiB (real model) or 47 MiB (complex) beyond the output (tracemalloc,
+#: 512 x 512); a larger chunk is no faster.
+CHUNK = 2**16
 
 
 def _hermitian(out: Any, points: tuple[int, ...], name: str) -> np.ndarray:
@@ -84,4 +90,52 @@ def frequency_covariance(S: Callable[[np.ndarray], Any], *, N: int, dt: float) -
     C[..., 0] = C[..., 0].real
     if N % 2 == 0:
         C[..., -1] = C[..., -1].real
+    return C
+
+
+def wdm_covariance(S: Callable[[np.ndarray, np.ndarray], Any], *, Nf: int, Nt: int, dt: float,
+                   window: Window = MEYER) -> np.ndarray:
+    """The covariance of each WDM cell's K coefficients under an evolutionary model ``S(f, t)``.
+
+    Returns ``C[a, b, m, n] = BA_m[Re H_ab(., t_n)] / 2``, float64 of shape ``(K, K, Nf + 1, Nt)``,
+    exactly symmetric in ``a, b`` and 0 at the inactive cells.  ``H = (S + S^H) / 2`` after the
+    check (:func:`_hermitian`), ``t_n = n Nf dt``, and ``BA_m`` is the phi-hat^2-weighted mean over
+    band ``m``'s frequency samples, folded at DC and Nyquist (WDM Paper II, Eq. 36), in the Wilson
+    basis of ``window``.  For K = 1 this is ``wilson.noise.evolutionary_band_variance``.
+
+    ``S`` gets broadcasting ``f`` (bands, 1, bins) [Hz] and ``t`` (1, columns, 1) [s from the
+    record's first sample]: once on band 0 and two columns, then once per chunk of at most
+    ``CHUNK`` points.  A model that returns a size-1 time axis on that first call (a stationary
+    ``lambda f, t: S0(f)``) gets every column in each chunk and must keep that axis.  A refusal
+    names its point from the chunk's first band and column.
+
+    Raises ``TypeError`` for a non-callable ``S``, a non-integer ``Nf`` or ``Nt``, a bad window
+    or a non-numeric output, and ``ValueError`` for a bad grid or ``dt``, or an output that fails
+    the check or changes K between calls.
+    """
+    require_callable("S", S)
+    validate_grid(Nf, Nt)
+    validate_dt(dt)
+    w = sample_window(window, Nf, Nt, dt) ** 2
+    sup = np.flatnonzero(w)
+    w, J, nyq = w[sup], sup.size, 0.5 / dt
+    f = np.abs(band_frequencies(Nf, dt)[:, None] + (np.arange(Nt) - Nt // 2)[sup] / (Nf * Nt * dt))
+    f = np.where(f > nyq, 2.0 * nyq - f, f)
+    t = np.arange(Nt) * delta_T(Nf, dt)
+    H = _hermitian(S(f[:1, None], t[None, :2, None]), (1, 2, J), "S(f, t)")
+    K, stationary = H.shape[0], H.shape[3] == 1
+    nc = Nt if stationary else min(Nt, max(1, CHUNK // J))
+    nb = max(1, CHUNK // (J if stationary else nc * J))
+    a, b = np.triu_indices(K)
+    C = np.zeros((K, K, Nf + 1, Nt))
+    for m in range(0, Nf + 1, nb):
+        for n in range(0, Nt, nc):
+            fm, tn = f[m:m + nb, None], t[None, n:n + nc, None]
+            name = f"S(f, t) [chunk from band {m}, column {n}]"
+            H = _hermitian(S(fm, tn), (fm.shape[0], 1 if stationary else tn.shape[1], J), name)
+            if H.shape[0] != K:
+                raise ValueError(f"{name} is {H.shape[0]} x {H.shape[0]}, but was {K} x {K}")
+            C[a, b, m:m + nb, n:n + nc] = C[b, a, m:m + nb, n:n + nc] = (
+                0.5 * (H.real[a, b] * w).sum(axis=-1) / w.sum())
+    C[:, :, ~active_mask(Nf, Nt)] = 0.0
     return C

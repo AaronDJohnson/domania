@@ -16,7 +16,7 @@ REPO = Path(__file__).resolve().parents[1]
 SRC = REPO / "src"
 
 PUBLIC = {"Grid", "MEYER", "Meyer", "RampWindow", "SampledWindow", "Window", "WindowError",
-          "__version__", "frequency_covariance", "transform", "wilson"}
+          "__version__", "frequency_covariance", "transform", "wdm_covariance", "wilson"}
 
 
 def test_the_version_is_2_0_0_everywhere():
