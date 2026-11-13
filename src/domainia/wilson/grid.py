@@ -1,4 +1,5 @@
-"""Time-frequency grid: pixel layout, indexing, and active-pixel masks.
+"""Time-frequency grid: the grid and input checks, pixel widths and centres, and the
+active-pixel mask.
 
 The WDM transform partitions the time-frequency plane into a grid of
 $N_f+1$ frequency bands (indexed by $m = 0,\\ldots,N_f$) and $N_t$

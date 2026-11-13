@@ -65,7 +65,8 @@ assert np.array_equal(D, D.transpose(1, 0, 2, 3)) and not D[:, :, 0, 1].any()
 - Trailing-axis layouts: time is real `(N,)`; frequency is complex `(N // 2 + 1,)`,
   `dt * rfft(x)`; WDM is real `(Nf + 1, Nt)` with the edge bands, `Nf` and `Nt` even and
   `Nf * Nt == N`. The atoms have unit norm (`sum(w**2) == dt * sum(x**2)`), and the inactive
-  WDM cells (bands 0 and `Nf` at odd `n`) are 0 in every output.
+  WDM cells (bands 0 and `Nf` at odd `n`) are 0 in every output of `transform` and
+  `wdm_covariance`.
 - A model `S(f)` or `S(f, t)` (`t` in seconds from the first sample) returns `(K, K, ...)`
   with `S[b, a] = conj(S[a, b])`, oriented so that `E[X_a conj(X_b)] = (N dt / 2) S_ab`.
 - With `H = (S + S^H) / 2`, `frequency_covariance` is `(N dt / 2) H(f_k)`, real at DC and
@@ -73,8 +74,8 @@ assert np.array_equal(D, D.transpose(1, 0, 2, 3)) and not D[:, :, 0, 1].any()
   WDM Paper II, Eq. 36. Both are linear in `S`, exactly Hermitian (or symmetric), and fp64.
 - For an evolutionary model Eq. 36 is a local-stationarity approximation. If the model is not
   periodic over the record, drop the edge columns `wilson.evolutionary.wrap_cut_columns` names.
-- A wrong kind of argument raises `TypeError`, a wrong value `ValueError` (`WindowError` for
-  an inadmissible window).
+- `transform`, `frequency_covariance` and `wdm_covariance` raise `TypeError` for a wrong kind
+  of argument and `ValueError` for a wrong value (`WindowError` for an inadmissible window).
 
 ## Kernels
 

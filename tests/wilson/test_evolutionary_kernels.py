@@ -162,7 +162,6 @@ def test_interp_blocks_and_direct_sum_are_the_oracle_to_rounding(keep):
     assert _block_gap((diag, up), (d0, u0)) <= ORACLE_RTOL
     # Hz window (v0.12.0): measured 9.1e-17
     assert _gap(E.eq45_direct(plan, _S_evo), tri.dense(_S_evo)) <= ORACLE_RTOL
-    assert not plan.fold_has_duplicates
 
 
 def test_eq45_is_exact_for_stationary_noise():

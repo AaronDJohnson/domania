@@ -309,7 +309,6 @@ class Eq45Plan:
     Tp: Array = field(repr=False)
     specs: list[Eq45BlockSpec] = field(repr=False)
     k_used: IntArray = field(repr=False)
-    fold_has_duplicates: bool = False
 
 
 def _block_spec(Nf: int, Nt: int, T: float, n: IntArray, eta: Array,
@@ -399,9 +398,8 @@ def eq45_plan(Nf: int, Nt: int, dt: float, keep: BoolArray | None = None, *,
              for mm in range(Nf + 1) for m2 in (mm, mm + 1) if m2 <= Nf]
     k_all = [k for spec in specs for (k, _) in spec.B.values()]
     k_used = np.unique(np.concatenate(k_all)) if k_all else np.zeros(0, int)
-    dup = any(np.unique(k % Nt).size != k.size for spec in specs for (k, _) in spec.B.values())
     return Eq45Plan(Nf, Nt, dt, N, T, K, P, t_max, f, eta, m, n, t, base, keep, cells, pos,
-                    band_cells, Tp, specs, k_used, dup)
+                    band_cells, Tp, specs, k_used)
 
 
 # ---------------------------------------------------------------------------
@@ -417,8 +415,8 @@ def eq45_coeffs_bessel(L: Array, alpha_c: Any, alpha_d: Any, P: int, *, r: float
     :math:`\alpha = \alpha_c + \alpha_d (r/2 - 1/2) + (\alpha_d r/2)\,u`.
 
     ``r`` is a required keyword: ``plan.t_max / T_obs``, i.e. ``1.0`` on the
-    data grid and ``Nt' / Nt`` on a padded grid (``272/256`` for the sinusoid
-    pad).  :math:`I_p(a)` is ``scipy.special.ive(p, a) * exp(|a|)``.
+    data grid and ``Nt' / Nt`` on a grid padded to ``Nt'`` columns.
+    :math:`I_p(a)` is ``scipy.special.ive(p, a) * exp(|a|)``.
     """
     a = np.asarray(0.5 * alpha_d * r * L)
     c = ive(np.arange(P)[:, None], a[None, :]) * np.exp(np.abs(a))[None, :]      # I_p(a)

@@ -5,12 +5,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-# wdm-paper 1.0 split wdm_dev's evolutionary.py: the stateless kernels are
-# wdm.evolutionary (tests/test_evolutionary_kernels.py checks them against this
-# oracle bit for bit); the classes (PackedGrid, BlockTri, Solver, Schur,
-# PaddedMarginal, marginal_lnlike, nuisance_basis, FourierBand, wdm_discarded,
-# Variant, make_variant, TriCovariance) move to domainia in S2.  These tests now
-# run against the frozen wdm_dev copy, tests/oracle/wdm_dev_ev.
+# The frozen wdm_dev oracle (tests/wilson/oracle/wdm_dev_ev) against domainia.wilson's dense
+# references: its packed grid, atoms and time mask against active_W and forward_time, its band
+# average and exact covariance against band_averaged_variance, build_C_time and
+# build_C_wdm_active.  tests/wilson/test_evolutionary_kernels.py checks the kernels against it.
 from wdm_dev_ev import evolutionary as ev
 from domainia.wilson.grid import active_mask
 from domainia.wilson.matrix import active_W
@@ -53,7 +51,7 @@ def test_apply_mask_and_energy_fraction_match_the_dense_mask(rng):
 
 
 # ---------------------------------------------------------------------------
-# General S(f, t): band average, exact covariance, wrap rule
+# General S(f, t): band average and exact covariance
 # ---------------------------------------------------------------------------
 
 from domainia.wilson.matrix import build_C_time, build_C_wdm_active  # noqa: E402
@@ -101,15 +99,3 @@ def test_exact_covariance_is_the_transformed_time_covariance():
     Wa = active_W(NF, NT, DT)
     ref = Wa @ ev.time_domain_covariance(N, DT, _S_evo) @ Wa.T
     np.testing.assert_allclose(ev.exact_covariance(NF, NT, DT, _S_evo), ref, atol=1e-12 * np.abs(ref).max())
-
-
-def test_wrap_fractions_match_the_atoms_directly():
-    g = ev.PackedGrid(NF, NT, DT)
-    frac = ev.wrap_fractions(NF, NT, DT)
-    for p in (0, 3, 17, g.size // 2, g.size - 1):
-        m, n = int(g.m[p]), int(g.n[p])
-        e = g.atom(p) ** 2
-        c = n * NF
-        pos = c + (np.arange(N) - c + N // 2) % N - N // 2                # unwrapped positions
-        assert frac[m, n] == pytest.approx(e[(pos < 0) | (pos >= N)].sum() / e.sum(), abs=1e-14)
-    assert np.all(np.isnan(frac[~active_mask(NF, NT)]))

@@ -211,8 +211,6 @@ def domainia_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
 
 def flatten(key: str, value: Any) -> dict[str, np.ndarray]:
     """``{key: array}`` for an array, scalar, list/tuple or dict output (recursively)."""
-    if value is None:
-        return {f"{key}=None": np.zeros(0)}
     if isinstance(value, dict):
         out: dict[str, np.ndarray] = {}
         for k in sorted(value, key=repr):

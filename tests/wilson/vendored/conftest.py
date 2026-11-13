@@ -50,12 +50,6 @@ def medium_grid() -> Grid:
 
 
 @pytest.fixture
-def lisa_grid() -> Grid:
-    """LISA-like grid (N = 2048) for noise tests."""
-    return Grid(Nf=32, Nt=64, dt=10.0)
-
-
-@pytest.fixture
 def flat_psd():
     """Constant PSD ``S_n(f) = 1e-3`` (no Whittle approximation error)."""
 
@@ -80,17 +74,6 @@ def lisa_psd():
         return np.where(np.isfinite(Sn), Sn, np.inf)
 
     return _lisa
-
-
-@pytest.fixture
-def chirp_signal(simple_grid):
-    """Linear chirp on ``simple_grid``."""
-    g = simple_grid
-    t = np.arange(g.N) * g.dt
-    f0 = 0.05 * g.f_nyq
-    f1 = 0.45 * g.f_nyq
-    fdot = (f1 - f0) / g.T
-    return np.cos(2 * np.pi * (f0 * t + 0.5 * fdot * t**2))
 
 
 @pytest.fixture
