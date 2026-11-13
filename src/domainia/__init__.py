@@ -1,5 +1,5 @@
-"""domainia: data, linear maps and covariance across the time, Fourier and time-frequency
-(Wilson / WDM) domains.
+"""domainia: data and covariance across the time, Fourier and time-frequency (Wilson / WDM)
+domains.
 
 Importing ``domainia`` (any of its modules) never imports JAX.  JAX is imported only on use:
 when the JAX backend is built (:func:`domainia.wilson.backend.jax_backend` or
@@ -18,46 +18,26 @@ Modules
   ``SampledWindow``).
 * :func:`transform`: data arrays, with any leading axes, between time, frequency and WDM
   (:mod:`domainia._transform`).
-* :mod:`domainia.translate`: the 2.0 ``transform`` of ``{channel: array}`` dicts between the
-  full-record ``TimeDomain``, ``FourierDomain.full`` and ``WDMDomain.full``.
-* :mod:`domainia.domains`: ``TimeDomain``, ``FourierDomain``, ``CellSet``, ``WDMDomain``,
-  ``ChannelAxis`` (frozen, hashable: static under ``jax.jit``).
-* :mod:`domainia.data`: ``TimeSeries``, ``FourierBins``, ``WDMCells`` (pytrees).
-* Not imported here: :mod:`domainia.maps` (linear maps between partial domains),
-  :mod:`domainia.variance`, :mod:`domainia.spectra`, and :mod:`domainia.testing` (dense
-  oracles and test windows).
+* Not imported here: :mod:`domainia.testing` (dense oracles and test windows).
 """
 
 from __future__ import annotations
 
-from . import data, domains, translate, wilson
+from . import wilson
 from ._transform import transform
-from .data import FourierBins, TimeSeries, WDMCells
-from .domains import CellSet, ChannelAxis, FourierDomain, TimeDomain, WDMDomain
 from .wilson import MEYER, Grid, Meyer, RampWindow, SampledWindow, Window, WindowError
 
 __version__ = "2.0.0"
 
 __all__ = [
     "MEYER",
-    "CellSet",
-    "ChannelAxis",
-    "FourierBins",
-    "FourierDomain",
     "Grid",
     "Meyer",
     "RampWindow",
     "SampledWindow",
-    "TimeDomain",
-    "TimeSeries",
-    "WDMCells",
-    "WDMDomain",
     "Window",
     "WindowError",
     "__version__",
-    "data",
-    "domains",
     "transform",
-    "translate",
     "wilson",
 ]

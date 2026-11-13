@@ -103,7 +103,7 @@ def require_instance(name: str, value: object, cls: type | tuple[type, ...], exp
     """Return ``value``; ``TypeError`` unless ``isinstance(value, cls)``.
 
     ``expected`` is the phrase after "must be", article included
-    (``"a TimeDomain"``, ``"a CellSet or a WDMDomain"``).
+    (``"a Window"``, ``"a string"``).
 
     >>> from domainia.wilson._checks import require_instance
     >>> require_instance("src", 3, str, "a string domain")

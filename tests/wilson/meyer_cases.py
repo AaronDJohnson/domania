@@ -177,18 +177,13 @@ def domainia_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
     rng.standard_normal(5 * N + 2 * Nt)        # the recorded maps cases' inputs: Sigma unchanged
     Sn = psd_ft(N * dt, depth=0.4)
     E = wl.evolutionary
-    m, n = np.nonzero(wl.active_mask(Nf, Nt))
+    mask = wl.active_mask(Nf, Nt)
+    m, n = np.nonzero(mask)
 
     def interp(kw: dict) -> Any:
         plan = E.eq45_plan(Nf, Nt, dt, **kw)
         return E.eq45_blocks_cheb(plan, E.eq45_coeffs_interp(Sn, plan.f, plan.t_max, plan.P,
                                                              k=plan.k_used))
-
-    def cells() -> Any:
-        """Every active cell as a ``CellSet``, which ``testing`` takes for now (imported on
-        call, so collecting this module never needs ``domainia.domains``)."""
-        from domainia.domains import CellSet
-        return CellSet.all_active(wl.Grid(Nf, Nt, dt))
 
     cases: list[Case] = [
         ("BandAveragedVariance", lambda kw: wl.noise.evolutionary_band_variance(Nf, Nt, dt, Sn, **kw)[m, n]),
@@ -201,9 +196,9 @@ def domainia_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
         cases += [
             ("EvolutionaryCovariance.direct",
              lambda kw: E.eq45_direct(E.eq45_plan(Nf, Nt, dt, P=2, **kw), Sn)),
-            ("testing.dense_W", lambda kw: testing.dense_W(cells(), **kw)),
-            ("testing.wdm_congruence", lambda kw: testing.wdm_congruence(Sigma, cells(), **kw)),
-            ("testing.eq45_dense", lambda kw: testing.eq45_dense(cells(), Sn, **kw)),
+            ("testing.dense_W", lambda kw: testing.dense_W(Nf, Nt, dt, mask, **kw)),
+            ("testing.wdm_congruence", lambda kw: testing.wdm_congruence(Sigma, Nf, Nt, dt, mask, **kw)),
+            ("testing.eq45_dense", lambda kw: testing.eq45_dense(Nf, Nt, dt, mask, Sn, **kw)),
         ]
     return cases
 

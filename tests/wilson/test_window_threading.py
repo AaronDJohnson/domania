@@ -25,9 +25,7 @@ from .meyer_cases import THREADED, domainia_cases, psd, psd_ft, wilson_cases
 SCANNED = ("wilson/transform.py", "wilson/matrix.py", "wilson/stationary.py", "wilson/noise.py",
            "wilson/evolutionary.py", "wilson/grid.py", "wilson/backend.py",
            "wilson/special.py", "wilson/__init__.py", "wilson/_checks.py",
-           "domains.py", "maps/base.py", "maps/time.py", "maps/fourier.py", "variance.py",
-           "testing.py", "data.py", "spectra.py", "__init__.py", "maps/__init__.py",
-           "translate.py", "_transform.py")
+           "testing.py", "__init__.py", "_transform.py")
 #: The two modules that legitimately sample the Meyer window directly.
 UNSCANNED = frozenset({"wilson/filter.py", "wilson/windows.py"})
 #: Meyer sampling helpers: only ``wilson/filter.py`` (and ``wilson/windows.py``) may call them.
@@ -45,16 +43,7 @@ CONSUMERS = frozenset({
     "band_averaged_variance", "evolutionary_band_variance", "empirical_variance",
     "energy_fraction", "apply_time_mask", "wrap_fractions", "wrap_cut_columns", "exact_covariance",
     "eq45_plan",
-    "dense_W", "wdm_congruence", "eq45_dense", "_dense_atoms",
-    # The window-taking constructors must receive ``window=`` by keyword: building one without
-    # it drops the window.  Known limits of this name-based rule: a positional window
-    # (``WDMDomain(cells, window)``) is flagged, a conservative false positive; a
-    # ``cls(...)`` inside a classmethod and a call to such a classmethod (``WDMDomain.full(...)``)
-    # are not seen, a false negative that the value tests in tests/test_dom_windows.py and
-    # tests/test_translate.py cover.
-    "WDMDomain", "BandAveragedVariance",
-    # The helper those constructors resolve the window with; MidpointVariance uses _cells_of.
-    "_cells_and_window",
+    "dense_W", "wdm_congruence", "eq45_dense",
 })
 #: Names that hard-code a window inside a kernel: the default instance and the constructors.
 HARD_CODED = frozenset({"MEYER", "Meyer", "RampWindow", "SampledWindow"})
@@ -215,8 +204,8 @@ def test_no_kernel_call_drops_the_window(rel):
 
 
 def test_the_scan_covers_every_module_but_filter_and_windows():
-    """A new module anywhere in the package (``domainia.translate`` too, once it exists) is
-    scanned unless it is added to UNSCANNED on purpose."""
+    """A new module anywhere in the package is scanned unless it is added to UNSCANNED on
+    purpose."""
     root = Path(domainia.__file__).parent
     modules = {p.relative_to(root).as_posix() for p in root.rglob("*.py")}
     assert UNSCANNED <= modules
@@ -250,14 +239,6 @@ def test_the_scan_covers_every_module_but_filter_and_windows():
     ("filter.phi_centered(Nf, Nt, dt, 8)", True),
     ("phi_fft_order(Nf, Nt, dt)", True),
     ("wilson.filter.phi_fft_order(Nf, Nt, dt)", True),
-    # The window-taking constructors of the domainia layer.
-    ("WDMDomain(cells, window=window)", False),
-    ("D.WDMDomain(cells, window=self.dst.window)", False),
-    ("BandAveragedVariance(psd, cells, window=window)", False),
-    ("WDMDomain(cells)", True),
-    ("domains.WDMDomain(cells, ALT_WINDOW)", True),           # positional: flagged
-    ("BandAveragedVariance(psd, cells)", True),
-    ("WDMDomain(cells, window=wilson.MEYER)", True),
 ])
 def test_the_window_scan_flags_exactly_the_calls_that_lose_the_window(source, flagged):
     assert bool(_window_violations(source)) is flagged

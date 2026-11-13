@@ -714,9 +714,8 @@ def eq45_separable_kernels(U: CArray, s: Array) -> Array:
     r""":math:`K^X = \tfrac12 \mathrm{Re}(U\,\mathrm{diag}(s)\,U^{\mathsf H})` in real arithmetic.
 
     ``U`` (cells x window bins) holds the unit-norm atoms; ``s`` a stationary
-    spectrum on the window bins.  ``K^X`` is in the units of ``U`` (Wilson units for the
-    ``C = kappa U`` of ``domainia.maps.FourierToWDM``).  Ported verbatim (host NumPy,
-    built once per noise component).
+    spectrum on the window bins.  ``K^X`` is in the units of ``U``.  Ported verbatim (host
+    NumPy, built once per noise component).
     """
     Ur, Ui = U.real, U.imag
     return 0.5 * ((Ur * s) @ Ur.T + (Ui * s) @ Ui.T)

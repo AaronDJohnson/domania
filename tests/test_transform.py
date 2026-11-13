@@ -38,7 +38,8 @@ def _close(got, want, rel):
 def test_agrees_with_the_recorded_translate_transform():
     """The six pairs on four WDM grids, time <-> frequency at odd N, one channel with no
     leading axis, and WDM -> WDM across two grids: each output within 1e-12 of its peak
-    (measured: 0.0) and exactly canonical."""
+    (measured: 0.0) and exactly canonical.  At odd N the last bin is not a Nyquist bin, and
+    it keeps its imaginary part."""
     with np.load(REFERENCE) as z:
         for i, ((s, t), (n, dt, *g)) in enumerate(zip(z["routes"], z["grids"])):
             n, sg, tg = int(n), (int(g[0]), int(g[1])), (int(g[2]), int(g[3]))
@@ -46,14 +47,16 @@ def test_agrees_with_the_recorded_translate_transform():
                             target_wdm=tg if t == "wdm" else None)
             _close(got, z[f"y{i}"], 1e-12)
             if t == "frequency":
-                assert not np.any(got[..., 0].imag) and (n % 2 or not np.any(got[..., -1].imag)), i
+                assert not np.any(got[..., 0].imag), i
+                assert np.all(got[..., -1].imag) if n % 2 else not np.any(got[..., -1].imag), i
             if t == "wdm":
                 assert not np.any(got[..., ~wilson.active_mask(*tg)]), i
 
 
 def test_round_trips_leading_axes_and_parseval():
     """Every pair maps X's three layouts onto each other and back, with a non-default window;
-    each row is the kernel's; the energy scales by dt on WDM and dt^2 N on frequency."""
+    each row is the kernel's; the energy scales by dt on WDM and dt^2 N on frequency, also at
+    odd N."""
     on = {k: _on(k, window=ALT_WINDOW) for k in KINDS}
     assert np.array_equal(on["time"], X) and on["wdm"].shape == (3, 2, 9, 16)
     _close(on["frequency"], DT * np.fft.rfft(X), 1e-15)
@@ -67,6 +70,9 @@ def test_round_trips_leading_axes_and_parseval():
     np.testing.assert_allclose(np.sum(on["wdm"] ** 2, axis=(-2, -1)), DT * energy, rtol=1e-12)
     np.testing.assert_allclose(np.sum(two * np.abs(on["frequency"]) ** 2, axis=-1),
                                DT ** 2 * N * energy, rtol=1e-12)
+    odd = transform(X[..., :15], "time", "frequency", N=15, dt=DT)             # no Nyquist bin
+    np.testing.assert_allclose(np.sum(two[:8] * np.abs(odd) ** 2, axis=-1),
+                               DT ** 2 * 15 * np.sum(X[..., :15] ** 2, axis=-1), rtol=1e-12)
 
 
 def test_a_residue_up_to_1e_10_of_the_peak_is_accepted_and_the_copy_is_canonical():
@@ -86,7 +92,7 @@ def test_a_residue_up_to_1e_10_of_the_peak_is_accepted_and_the_copy_is_canonical
         r[(2, 1, *at)] += 1e-6 * peak * unit
         with pytest.raises(ValueError, match=rf"^x\[2, 1\]: .*{name} is 1e-06 of the slice's peak"):
             transform(r, kind, "time", **_kw(kind, "time"))
-    real = np.arange(65.0)
+    real = np.arange(65)                                                         # integers too
     assert np.array_equal(transform(real, "frequency", "frequency", **_kw("frequency", "frequency")),
                           real.astype(np.complex128))
 

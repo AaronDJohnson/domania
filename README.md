@@ -25,21 +25,18 @@ Move data and covariance between the time, Fourier and time-frequency domains.
 
 ```python
 import numpy as np
-from domainia import FourierDomain, Grid, Meyer, TimeDomain, WDMDomain
-from domainia.translate import transform
+from domainia import transform, wilson
 
 Nf, Nt, dt = 16, 64, 0.5
 N = Nf * Nt
-time = TimeDomain(N, dt)
-freq = FourierDomain.full(N, dt)                        # dt * numpy.fft.rfft(x)
-wdm = WDMDomain.full(Grid(Nf, Nt, dt))                  # dense (Nf + 1, Nt) layout, Meyer window
-wdm8 = WDMDomain.full(Grid(Nf, Nt, dt), window=Meyer(8))
+rec = {"N": N, "dt": dt}
+meyer8 = wilson.Meyer(8)
 
-x = {"A": np.random.default_rng(0).standard_normal(N)}
-w = transform(x, time, wdm)                             # {"A": (Nf + 1, Nt) float64}
-X = transform(w, wdm, freq)                             # {"A": (N // 2 + 1,) complex128}
-w8 = transform(w, wdm, wdm8)                            # another window, through the spectrum
-assert np.allclose(transform(w8, wdm8, time)["A"], x["A"])
+x = np.random.default_rng(0).standard_normal((2, N))         # two channels: any leading axes
+w = transform(x, "time", "wdm", **rec, target_wdm=(Nf, Nt))       # (2, Nf + 1, Nt) float64, Meyer
+X = transform(w, "wdm", "frequency", **rec, source_wdm=(Nf, Nt))  # (2, N // 2 + 1): dt * rfft(x)
+w8 = transform(X, "frequency", "wdm", **rec, target_wdm=(Nf, Nt), window=meyer8)  # another window
+assert np.allclose(transform(w8, "wdm", "time", **rec, source_wdm=(Nf, Nt), window=meyer8), x)
 ```
 
 The WDM layout holds the `N = Nf * Nt` active cells; the inactive edge cells are 0.
@@ -54,33 +51,24 @@ traced under `jax.jit` or `jax.grad` (JAX raises its `TracerArrayConversionError
 
 ### Canonical inputs
 
-`transform` takes its inputs exactly, with no tolerance: inactive WDM cells must be exactly
-0, and the Fourier DC bin (and the Nyquist bin for even `N`) must be exactly real. The
-canonical producers are `transform` itself and `dt * numpy.fft.rfft(x)`. Raw
-`wilson.forward_time` output, and a slice of a full FFT (`dt * numpy.fft.fft(x)[:N // 2 + 1]`),
-carry ~1e-16 round-off there on many grids and are then refused; the error names the
-fix:
+`transform`'s outputs are exactly canonical: inactive WDM cells are 0, and the Fourier DC
+bin (and the Nyquist bin for even `N`) is real. Its inputs may carry a residue there of up
+to 1e-10 of their peak, so raw `wilson.forward_time` output and a slice of a full FFT
+(`dt * numpy.fft.fft(x)[:N // 2 + 1]`), which carry ~1e-16 round-off there on many grids,
+are taken as they are. A larger residue is refused, and the error names the cell or bin:
 
 ```python
 import numpy as np
-from domainia import FourierDomain, Grid, TimeDomain, WDMDomain, wilson
-from domainia.translate import transform
+from domainia import transform, wilson
 
-Nf, Nt, dt = 16, 64, 0.5
+Nf, Nt, dt = 6, 12, 0.3
 N = Nf * Nt
-time, freq, wdm = TimeDomain(N, dt), FourierDomain.full(N, dt), WDMDomain.full(Grid(Nf, Nt, dt))
-x = np.random.default_rng(0).standard_normal(N)
+x = np.random.default_rng(6).standard_normal(N)
 
-w = wilson.forward_time(x, Nf, Nt, dt)        # raw kernel output: ~1e-16 in the inactive cells
-# transform({"A": w}, wdm, time) raises ValueError: ... inactive cells must be exactly 0 ...
-w[~wilson.active_mask(Nf, Nt)] = 0.0          # zero the inactive cells
-assert np.allclose(transform({"A": w}, wdm, time)["A"], x)
-
-# A full-FFT slice: its DC and Nyquist bins can carry ~1e-16 imaginary round-off (not at
-# this power-of-two N = 1024, but typically at N = 240), so make them exactly real.
-X = dt * np.fft.fft(x)[: N // 2 + 1]
-X[[0, -1]] = X[[0, -1]].real                  # odd N: X[0] only
-assert np.allclose(transform({"A": X}, freq, time)["A"], x)
+w = wilson.forward_time(x, Nf, Nt, dt)        # raw kernel output: ~1e-17 in the inactive cells
+assert np.allclose(transform(w, "wdm", "time", N=N, dt=dt, source_wdm=(Nf, Nt)), x)
+X = dt * np.fft.fft(x)[: N // 2 + 1]          # a full-FFT slice: ~1e-17 imaginary at Nyquist
+assert np.allclose(transform(X, "frequency", "time", N=N, dt=dt), x)
 ```
 
 ## Units

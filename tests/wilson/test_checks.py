@@ -11,7 +11,7 @@ from fractions import Fraction
 import numpy as np
 import pytest
 
-from domainia import domains, wilson
+from domainia import wilson
 from domainia.wilson import grid
 from domainia.wilson._checks import (
     REAL_KINDS,
@@ -249,10 +249,9 @@ def _noise(N):
     (lambda: nu_d(np.array([0.5]), d="4"), "d must be an integer, got str"),
     (lambda: _noise(np.array(8)), "N must be an integer, got ndarray"),
     (lambda: wilson.Meyer(2.5), "Meyer d must be an integer, got float"),
-    (lambda: domains.TimeDomain(8.0, 1.0), "N must be an integer, got float"),
-], ids=["_require_int", "validate_grid", "n_samples", "nu_d", "colored_noise", "Meyer", "domains._int"])
-def test_the_seven_integer_checks_raise_the_helpers_message(call, message):
-    """The seven copies of the integer check call ``require_int``."""
+], ids=["_require_int", "validate_grid", "n_samples", "nu_d", "colored_noise", "Meyer"])
+def test_the_six_integer_checks_raise_the_helpers_message(call, message):
+    """The six copies of the integer check call ``require_int``."""
     with pytest.raises(TypeError, match=_exact(message)):
         call()
 
@@ -261,11 +260,6 @@ def test_the_range_checks_after_require_int_are_unchanged():
     assert type(wilson.Meyer(np.int64(3)).d) is int and wilson.Meyer(np.int64(3)) == wilson.Meyer(3)
     with pytest.raises(ValueError, match=_exact("Meyer d must be >= 1; got 0")):
         wilson.Meyer(0)
-    assert type(domains._int("k0", np.int64(2), minimum=0)) is int
-    with pytest.raises(ValueError, match=_exact("k0 must be >= 0; got -1")):
-        domains._int("k0", -1, minimum=0)
-    with pytest.raises(TypeError, match=_exact("k0 must be an integer, got bool")):
-        domains._int("k0", np.True_, minimum=0)
     with pytest.raises(ValueError, match=_exact("d must be >= 1, got 0")):
         nu_d(np.array([0.5]), d=0)
     with pytest.raises(ValueError, match=_exact("N must be even, got 7")):

@@ -112,11 +112,6 @@ Where it reaches, and where it stops
 * **``matrix`` and ``stationary`` stay double** on purpose. They are $O(N^2)$
   verification and covariance machinery, where precision *is* the deliverable
   and the arrays are too large to want in the first place.
-* **The maps of ``domainia.maps`` compute in double.** ``TimeToWDM``,
-  ``WDMToTime``, ``TimeToFourier`` and ``FourierToWDM(impl="fft")`` convert their
-  input to float64 (bins to complex128) before they call these kernels, so a
-  ``float32`` record or ``complex64`` bins give float64 results there.  Single
-  precision is reached only by calling the kernels here directly.
 
 An earlier revision claimed "half the memory" while only the coefficient grid
 was single -- the variance grid it is invariably paired with stayed double, so
