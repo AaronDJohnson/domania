@@ -274,11 +274,7 @@ def band_averaged_variance(
     # that case. It was unreachable, and a silent infinite variance is the last
     # thing this package should produce, so it is gone rather than merely untested.
     in_band = phi2 > 0
-    # Match the window weights to the PSD's precision, so a float32 PSD yields
-    # a float32 variance grid instead of being promoted back to float64 by the
-    # matmul. The window itself is always computed in double; only the
-    # reduction is cast.
-    weights = phi2[in_band].astype(Sn_vals.dtype, copy=False)
+    weights = phi2[in_band]
     Sn_eff = Sn_vals[:, in_band] @ weights / np.sum(weights)
 
     return whittle_variance_from_array(Nt, Sn_eff)

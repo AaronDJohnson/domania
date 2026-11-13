@@ -163,11 +163,9 @@ def _meyer_geometry(Nf: int, Nt: int, dt: float) -> tuple[np.ndarray, float, flo
 class Meyer(_Admissible):
     """The Meyer window: flat to dF/4, ``cos(pi/2 nu_d)`` rolloff to 3 dF/4, ``nu_d = I_x(d, d)``.
 
-    ``Meyer(d).sample`` is :func:`domainia.wilson.filter.phi_centered` ``(Nf, Nt, dt, d)``
-    bit for bit for a Python float (or float64) ``dt``; ``Meyer()`` (d = 4) is the WDM
-    transform's window.  ``sample`` converts ``dt`` to float64 first, so a float32 ``dt``
-    gives ``phi_centered(Nf, Nt, float(dt), d)``, about 3e-8 away from ``phi_centered`` on
-    the raw float32 ``dt`` (which then computes partly in float32).
+    ``Meyer(d).sample`` is :func:`domainia.wilson.filter.phi_centered`
+    ``(Nf, Nt, float(dt), d)``: ``sample`` converts any real ``dt`` to a Python float first.
+    ``Meyer()`` (d = 4) is the WDM transform's window.
     """
 
     d: int = 4

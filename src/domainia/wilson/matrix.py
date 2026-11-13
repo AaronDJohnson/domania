@@ -232,13 +232,7 @@ def build_C_time(N: int, dt: float, Sn_func: PsdFunc) -> Array:
     if N <= 0 or N % 2 != 0:
         raise ValueError(f"N must be a positive even integer, got {N}")
     freqs = np.fft.rfftfreq(N, d=dt)
-    # Force double. `sanitize_psd` preserves single precision so that a
-    # float32 PSD yields a float32 *variance grid* (see domainia.wilson.transform's
-    # Precision section), but this module is the exact-reference tier: an
-    # (N, N) covariance is what everything else is verified against, and it is
-    # O(N^2) in memory whatever the dtype, so there is nothing to win and a
-    # reference to lose. `stationary` forces double for the same reason.
-    Sn = np.asarray(sanitize_psd(Sn_func(freqs), "build_C_time"), dtype=float)
+    Sn = sanitize_psd(Sn_func(freqs), "build_C_time")
     sigma2 = N * Sn / (2.0 * dt)  # E[|X_j|^2]
 
     # Autocovariance R[tau] = (1/N^2) * sum_j (full sigma2_j) e^{2 pi i j tau / N}

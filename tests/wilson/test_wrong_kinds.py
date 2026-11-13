@@ -272,6 +272,25 @@ def test_real_arrays_take_integer_and_float_dtypes(slot):
     assert np.array_equal(call(ints), call(ints.astype(np.float64)))
 
 
+def test_float32_input_is_computed_in_double():
+    """Every array input is promoted to double before the first FFT: a float32 or complex64
+    input gives the double run's result on the same values, dtype included.  forward_time's
+    rfft would otherwise run in single precision."""
+    x = np.fft.irfft(_Z, 128)
+    calls = {slot: (call, good) for slot, (call, good, _) in _REAL_ARRAYS.items()} | {
+        "forward": (lambda a: wilson.forward(a, 8, 16, 1.0), _Z),
+        "forward_many": (lambda a: wilson.forward_many(a, 8, 16, 1.0), _Z[None]),
+        "forward_time": (lambda a: wilson.forward_time(a, 8, 16, 1.0), x),
+        "forward_time_many": (lambda a: wilson.forward_time_many(a, 8, 16, 1.0), x[None]),
+        "forward_bands": (lambda a: _T.forward_bands(a, 0, _BANDS, 8, 16, 1.0), _Z),
+    }
+    for slot, (call, good) in calls.items():
+        low = good.astype(np.complex64 if good.dtype.kind == "c" else np.float32)
+        got, want = call(low), call(low.astype(good.dtype))
+        assert got.dtype == want.dtype in (np.float64, np.complex128), slot
+        assert np.array_equal(got, want), slot
+
+
 def test_the_stationary_psd_check_uses_the_sanitize_psd_message():
     psd = np.ones(65, complex)
     with pytest.raises(TypeError, match=_exact("stationary noise input: PSD must be a real numeric array, "

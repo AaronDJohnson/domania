@@ -185,7 +185,7 @@ def sanitize_psd(values: object, context: str) -> Array:
 
     Returns
     -------
-    ndarray, float
+    ndarray, float64
         Finite, non-negative PSD values with non-finite entries set to ``0.0``.
 
     Raises
@@ -209,12 +209,7 @@ def sanitize_psd(values: object, context: str) -> Array:
     """
     arr = np.asarray(values)
     require_dtype(f"{context}: PSD", arr, REAL_KINDS, "a real numeric array")
-    # Preserve single precision rather than forcing float64: a float32 PSD
-    # paired with a float32 coefficient grid keeps the *whole* working set
-    # single-precision. Forcing double here meant the variance grid stayed
-    # float64 no matter what, so a caller in "float32 mode" got a working set
-    # that was only ~33% smaller, not 50%. Everything else promotes.
-    arr = arr.astype(np.float32 if arr.dtype == np.float32 else float)
+    arr = arr.astype(np.float64)
     if np.any(np.isnan(arr)):
         # inf has a physical reading (no measurable power in that bin); nan does
         # not -- it means the caller's model produced something undefined.

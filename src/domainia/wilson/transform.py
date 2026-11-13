@@ -11,9 +11,8 @@ the real WDM wavelets).
 Every kernel here takes ``window=`` (a :class:`domainia.wilson.windows.Window`;
 default :data:`domainia.wilson.MEYER`, the Meyer window of the WDM transform) and
 computes in the Wilson basis of that window: $\\hat\\phi_c$ below is the window's
-centred samples, from :func:`domainia.wilson.windows.sample_window`.  The formulas,
-the edge normalisation and the precision rules are the same for every admissible
-window.
+centred samples, from :func:`domainia.wilson.windows.sample_window`.  The formulas
+and the edge normalisation are the same for every admissible window.
 
 The slab is linear-centred:
 
@@ -62,62 +61,9 @@ hard-coded the normalized one anyway.
 
 Precision
 ---------
-Single precision propagates: a ``float32`` series (or ``complex64`` spectrum)
-is transformed in single precision and returns ``float32``.  Every constant
-that multiplies a working array (the sign patterns, ``kappa``, ``lam``, the
-window samples, the edge-band ``sqrt(2)``, the band phases) is cast to the
-working dtype first, so every FFT receives a single-precision array.  Anything
-else, integers included, promotes to double.  It is
-opt-in by dtype rather than by flag, so the precision of a result is readable
-off its own ``.dtype``.
-
-A single-precision run that overflows raises ``ValueError`` instead of
-returning ``inf`` or ``nan``.  float32 tops out at 3.4e38 and the window
-samples grow with ``sqrt(dt)``, so finite input can overflow inside a product
-or an FFT (complex64 bins of order 1e36 at ``dt=1e4`` do, in
-``forward_bands``), and NumPy only warns on the way.  Each of the ten entry
-points (``forward``/``inverse``, their ``_time`` and ``_many`` forms, and
-``forward_bands``/``inverse_bands``) checks the single-precision arrays it
-computes, and the message names the function whose array overflowed and
-suggests float64 input.  The check is skipped for double results.
-
-float64 runs are bit for bit what they were before the casts (a cast to
-float64 is a no-op, and no float64 expression is regrouped).  The Meyer
-baseline, ``tests/wilson/test_meyer_baseline.py``, pins them bit for bit
-except the rescaled families (``forward_bands``, ``inverse_bands``,
-``FourierToWDM``), which it compares by tolerance.  float32 runs differ
-from the frozen oracle at single-precision rounding, because the oracle formed
-some products in double before storing them.
-
-**This is a memory feature, not a speed one**, and the docstrings say so
-because the obvious guess is wrong.  Measured end to end it is 0.87-1.19x --
-i.e. nothing -- for the same reason ``scipy.fft`` was reverted above: the FFT
-is not the bottleneck.  What it buys is half the memory.  Round-trip accuracy
-drops to ~2e-7 relative, from ~4e-16.
-
-Where it reaches, and where it stops
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-* **The transform** -- ``forward``/``inverse`` and their ``_time`` and
-  ``_many`` forms, and the band kernels ``forward_bands``/``inverse_bands`` --
-  follows the input dtype.
-* **The variance builders** ``whittle_variance``, ``band_averaged_variance``
-  and ``evolutionary_variance`` follow the *PSD's* dtype, so a ``float32`` PSD
-  paired with a ``float32`` series keeps the whole coefficient/variance
-  working set single-precision.
-* **``empirical_variance`` stays double** on purpose. It is a Monte-Carlo
-  reference; computing it in single precision would add numerical noise to a
-  noise estimate, which defeats the point of having it.
-* **``matrix`` and ``stationary`` stay double** on purpose. They are $O(N^2)$
-  verification and covariance machinery, where precision *is* the deliverable
-  and the arrays are too large to want in the first place.
-
-An earlier revision claimed "half the memory" while only the coefficient grid
-was single -- the variance grid it is invariably paired with stayed double, so
-the real working set was ~33% smaller, not 50%. Both are single now, and the
-claim is measured rather than assumed.
-
-Before any of this, ``float32`` input was silently upcast and returned
-``float64`` -- twice the memory the caller asked for, with no indication.
+Every entry point computes in double and returns float64 (complex128 for a
+spectrum).  Input of another accepted dtype (a lower-precision float, an
+integer) is promoted first.
 """
 
 from __future__ import annotations
@@ -135,9 +81,6 @@ from .grid import (
     validate_grid,
 )
 from .windows import MEYER, Window, require_window, sample_window
-
-_F64 = np.dtype(np.float64)
-_C128 = np.dtype(np.complex128)
 
 type Array = NDArray[np.floating]
 type BoolArray = NDArray[np.bool_]
@@ -174,80 +117,12 @@ __all__ = [
 #   * ``workers=8`` bought 1.00-1.23x for the same reason.
 #
 # The cost was real: scipy is not bit-identical to numpy (~3.7e-16 relative,
-# same algorithm family, different rounding), and the coefficients are kept
-# byte-for-byte stable across every change (the Meyer outputs are pinned bit for
-# bit by ``tests/wilson/test_meyer_baseline.py``). Trading a verifiable property
-# for measurement noise is a bad deal.
+# same algorithm family, different rounding), and the Meyer outputs have stayed
+# byte-for-byte stable across every change. Trading a verifiable property for
+# measurement noise is a bad deal.
 #
 # Worth revisiting only if the parity assembly is ever vectorised further, at
 # which point the FFT share of the runtime rises and the arithmetic changes.
-
-
-def _working_dtypes(a: NDArray[np.generic]) -> tuple[np.dtype, np.dtype]:
-    """``(real, complex)`` working dtypes implied by an input array.
-
-    Single precision propagates: a ``float32`` series or ``complex64`` spectrum
-    is transformed in single precision (every constant is cast to the working
-    dtype before it multiplies a working array) and comes back ``float32``.
-    Anything else -- including integer input -- promotes to double.
-
-    This is opt-in by dtype rather than by flag, which keeps the default exact
-    and makes the precision of a result readable off its own ``.dtype`` instead
-    of requiring the caller to remember what they passed.
-    """
-    if a.dtype in (np.float32, np.complex64):
-        return np.dtype(np.float32), np.dtype(np.complex64)
-    return np.dtype(np.float64), np.dtype(np.complex128)
-
-
-def _check_single_output(out: NDArray[np.generic], entry: str) -> None:
-    """Raise ``ValueError`` if a single-precision result of ``entry`` is not finite.
-
-    The entry points check their input first (:func:`domainia.wilson.validate_finite`),
-    so a ``nan`` or ``inf`` here was made by the transform itself: a float32 product,
-    FFT or scaling overflowed.  NumPy only warns on the way, so the caller would get
-    ``nan`` cells.  Each entry point checks the arrays it computes itself, so the
-    message names the function whose array overflowed.
-
-    Skipped for a double-precision result (float64 runs gain no pass).  It does not
-    change ``np.errstate``.
-    """
-    if _working_dtypes(out)[0] != np.float32:
-        return
-    arr = np.asarray(out)
-    bad = ~np.isfinite(arr)
-    if not bad.any():
-        return
-    n_bad = int(np.count_nonzero(bad))
-    n_nan = int(np.count_nonzero(np.isnan(arr)))
-    raise ValueError(
-        f"{entry}: {n_bad} of {arr.size} entries of the single-precision result are not "
-        f"finite ({n_nan} nan, {n_bad - n_nan} inf), from finite input: the computation "
-        "overflowed float32, whose largest value is 3.4e38. Pass float64 (or complex128) "
-        "input to compute in double."
-    )
-
-
-def _set_rounded(a: Array, idx: object, v: Array) -> Array:
-    """``a[idx] = v`` in place, with ``v`` cast to ``a.dtype``; returns ``a``.
-
-    The transforms form ``v`` in the working dtype (their constants are cast
-    first), so the cast is a no-op for them.
-    """
-    a[idx] = np.asarray(v, dtype=a.dtype)
-    return a
-
-
-def _add_rounded(a: Array, idx: object, v: Array) -> Array:
-    """``a[idx] += v`` in place for a duplicate-free ``idx``, stored in ``a.dtype``; returns
-    ``a``.
-
-    Gather, add, cast, set, so float64 bits are the in-place statement's.  The inverse
-    transforms hand it a ``v`` already in ``a``'s dtype, so a float32 run adds in single
-    precision and the cast is a no-op.
-    """
-    a[idx] = np.asarray(a[idx] + v, dtype=a.dtype)
-    return a
 
 
 def _parity(m: int | np.integer, n_arr: NDArray[np.integer]) -> tuple[BoolArray, Array]:
@@ -263,9 +138,7 @@ def _parity(m: int | np.integer, n_arr: NDArray[np.integer]) -> tuple[BoolArray,
     return even, sign
 
 
-def _build_slab(
-    X_rfft: CArray, m: int, Nf: int, Nt: int, cdtype: np.dtype = _C128,
-) -> CArray:
+def _build_slab(X_rfft: CArray, m: int, Nf: int, Nt: int) -> CArray:
     """Linear-centred slab $u_m[k] = X[\\ell_{m,k}]$ for $k \\in [0, N_t-1]$.
 
     Hermitian extension is applied inline: negative indices use the
@@ -287,8 +160,6 @@ def _build_slab(
     X_rfft : ndarray, complex, shape (..., N//2+1)
     m : int
     Nf, Nt : int
-    cdtype : dtype, optional
-        Complex working dtype.
 
     Returns
     -------
@@ -297,7 +168,7 @@ def _build_slab(
     N = n_samples(Nf, Nt)
     ell = np.arange(Nt) + (m - 1) * (Nt // 2)
     # Every slot is written below.
-    slab = np.zeros((*X_rfft.shape[:-1], Nt), dtype=cdtype)
+    slab = np.zeros((*X_rfft.shape[:-1], Nt), dtype=complex)
     neg = np.flatnonzero(ell < 0)
     over = np.flatnonzero(ell > N // 2)
     direct = np.flatnonzero((ell >= 0) & (ell <= N // 2))
@@ -309,9 +180,7 @@ def _build_slab(
     return slab
 
 
-def _prepare_edges_for_inverse(
-    wmn: Array, Nf: int, Nt: int, rdtype: np.dtype = _F64
-) -> Array:
+def _prepare_edges_for_inverse(wmn: Array, Nf: int, Nt: int) -> Array:
     """Working copy of ``wmn`` with the edge bands put into ``inverse``'s form.
 
     Two things, both edge-only:
@@ -331,12 +200,11 @@ def _prepare_edges_for_inverse(
     Shape-generic in the leading axes, so :func:`inverse` and
     :func:`inverse_many` share it.
     """
-    work = wmn.astype(rdtype)          # always a fresh copy, so updating it in place is safe
+    work = wmn.astype(np.float64)      # always a fresh copy, so updating it in place is safe
     mask = active_mask(Nf, Nt)
-    root2 = rdtype.type(np.sqrt(2))   # mask[m] * root2 is then in the working dtype too
-    # ``work[..., 0, :] *= mask[0] * root2``.
-    work = _set_rounded(work, (..., 0, slice(None)), work[..., 0, :] * (mask[0] * root2))
-    work = _set_rounded(work, (..., Nf, slice(None)), work[..., Nf, :] * (mask[Nf] * root2))
+    root2 = np.sqrt(2.0)
+    work[..., 0, :] *= mask[0] * root2
+    work[..., Nf, :] *= mask[Nf] * root2
     return work
 
 
@@ -368,9 +236,7 @@ def _scatter_interior_bands(
     m_par = m_int & 1
     n_par = n_arr & 1
     even_int = m_par[:, None] == n_par[None, :]
-    # In the working dtype, so a float32 G (and so the FFT) stays complex64;
-    # the callers pass ``phi_c`` and ``lam`` in that dtype too.
-    sign_int = (1.0 - 2.0 * ((1 - m_par)[:, None] * n_par[None, :])).astype(wmn_work.dtype)
+    sign_int = 1.0 - 2.0 * ((1 - m_par)[:, None] * n_par[None, :])
     scaled_int = wmn_work[..., 1:Nf, :] * sign_int
     # g = w' * C_mn * (-1)^{(m+1)n}: real where (m+n) even, imaginary otherwise.
     G = np.where(even_int, scaled_int, 0.0) + 1j * np.where(even_int, 0.0, scaled_int)
@@ -382,7 +248,7 @@ def _scatter_interior_bands(
     # the order is immaterial.  Each slice is duplicate-free.
     for i, m_i in enumerate(m_int):
         start = int(m_i - 1) * (Nt // 2)
-        X = _add_rounded(X, (..., slice(start, start + Nt)), W_int[..., i, :])
+        X[..., start:start + Nt] += W_int[..., i, :]
     return X
 
 
@@ -402,14 +268,13 @@ def _scatter_edge_bands(
     n_arr = np.arange(Nt)
     for m in (0, Nf):
         even, sign = _parity(m, n_arr)
-        scaled = wmn_work[..., m, :] * sign.astype(wmn_work.dtype)
+        scaled = wmn_work[..., m, :] * sign
         g = np.where(even, scaled, 0.0) + 1j * np.where(even, 0.0, scaled)
         Wm = np.fft.fft(g, axis=-1)
         ell = n_arr + (m - 1) * (Nt // 2)
         valid = np.flatnonzero((ell >= 0) & (ell <= N // 2))
-        # ``X[..., ell[valid]] += v``: the indices are strictly increasing, so the
-        # fancy-index add is one addition per bin either way.
-        X = _add_rounded(X, (..., ell[valid]), lam * phi_c[valid] * Wm[..., valid])
+        # The indices are strictly increasing, so the fancy-index add is one addition per bin.
+        X[..., ell[valid]] += lam * phi_c[valid] * Wm[..., valid]
     return X
 
 
@@ -432,13 +297,10 @@ def _gather_bands(x_rfft: CArray, Nf: int, Nt: int, dt: float, *,
     Edge bands $m \\in \\{0, N_f\\}$ take the Hermitian-symmetry slab path.
     Two bands, so the Python loop over them is irrelevant to the cost.
     """
-    rdtype, cdtype = _working_dtypes(x_rfft)
-    phi_c = sample_window(window, Nf, Nt, dt).astype(rdtype)          # host constant
-    # Every constant below is in the working dtype, so a float32 run stays float32
-    # after the FFT (for float64 the casts are no-ops).
-    kappa = rdtype.type(np.sqrt(2.0) / Nf)
+    phi_c = sample_window(window, Nf, Nt, dt)
+    kappa = np.sqrt(2.0) / Nf
     n_arr = np.arange(Nt)
-    out: Array = np.zeros((*x_rfft.shape[:-1], Nf + 1, Nt), dtype=rdtype)
+    out: Array = np.zeros((*x_rfft.shape[:-1], Nf + 1, Nt))
 
     m_int = np.arange(1, Nf)
     ell = (m_int - 1)[:, None] * (Nt // 2) + n_arr[None, :]  # (Nf-1, Nt)
@@ -452,21 +314,18 @@ def _gather_bands(x_rfft: CArray, Nf: int, Nt: int, dt: float, *,
     # Re(C_mn^* y_m[n]): even -> Re(y_m); odd -> Re(-i y_m) = Im(y_m).
     re_or_im_int = np.where(even_int, Y.real, Y.imag)
     # (-1)^{(m+1)n}; exponent parity = ((m+1) & 1) * (n & 1).
-    sign_int = (1.0 - 2.0 * ((1 - m_par)[:, None] * n_par[None, :])).astype(rdtype)
-    # ``out[..., 1:Nf, :] = (kappa * sign_int) * re_or_im_int``, in the working dtype.
-    out = _set_rounded(out, (..., slice(1, Nf), slice(None)), kappa * sign_int * re_or_im_int)
+    sign_int = 1.0 - 2.0 * ((1 - m_par)[:, None] * n_par[None, :])
+    out[..., 1:Nf, :] = kappa * sign_int * re_or_im_int
 
     for m in (0, Nf):
-        y_m = np.fft.ifft(_build_slab(x_rfft, m, Nf, Nt, cdtype) * phi_c, axis=-1)
+        y_m = np.fft.ifft(_build_slab(x_rfft, m, Nf, Nt) * phi_c, axis=-1)
         even, sign = _parity(m, n_arr)
-        out = _set_rounded(out, (..., m, slice(None)),
-                           kappa * sign.astype(rdtype) * np.where(even, y_m.real, y_m.imag))
+        out[..., m, :] = kappa * sign * np.where(even, y_m.real, y_m.imag)
 
     # Unit-norm edge basis functions. Not optional: see the module docstring.
-    # ``out[..., 0, :] /= sqrt(2)``, with sqrt(2) in the working dtype.
-    root2 = rdtype.type(np.sqrt(2))
-    out = _set_rounded(out, (..., 0, slice(None)), out[..., 0, :] / root2)
-    out = _set_rounded(out, (..., Nf, slice(None)), out[..., Nf, :] / root2)
+    root2 = np.sqrt(2.0)
+    out[..., 0, :] /= root2
+    out[..., Nf, :] /= root2
     return out
 
 
@@ -550,7 +409,6 @@ def forward(
         )
     validate_finite(x_rfft, "forward: x_rfft")
     out = _gather_bands(x_rfft, Nf, Nt, dt, window=window)
-    _check_single_output(out, "forward")
     return out
 
 
@@ -615,7 +473,6 @@ def forward_many(
         )
     validate_finite(x_rfft, "forward_many: x_rfft")
     out = _gather_bands(x_rfft, Nf, Nt, dt, window=window)
-    _check_single_output(out, "forward_many")
     return out
 
 
@@ -661,9 +518,9 @@ def forward_time_many(
             f"Nt={Nt}; got {x.shape}"
         )
     validate_finite(x, "forward_time_many: x")
-    x_rfft = np.fft.rfft(x, axis=-1)
-    # Before forward_many's input check, which would report an overflow here as a gap.
-    _check_single_output(x_rfft, "forward_time_many")
+    # At least double before the rfft, which keeps a lower-precision float's precision.
+    # A complex x stays complex, and the rfft refuses it.
+    x_rfft = np.fft.rfft(x.astype(np.result_type(x, np.float64), copy=False), axis=-1)
     return forward_many(x_rfft, Nf, Nt, dt, window=window)
 
 
@@ -732,15 +589,13 @@ def inverse(
         raise ValueError(f"wmn must have shape ({Nf + 1}, {Nt}); got {wmn.shape}")
     validate_finite(wmn, "inverse: wmn")
 
-    rdtype, cdtype = _working_dtypes(wmn)
-    phi_c = sample_window(window, Nf, Nt, dt).astype(rdtype)
-    wmn_work = _prepare_edges_for_inverse(wmn, Nf, Nt, rdtype)
+    phi_c = sample_window(window, Nf, Nt, dt)
+    wmn_work = _prepare_edges_for_inverse(wmn, Nf, Nt)
 
-    lam = rdtype.type(1.0 / (np.sqrt(2.0) * dt))
-    X = np.zeros(N // 2 + 1, dtype=cdtype)
+    lam = 1.0 / (np.sqrt(2.0) * dt)
+    X = np.zeros(N // 2 + 1, dtype=complex)
     X = _scatter_interior_bands(X, wmn_work, Nf, Nt, phi_c, lam)
     X = _scatter_edge_bands(X, wmn_work, Nf, Nt, N, phi_c, lam)
-    _check_single_output(X, "inverse")
     return X
 
 
@@ -794,15 +649,13 @@ def inverse_many(
         )
     validate_finite(wmn, "inverse_many: wmn")
 
-    rdtype, cdtype = _working_dtypes(wmn)
-    phi_c = sample_window(window, Nf, Nt, dt).astype(rdtype)
-    wmn_work = _prepare_edges_for_inverse(wmn, Nf, Nt, rdtype)
+    phi_c = sample_window(window, Nf, Nt, dt)
+    wmn_work = _prepare_edges_for_inverse(wmn, Nf, Nt)
 
-    lam = rdtype.type(1.0 / (np.sqrt(2.0) * dt))
-    X = np.zeros((wmn.shape[0], N // 2 + 1), dtype=cdtype)
+    lam = 1.0 / (np.sqrt(2.0) * dt)
+    X = np.zeros((wmn.shape[0], N // 2 + 1), dtype=complex)
     X = _scatter_interior_bands(X, wmn_work, Nf, Nt, phi_c, lam)
     X = _scatter_edge_bands(X, wmn_work, Nf, Nt, N, phi_c, lam)
-    _check_single_output(X, "inverse_many")
     return X
 
 
@@ -842,7 +695,6 @@ def inverse_time_many(
     """
     N = n_samples(Nf, Nt)
     x = np.fft.irfft(inverse_many(wmn, Nf, Nt, dt, window=window), n=N, axis=-1)
-    _check_single_output(x, "inverse_time_many")
     return x
 
 
@@ -905,9 +757,9 @@ def forward_time(
     # Check here rather than only on the rfft: reporting "index 5 of x" beats
     # reporting that every bin of the transformed spectrum went non-finite.
     validate_finite(x, "forward_time: x")
-    x_rfft = np.fft.rfft(x)
-    # Before forward's input check, which would report an overflow here as a gap.
-    _check_single_output(x_rfft, "forward_time")
+    # At least double before the rfft, which keeps a lower-precision float's precision.
+    # A complex x stays complex, and the rfft refuses it.
+    x_rfft = np.fft.rfft(x.astype(np.result_type(x, np.float64), copy=False))
     return forward(x_rfft, Nf, Nt, dt, window=window)
 
 
@@ -952,7 +804,6 @@ def inverse_time(
     N = n_samples(Nf, Nt)
     x_rfft = inverse(wmn, Nf, Nt, dt, window=window)
     x = np.fft.irfft(x_rfft, n=N)
-    _check_single_output(x, "inverse_time")
     return x
 
 
@@ -1165,14 +1016,11 @@ def forward_bands(z: CArray, k0: int, bands: NDArray[np.integer], Nf: int, Nt: i
     z = np.asarray(z)
     ell = _band_windows(bands, k0, z.shape[-1], Nt)
     validate_finite(z, "forward_bands: z")
-    rdtype, cdtype = _working_dtypes(z)
     phi = sample_window(window, Nf, Nt, dt)
-    phase = _band_phase(bands, Nt, phi).astype(cdtype)
-    Y = np.fft.ifft(phi.astype(rdtype) * z[..., ell], axis=-1)
+    phase = _band_phase(bands, Nt, phi)
+    Y = np.fft.ifft(phi * z[..., ell], axis=-1)
     # Wilson units: the unit-norm-atom cells times sqrt(2 dt / N) (band_atoms' docstring).
-    out = np.real(phase * Y) * rdtype.type(np.sqrt(2.0 * dt / n_samples(Nf, Nt)))
-    _check_single_output(out, "forward_bands")
-    return out
+    return np.real(phase * Y) * np.sqrt(2.0 * dt / n_samples(Nf, Nt))
 
 
 def inverse_bands(w: Array, k0: int, n_bins: int, bands: NDArray[np.integer], Nf: int,
@@ -1219,14 +1067,11 @@ def inverse_bands(w: Array, k0: int, n_bins: int, bands: NDArray[np.integer], Nf
         raise ValueError(f"w must end in ({bands.size}, {Nt}); got {w.shape}")
     validate_finite(w, "inverse_bands: w")
     ell = _band_windows(bands, k0, n_bins, Nt)
-    rdtype, cdtype = _working_dtypes(w)
     phi = sample_window(window, Nf, Nt, dt)
     phase = _band_phase(bands, Nt, phi)
-    V = phi.astype(rdtype) * np.fft.fft(np.conj(phase).astype(cdtype) * w, axis=-1) / Nt
-    out = np.zeros((*w.shape[:-2], n_bins), dtype=cdtype)
+    V = phi * np.fft.fft(np.conj(phase) * w, axis=-1) / Nt
+    out = np.zeros((*w.shape[:-2], n_bins), dtype=complex)
     for b in range(bands.size):
         np.add.at(out, (..., ell[b]), V[..., b, :])
     # rfft units: N / (2 dt) times the adjoint of forward_bands' sqrt(2 dt / N).
-    out = out * rdtype.type(np.sqrt(n_samples(Nf, Nt) / (2.0 * dt)))
-    _check_single_output(out, "inverse_bands")
-    return out
+    return out * np.sqrt(n_samples(Nf, Nt) / (2.0 * dt))

@@ -20,8 +20,8 @@ import domainia.wilson.noise as noise
 import domainia.wilson.stationary as stat
 
 GRIDS = [(4, 8, 1.0), (8, 16, 0.5), (8, 32, 1.7), (16, 32, 2.0**-10)]
-#: max|got - ref| over max|ref| against the omega-era oracle, by working precision.
-RTOL64, RTOL32 = 1e-14, 2e-6
+#: max|got - ref| over max|ref| against the omega-era oracle.
+RTOL64 = 1e-14
 TWO_PI = 2.0 * np.pi
 
 
@@ -40,10 +40,6 @@ def _psd(f):
     return 1.0 + 0.3 / (np.abs(f) + 0.05) ** 2 + 5.0 * f**2
 
 
-def _psd32(f):
-    return _psd(f).astype(np.float32)
-
-
 def _psd_ft(f, t):
     return np.outer(_psd(f), 1.0 + 0.1 * np.asarray(t) / (1.0 + np.max(t)))
 
@@ -58,23 +54,21 @@ def test_dropped_and_renamed_names():
 
 
 @pytest.mark.parametrize("grid", GRIDS)
-@pytest.mark.parametrize("psd", [_psd, _psd32])
-def test_variance_builders_are_the_oracle_to_rounding(grid, psd):
+def test_variance_builders_are_the_oracle_to_rounding(grid):
     """band_averaged_variance (a phi^2-weighted average) to rounding; the rest do not
     touch the window and are still the oracle bit for bit."""
     Nf, Nt, dt = grid
-    got = noise.whittle_variance(Nf, Nt, dt, psd)
-    ref = onoise.whittle_variance(Nf, Nt, dt, psd)
+    got = noise.whittle_variance(Nf, Nt, dt, _psd)
+    ref = onoise.whittle_variance(Nf, Nt, dt, _psd)
     assert got.dtype == ref.dtype and np.array_equal(got, ref)
-    got = noise.band_averaged_variance(Nf, Nt, dt, psd)
-    ref = onoise.band_averaged_variance(Nf, Nt, dt, psd)
+    got = noise.band_averaged_variance(Nf, Nt, dt, _psd)
+    ref = onoise.band_averaged_variance(Nf, Nt, dt, _psd)
     assert got.dtype == ref.dtype
-    # Hz window (v0.12.0): measured 4.8e-16 (float64 PSD), 3.0e-7 (float32 PSD)
-    assert _gap(got, ref) <= (RTOL32 if got.dtype == np.float32 else RTOL64)
+    assert _gap(got, ref) <= RTOL64          # Hz window (v0.12.0): measured 4.8e-16
     assert np.array_equal(noise.evolutionary_variance(Nf, Nt, dt, _psd_ft),
                           onoise.evolutionary_variance(Nf, Nt, dt, _psd_ft))
-    band = noise.evaluate_psd_on_band_grid(Nf, dt, psd)
-    assert np.array_equal(band, onoise.evaluate_psd_on_band_grid(Nf, dt, psd))
+    band = noise.evaluate_psd_on_band_grid(Nf, dt, _psd)
+    assert np.array_equal(band, onoise.evaluate_psd_on_band_grid(Nf, dt, _psd))
     assert np.array_equal(noise.whittle_variance_from_array(Nt, band),
                           onoise.whittle_variance_from_array(Nt, band))
 
