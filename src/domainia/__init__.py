@@ -9,12 +9,15 @@ Modules
   ``SampledWindow``).
 * :func:`transform`: data arrays, with any leading axes, between time, frequency and WDM
   (:mod:`domainia._transform`).
+* :func:`frequency_covariance`: a stationary K x K noise model as its covariance per rfft bin
+  (:mod:`domainia._covariance`).
 * Not imported here: :mod:`domainia.testing` (dense oracles and test windows).
 """
 
 from __future__ import annotations
 
 from . import wilson
+from ._covariance import frequency_covariance
 from ._transform import transform
 from .wilson import MEYER, Grid, Meyer, RampWindow, SampledWindow, Window, WindowError
 
@@ -29,6 +32,7 @@ __all__ = [
     "Window",
     "WindowError",
     "__version__",
+    "frequency_covariance",
     "transform",
     "wilson",
 ]
