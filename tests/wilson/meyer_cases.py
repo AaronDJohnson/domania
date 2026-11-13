@@ -116,20 +116,22 @@ def wilson_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
     chi = np.hanning(N)
     # Fixed WDM-domain inputs, computed once with the default (Meyer) window.
     w = wl.forward(xr, Nf, Nt, dt)
-    Wm = np.stack([wl.forward(r, Nf, Nt, dt) for r in Xr])
+    Wm = wl.forward(Xr, Nf, Nt, dt)
     mask = wl.active_mask(Nf, Nt)
     Tr, M, St, No, E = wl.transform, wl.matrix, wl.stationary, wl.noise, wl.evolutionary
     K0 = St.build_K_full_active(Nf, Nt, dt, psd)[0]
     B0 = St.build_lambda_blocks_full_active(Nf, Nt, dt, psd)
     cases: list[Case] = [
         ("transform.forward", lambda kw: Tr.forward(xr, Nf, Nt, dt, **kw)),
-        ("transform.forward_many", lambda kw: Tr.forward_many(Xr, Nf, Nt, dt, **kw)),
+        # The stacks (Xr, X, Wm) keep the recorded names of the batched entry points that
+        # the kernels' leading axes replaced.
+        ("transform.forward_many", lambda kw: Tr.forward(Xr, Nf, Nt, dt, **kw)),
         ("transform.forward_time", lambda kw: Tr.forward_time(x, Nf, Nt, dt, **kw)),
-        ("transform.forward_time_many", lambda kw: Tr.forward_time_many(X, Nf, Nt, dt, **kw)),
+        ("transform.forward_time_many", lambda kw: Tr.forward_time(X, Nf, Nt, dt, **kw)),
         ("transform.inverse", lambda kw: Tr.inverse(w, Nf, Nt, dt, **kw)),
-        ("transform.inverse_many", lambda kw: Tr.inverse_many(Wm, Nf, Nt, dt, **kw)),
+        ("transform.inverse_many", lambda kw: Tr.inverse(Wm, Nf, Nt, dt, **kw)),
         ("transform.inverse_time", lambda kw: Tr.inverse_time(w, Nf, Nt, dt, **kw)),
-        ("transform.inverse_time_many", lambda kw: Tr.inverse_time_many(Wm, Nf, Nt, dt, **kw)),
+        ("transform.inverse_time_many", lambda kw: Tr.inverse_time(Wm, Nf, Nt, dt, **kw)),
         ("transform.base_atom_spectra", lambda kw: Tr.base_atom_spectra(Nf, Nt, dt, **kw)),
         ("transform.atom_spectrum", lambda kw: [Tr.atom_spectrum(m, n, Nf, Nt, dt, **kw)
                                                 for m, n in ((1, 3), (0, 2), (Nf, 2))]),

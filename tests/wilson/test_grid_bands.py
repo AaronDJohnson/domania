@@ -1,4 +1,4 @@
-"""Packing helpers, the Hz window, atoms and band-limited analysis."""
+"""Packing helpers, the Hz window and the atoms."""
 
 from __future__ import annotations
 
@@ -23,16 +23,7 @@ from domainia.wilson.grid import (
     unpack,
 )
 from domainia.wilson.matrix import active_W
-from domainia.wilson.transform import (
-    atom_spectrum,
-    band_atoms,
-    base_atom_spectra,
-    forward,
-    forward_bands,
-    forward_time,
-    inverse,
-    inverse_bands,
-)
+from domainia.wilson.transform import atom_spectrum, base_atom_spectra, forward_time
 
 from .conftest import _oracle_paths
 
@@ -182,7 +173,7 @@ def test_atoms_are_the_rows_of_the_transform():
 
 
 def _gb_reference(tmp_path: Path, grids) -> dict:
-    """phi and atoms computed by the frozen galactic-binary code, from a temporary copy."""
+    """phi computed by the frozen galactic-binary code, from a temporary copy."""
     (gb_dir,) = _oracle_paths(GB_SUBDIR)
     copy = tmp_path / "gb"
     copy.mkdir()
@@ -192,14 +183,12 @@ def _gb_reference(tmp_path: Path, grids) -> dict:
     code = (
         "import sys, numpy as np\n"
         "from wdm_atoms import phi_centered\n"
-        "from geometry import band_atoms\n"
         f"grids = {grids!r}\n"
         "res = {}\n"
         "for i, (Nf, Nt, dt) in enumerate(grids):\n"
         "    N = Nt * Nf\n"
         "    phi = phi_centered(Nt, Nf, dt, N * dt)\n"
         "    res[f'phi{i}'] = phi\n"
-        "    res[f'atoms{i}'] = band_atoms(np.array([1, 2, Nf // 2, Nf - 1]), Nt, phi)\n"
         f"np.savez({str(out)!r}, **res)\n"
     )
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", PYTHONPATH=str(copy))
@@ -207,108 +196,10 @@ def _gb_reference(tmp_path: Path, grids) -> dict:
     return dict(np.load(out))
 
 
-def test_window_and_atoms_are_bitwise_the_gb_copies(tmp_path):
+def test_window_is_bitwise_the_gb_copy(tmp_path):
     ref = _gb_reference(tmp_path, ATOM_GRIDS)
     for i, (Nf, Nt, dt) in enumerate(ATOM_GRIDS):
         assert np.array_equal(phi_centered(Nf, Nt, dt), ref[f"phi{i}"])
-        bands = np.array([1, 2, Nf // 2, Nf - 1])
-        assert np.array_equal(band_atoms(bands, Nf, Nt, dt), ref[f"atoms{i}"])
-
-
-@pytest.mark.parametrize("grid", [(8, 16, 1.0), (16, 32, 0.5), (6570, 240, 5.0)])
-def test_forward_bands_is_the_dense_atom_analysis(grid, rng):
-    Nf, Nt, dt = grid
-    bands = np.array([2, 3, 4]) if Nf < 100 else np.array([65, 66, 67])
-    k0 = (bands[0] - 1) * (Nt // 2) - 3
-    n_bins = (bands[-1] + 1) * (Nt // 2) - k0 + 5
-    z = rng.standard_normal((2, n_bins)) + 1j * rng.standard_normal((2, n_bins))
-    atoms = band_atoms(bands, Nf, Nt, dt)
-    # Wilson units: the unit-norm atoms times sqrt(2 dt / N) (band_atoms' docstring)
-    dense = np.sqrt(2.0 * dt / (Nf * Nt)) * np.stack([
-        np.real(np.einsum("ns,...s->...n", atoms[b],
-                          z[..., (m - 1) * (Nt // 2) - k0 + np.arange(Nt)]))
-        for b, m in enumerate(bands)], axis=-2)
-    got = forward_bands(z, k0, bands, Nf, Nt, dt)
-    assert got.shape == (2, bands.size, Nt)
-    assert np.max(np.abs(got - dense)) <= 1e-12 * np.max(np.abs(dense))
-
-
-#: The Meyer baseline's grids and dt (tests/wilson/meyer_cases.py GRIDS x DTS).
-BASELINE_GRIDS = [(Nf, Nt, dt) for Nf, Nt in ((8, 16), (16, 32), (32, 8)) for dt in (1.0, 0.25)]
-
-
-@pytest.mark.parametrize("grid", BASELINE_GRIDS)
-def test_forward_bands_is_the_transform_on_the_bands(grid, rng):
-    """On a whole record (z = rfft(x)) the cells of any interior bands are the Wilson
-    coefficients forward(z)[bands] (Wilson units)."""
-    Nf, Nt, dt = grid
-    N = Nf * Nt
-    x = rng.standard_normal(N)
-    z = np.fft.rfft(x)
-    for bands in (np.arange(1, Nf), np.array([1, Nf // 2, Nf - 1])):
-        cells = forward_bands(z, 0, bands, Nf, Nt, dt)
-        want = forward(z, Nf, Nt, dt)[bands]
-        assert np.max(np.abs(cells - want)) <= 1e-12 * np.max(np.abs(want))
-        np.testing.assert_allclose(want, forward_time(x, Nf, Nt, dt)[bands], rtol=0,
-                                   atol=1e-13 * np.max(np.abs(want)))
-
-
-@pytest.mark.parametrize("grid", BASELINE_GRIDS)
-def test_inverse_bands_is_the_inverse_on_its_bins(grid, rng):
-    """inverse_bands(w) is inverse(w_full) on the bins [k0, k0 + n_bins), w_full the dense grid
-    holding w on the bands and 0 elsewhere."""
-    Nf, Nt, dt = grid
-    N = Nf * Nt
-    for bands, k0, n_bins in ((np.arange(1, Nf), 0, N // 2 + 1),                 # every bin
-                              (np.arange(2, Nf - 1), Nt // 2 - 1, N // 2 - Nt // 2)):  # a sub-range
-        w = rng.standard_normal((bands.size, Nt))
-        w_full = np.zeros((Nf + 1, Nt))
-        w_full[bands] = w
-        want = inverse(w_full, Nf, Nt, dt)
-        got = inverse_bands(w, k0, n_bins, bands, Nf, Nt, dt)
-        assert np.max(np.abs(got - want[k0:k0 + n_bins])) <= 1e-12 * np.max(np.abs(want))
-
-
-def test_inverse_bands_is_the_adjoint(rng):
-    """sum(forward_bands(z) w) = (2 dt / N) Re<z, inverse_bands(w)>: inverse_bands is
-    N / (2 dt) times the adjoint."""
-    Nf, Nt, dt = 16, 32, 0.5
-    N = Nf * Nt
-    bands = np.array([3, 4, 5, 6])
-    k0, n_bins = 20, 120
-    z = rng.standard_normal(n_bins) + 1j * rng.standard_normal(n_bins)
-    w = rng.standard_normal((bands.size, Nt))
-    lhs = np.sum(forward_bands(z, k0, bands, Nf, Nt, dt) * w)
-    rhs = (2.0 * dt / N) * np.real(np.sum(np.conj(z) * inverse_bands(w, k0, n_bins, bands, Nf,
-                                                                      Nt, dt)))
-    assert np.isclose(lhs, rhs, rtol=1e-12, atol=0)
-    with pytest.raises(ValueError, match="do not cover"):
-        forward_bands(z, k0 + 100, bands, Nf, Nt, dt)
-    with pytest.raises(ValueError, match="interior bands"):
-        band_atoms([0, 1], Nf, Nt, dt)
-
-
-def test_forward_bands_rejects_non_finite_bins():
-    Nf, Nt, dt = 8, 16, 1.0
-    bands = np.array([2, 3])
-    z = np.ones(40, complex)
-    z[10] = np.nan
-    with pytest.raises(ValueError, match="forward_bands: z: .* not finite"):
-        forward_bands(z, 0, bands, Nf, Nt, dt)
-    z[10] = np.inf
-    with pytest.raises(ValueError, match="forward_bands: z: .* not finite"):
-        forward_bands(z, 0, bands, Nf, Nt, dt)
-
-
-def test_inverse_bands_rejects_complex_and_non_finite_cells():
-    Nf, Nt, dt = 8, 16, 1.0
-    bands = np.array([2, 3])
-    w = np.ones((bands.size, Nt))
-    with pytest.raises(TypeError, match="w must be a real numeric array, got dtype complex128"):
-        inverse_bands(w + 1j, 0, 40, bands, Nf, Nt, dt)
-    w[1, 4] = np.nan
-    with pytest.raises(ValueError, match="inverse_bands: w: .* not finite"):
-        inverse_bands(w, 0, 40, bands, Nf, Nt, dt)
 
 
 def test_atom_spectrum_rejects_out_of_range_n_and_foreign_base():

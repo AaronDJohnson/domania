@@ -32,9 +32,8 @@ MEYER_HELPERS = frozenset({"phi_centered", "phi_fft_order"})
 
 #: Every function that samples the window, directly or through another consumer.
 CONSUMERS = frozenset({
-    "_gather_bands", "forward", "forward_many", "forward_time", "forward_time_many", "inverse",
-    "inverse_many", "inverse_time", "inverse_time_many", "base_atom_spectra", "atom_spectrum",
-    "band_atoms", "forward_bands", "inverse_bands",
+    "_gather_bands", "forward", "forward_time", "inverse", "inverse_time", "base_atom_spectra",
+    "atom_spectrum",
     "build_W", "active_W", "build_C_wdm", "build_C_wdm_active",
     "_slab_K", "build_lambda_blocks_full_active", "build_K_full_active", "psd_from_K",
     "apply_lambda_from_psd", "psd_from_lambda_blocks", "_forward", "_inverse", "_forward_wdm",
@@ -229,7 +228,7 @@ def test_the_scan_covers_every_module_but_filter_and_windows():
     ("forward(x, Nf, Nt, dt, window=SampledWindow(fn, 's'))", True),
     ("forward(x, Nf, Nt, dt, window='meyer')", True),
     ("forward(x, Nf, Nt, dt, window=None)", True),
-    ("inverse_many(e, Nf, Nt, dt, window=window if a == 0 else MEYER)", True),
+    ("inverse(e, Nf, Nt, dt, window=window if a == 0 else MEYER)", True),
     ("sample_window(MEYER, Nf, Nt, dt)", True),
     ("sample_window(window=wilson.MEYER, Nf=Nf, Nt=Nt, dt=dt)", True),
     ("window.sample(Nf, Nt, dt)", True),
@@ -340,7 +339,7 @@ def test_time_round_trip_and_energy(window, Nf, Nt, dt):
     w = wilson.forward_time(x, Nf, Nt, dt, window=window)
     np.testing.assert_allclose(wilson.inverse_time(w, Nf, Nt, dt, window=window), x, rtol=0, atol=1e-12)
     assert float(np.sum(w ** 2)) == pytest.approx(dt * float(np.sum(x ** 2)), rel=1e-12)
-    many = wilson.forward_time_many(np.stack([x, -x]), Nf, Nt, dt, window=window)
+    many = wilson.forward_time(np.stack([x, -x]), Nf, Nt, dt, window=window)
     np.testing.assert_allclose(many[0], w, rtol=0, atol=1e-13 * float(np.max(np.abs(w))))
 
 
@@ -393,16 +392,6 @@ def test_build_W_is_the_impulse_response(window, Nf, Nt, dt):
 
 @pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
 @pytest.mark.parametrize("Nf, Nt, dt", GRIDS)
-def test_batched_inverse_is_the_per_row_inverse_and_round_trips(window, Nf, Nt, dt):
-    X = np.random.default_rng(Nf * Nt + Nf).standard_normal((3, Nf * Nt))
-    Wm = wilson.forward_time_many(X, Nf, Nt, dt, window=window)
-    rows = np.stack([wilson.inverse(w, Nf, Nt, dt, window=window) for w in Wm])
-    _close(wilson.inverse_many(Wm, Nf, Nt, dt, window=window), rows, RTOL, "inverse_many")
-    _close(wilson.inverse_time_many(Wm, Nf, Nt, dt, window=window), X, RTOL, "inverse_time_many")
-
-
-@pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
-@pytest.mark.parametrize("Nf, Nt, dt", GRIDS)
 def test_atom_spectra_are_the_rfft_of_the_rows_of_W(window, Nf, Nt, dt):
     """Every active cell from one ``base`` (``base=``), and three cells -- an interior one and
     one in each edge band -- built from ``window=`` alone (``atom_spectrum``'s own
@@ -417,40 +406,6 @@ def test_atom_spectra_are_the_rfft_of_the_rows_of_W(window, Nf, Nt, dt):
     for m, n in ((1, 3), (0, 2), (Nf, 2)):
         _close(T.atom_spectrum(m, n, Nf, Nt, dt, window=window), np.fft.rfft(W[m * Nt + n]),
                RTOL_ATOM, f"atom_spectrum({m}, {n})")
-
-
-@pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
-@pytest.mark.parametrize("Nf, Nt, dt", GRIDS)
-def test_forward_bands_matches_its_atoms_and_forward(window, Nf, Nt, dt):
-    """``forward_bands`` (one IFFT per band) == ``sqrt(2 dt / N) Re(band_atoms @ z[window])``
-    (dense, unit-norm atoms) == ``forward(z)[bands]`` (Wilson coefficients)."""
-    N = Nf * Nt
-    bands = np.arange(1, Nf)
-    z = np.fft.rfft(np.random.default_rng(N + Nf + 1).standard_normal(N))
-    fb = T.forward_bands(z, 0, bands, Nf, Nt, dt, window=window)
-    ell = (bands[:, None] - 1) * (Nt // 2) + np.arange(Nt)[None, :]
-    atoms = T.band_atoms(bands, Nf, Nt, dt, window=window)
-    _close(fb, np.sqrt(2.0 * dt / N) * np.real(np.einsum("bns,bs->bn", atoms, z[ell])), RTOL,
-           "sqrt(2 dt / N) Re(band_atoms @ z)")
-    _close(fb, wilson.forward(z, Nf, Nt, dt, window=window)[bands], RTOL, "forward(z)[bands]")
-
-
-@pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
-@pytest.mark.parametrize("Nf, Nt, dt", GRIDS)
-def test_inverse_bands_is_the_adjoint_of_forward_bands(window, Nf, Nt, dt):
-    """``<forward_bands(z), w> == (2 dt / N) Re <z, inverse_bands(w)>``, to rounding of the
-    Cauchy--Schwarz bound ``|forward_bands(z)| |w|``."""
-    N = Nf * Nt
-    n_bins = N // 2 + 1
-    rng = np.random.default_rng(N + Nf + 2)
-    bands = np.arange(1, Nf)
-    z = rng.standard_normal(n_bins) + 1j * rng.standard_normal(n_bins)
-    w = rng.standard_normal((bands.size, Nt))
-    fz = T.forward_bands(z, 0, bands, Nf, Nt, dt, window=window)
-    lhs = float(np.sum(fz * w))
-    back = T.inverse_bands(w, 0, n_bins, bands, Nf, Nt, dt, window=window)
-    rhs = (2.0 * dt / N) * float(np.real(np.vdot(z, back)))
-    assert abs(lhs - rhs) <= RTOL * float(np.linalg.norm(fz) * np.linalg.norm(w))
 
 
 # ---------------------------------------------------------------------------

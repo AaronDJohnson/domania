@@ -125,8 +125,6 @@ def test_eq45_plan_P_range_and_numpy_int():
 
 _T = wilson.transform
 _Z = np.fft.rfft(np.random.default_rng(0).standard_normal(128))     # rfft bins of an 8 x 16 grid
-_BANDS = np.array([2, 3])
-_W_BANDS = _T.forward_bands(_Z, 0, _BANDS, 8, 16, 1.0)
 _W = wilson.forward_time(np.random.default_rng(1).standard_normal(128), 8, 16, 1.0)
 
 
@@ -137,9 +135,6 @@ def _exact(message):
 
 #: Integer slots: the call taking the slot's value, and a value it accepts.
 _INT_SLOTS = {
-    "forward_bands k0": (lambda v: _T.forward_bands(_Z, v, _BANDS, 8, 16, 1.0), 0),
-    "inverse_bands k0": (lambda v: _T.inverse_bands(_W_BANDS, v, 65, _BANDS, 8, 16, 1.0), 0),
-    "inverse_bands n_bins": (lambda v: _T.inverse_bands(_W_BANDS, 0, v, _BANDS, 8, 16, 1.0), 65),
     "atom_spectrum m": (lambda v: _T.atom_spectrum(v, 3, 8, 16, 1.0), 2),
     "atom_spectrum n": (lambda v: _T.atom_spectrum(2, v, 8, 16, 1.0), 3),
     "carrier_phase m": (lambda v: wilson.grid.carrier_phase(v, 4), 1),
@@ -156,8 +151,8 @@ _INT_SLOTS = {
 ], ids=["float", "np.float64", "bool", "np.bool_", "str", "None"])
 @pytest.mark.parametrize("slot", list(_INT_SLOTS))
 def test_integer_slots_of_the_wrong_kind_raise_type_error(slot, value, kind):
-    """``int()``, ``range()`` or a parity test took these silently (``k0="0"`` and
-    ``carrier_phase(2.5, 4)`` ran), or ``True`` passed as 1."""
+    """``int()``, ``range()`` or a parity test took these silently (``carrier_phase(2.5, 4)``
+    ran), or ``True`` passed as 1."""
     call, _ = _INT_SLOTS[slot]
     with pytest.raises(TypeError, match=_exact(f"{slot.split()[-1]} must be an integer, got {kind}")):
         call(value)
@@ -170,51 +165,12 @@ def test_integer_slots_take_a_numpy_integer(slot):
 
 
 @pytest.mark.parametrize(("call", "match"), [
-    (lambda: _T.forward_bands(_Z, 50, _BANDS, 8, 16, 1.0), r"^the bins \[50, 115\) do not cover"),
-    (lambda: _T.inverse_bands(_W_BANDS, 0, 20, _BANDS, 8, 16, 1.0), r"^the bins \[0, 20\) do not cover"),
     (lambda: _T.atom_spectrum(2, 16, 8, 16, 1.0), r"^n must lie in 0\.\.15"),
     (lambda: wilson.empirical_variance(8, 16, 1.0, np.ones_like, 0), "^n_realizations must be >= 1, got 0"),
-], ids=["forward_bands k0", "inverse_bands n_bins", "atom_spectrum n", "empirical_variance"])
+], ids=["atom_spectrum n", "empirical_variance"])
 def test_integer_slots_out_of_range_stay_value_errors(call, match):
     with pytest.raises(ValueError, match=match):
         call()
-
-
-#: The three kernels that take a band list, through ``_check_interior_bands``.
-_BAND_SLOTS = {
-    "band_atoms": lambda b: _T.band_atoms(b, 8, 16, 1.0),
-    "forward_bands": lambda b: _T.forward_bands(_Z, 0, b, 8, 16, 1.0),
-    "inverse_bands": lambda b: _T.inverse_bands(_W_BANDS, 0, 65, b, 8, 16, 1.0),
-}
-
-
-@pytest.mark.parametrize(("bands", "dtype"), [
-    ([True, True], "bool"), (["2", "3"], "<U1"), ([2 + 0j, 3 + 0j], "complex128"),
-    (np.array([2, 3], object), "object"),
-], ids=["bool", "str", "complex", "object"])
-@pytest.mark.parametrize("entry", list(_BAND_SLOTS))
-def test_bands_of_the_wrong_dtype_raise_type_error(entry, bands, dtype):
-    """``np.asarray(bands, dtype=int)`` took ``[True, True]`` as band 1 and parsed ``["2", "3"]``."""
-    with pytest.raises(TypeError, match=_exact(f"bands must be an integer index array, got dtype {dtype}")):
-        _BAND_SLOTS[entry](bands)
-
-
-@pytest.mark.parametrize(("bands", "first"), [([2.5, 3.0], "2.5"), ([2.0, np.nan], "nan")],
-                         ids=["2.5", "nan"])
-@pytest.mark.parametrize("entry", list(_BAND_SLOTS))
-def test_bands_of_non_integral_floats_raise_value_error(entry, bands, first):
-    """``[2.5, 3.0]`` used to be truncated to bands 2 and 3 silently."""
-    with pytest.raises(ValueError, match=_exact(f"bands must hold integer indices, got {first}")):
-        _BAND_SLOTS[entry](bands)
-
-
-@pytest.mark.parametrize("entry", list(_BAND_SLOTS))
-def test_bands_take_integer_and_integral_float_arrays(entry):
-    want = np.asarray(_BAND_SLOTS[entry](_BANDS))
-    for bands in ([2, 3], np.array([2, 3], np.int64), np.array([2.0, 3.0]), [np.float64(2), np.float64(3)]):
-        assert np.array_equal(np.asarray(_BAND_SLOTS[entry](bands)), want)
-    with pytest.raises(ValueError, match=r"^bands must be interior bands 1\.\.7; got \[0, 3\]$"):
-        _BAND_SLOTS[entry]([0, 3])
 
 
 @pytest.mark.parametrize(("t_max", "kind"), [
@@ -245,10 +201,7 @@ def test_eq45_plan_keep_message_names_the_dtype():
 #: the message.
 _REAL_ARRAYS = {
     "inverse wmn": (lambda a: wilson.inverse(a, 8, 16, 1.0), _W, "wmn"),
-    "inverse_many wmn": (lambda a: wilson.inverse_many(a, 8, 16, 1.0), _W[None], "wmn"),
     "inverse_time wmn": (lambda a: wilson.inverse_time(a, 8, 16, 1.0), _W, "wmn"),
-    "inverse_time_many wmn": (lambda a: wilson.inverse_time_many(a, 8, 16, 1.0), _W[None], "wmn"),
-    "inverse_bands w": (lambda a: _T.inverse_bands(a, 0, 65, _BANDS, 8, 16, 1.0), _W_BANDS, "w"),
     "sanitize_psd": (lambda a: wilson.grid.sanitize_psd(a, "demo"), np.ones(5), "demo: PSD"),
 }
 
@@ -279,10 +232,7 @@ def test_float32_input_is_computed_in_double():
     x = np.fft.irfft(_Z, 128)
     calls = {slot: (call, good) for slot, (call, good, _) in _REAL_ARRAYS.items()} | {
         "forward": (lambda a: wilson.forward(a, 8, 16, 1.0), _Z),
-        "forward_many": (lambda a: wilson.forward_many(a, 8, 16, 1.0), _Z[None]),
         "forward_time": (lambda a: wilson.forward_time(a, 8, 16, 1.0), x),
-        "forward_time_many": (lambda a: wilson.forward_time_many(a, 8, 16, 1.0), x[None]),
-        "forward_bands": (lambda a: _T.forward_bands(a, 0, _BANDS, 8, 16, 1.0), _Z),
     }
     for slot, (call, good) in calls.items():
         low = good.astype(np.complex64 if good.dtype.kind == "c" else np.float32)

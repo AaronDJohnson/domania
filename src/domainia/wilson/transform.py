@@ -71,10 +71,9 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
-from ._checks import REAL_KINDS, index_array, require_dtype, require_int
+from ._checks import REAL_KINDS, require_dtype, require_int
 from .grid import (
     active_mask,
-    carrier_phase,
     n_samples,
     validate_dt,
     validate_finite,
@@ -88,18 +87,11 @@ type CArray = NDArray[np.complexfloating]
 
 __all__ = [
     "atom_spectrum",
-    "band_atoms",
     "base_atom_spectra",
     "forward",
-    "forward_bands",
-    "forward_many",
     "forward_time",
-    "forward_time_many",
     "inverse",
-    "inverse_bands",
-    "inverse_many",
     "inverse_time",
-    "inverse_time_many",
 ]
 
 # ---------------------------------------------------------------------------
@@ -149,11 +141,7 @@ def _build_slab(X_rfft: CArray, m: int, Nf: int, Nt: int) -> CArray:
 
     **Shape-generic in the leading axes.** The slab indices depend only on
     ``(m, Nf, Nt)``, never on the data, so a stack of spectra gathers with the
-    same index arrays under ``...`` indexing.  :func:`forward_many` used to
-    call this once per row inside a list comprehension and ``np.stack`` the
-    results -- which left the two edge bands unbatched and cost **85% of
-    ``forward_many``'s runtime** at ``Nf=8, Nt=16, B=512``, the small-grid
-    many-series case the batched path exists for.
+    same index arrays under ``...`` indexing.
 
     Parameters
     ----------
@@ -197,8 +185,7 @@ def _prepare_edges_for_inverse(wmn: Array, Nf: int, Nt: int) -> Array:
     band, allocating the whole $(N_f+1)\\times N_t$ boolean array each time to
     read a single row -- 5.1% of ``inverse`` at $N_f=64$, $N_t=128$.
 
-    Shape-generic in the leading axes, so :func:`inverse` and
-    :func:`inverse_many` share it.
+    Shape-generic in the leading axes.
     """
     work = wmn.astype(np.float64)      # always a fresh copy, so updating it in place is safe
     mask = active_mask(Nf, Nt)
@@ -223,9 +210,8 @@ def _scatter_interior_bands(
     is exact and much cheaper than ``np.add.at``; consecutive bands overlap by
     $N_t/2$, which the sequential loop handles correctly.
 
-    Shape-generic in the leading axes: ``X`` may be ``(N//2+1,)`` or
-    ``(B, N//2+1)`` and ``wmn_work`` correspondingly, so :func:`inverse` and
-    :func:`inverse_many` run the same code and cannot drift apart.
+    Shape-generic in the leading axes: ``X`` is ``(..., N//2+1)`` and ``wmn_work``
+    ``(..., Nf+1, Nt)``.
 
     There is no ``Nf < 2`` guard because there is no such grid:
     :func:`domainia.wilson.validate_grid` requires ``Nf`` positive **and** even, so the
@@ -282,9 +268,8 @@ def _gather_bands(x_rfft: CArray, Nf: int, Nt: int, dt: float, *,
                   window: Window = MEYER) -> Array:
     """Coefficient grid(s) from spectra: ``(..., N//2+1) -> (..., Nf+1, Nt)``.
 
-    The whole of the forward algorithm, shape-generic in the leading axes, so
-    :func:`forward` and :func:`forward_many` are thin validation wrappers over
-    one implementation rather than two copies of it.
+    The whole of the forward algorithm, shape-generic in the leading axes;
+    :func:`forward` is a thin validation wrapper over it.
 
     Interior bands $m = 1 \\ldots N_f-1$: every slab index
     $\\ell_{m,k} = k + (m-1)N_t/2$ lies in $[0, N/2]$
@@ -347,9 +332,10 @@ def forward(
 
     Parameters
     ----------
-    x_rfft : ndarray, complex, shape (N//2+1,)
+    x_rfft : ndarray, complex, shape (..., N//2+1)
         One-sided DFT of the real time series, as returned by
-        ``np.fft.rfft(x)`` (no $\\delta t$ scaling).
+        ``np.fft.rfft(x)`` (no $\\delta t$ scaling).  Any leading axes: each
+        slice is transformed on its own, and a stack goes through one batched FFT.
     Nf : int
         Number of frequency bands; $N = N_f N_t$.
     Nt : int
@@ -371,7 +357,7 @@ def forward(
 
     Returns
     -------
-    ndarray, float, shape (Nf+1, Nt)
+    ndarray, float, shape (..., Nf+1, Nt)
         Real WDM coefficients.  Edge bands have $N_t/2$ active values;
         the inactive entries vanish by Hermitian symmetry of the slab,
         realized to floating-point rounding (~1e-16 relative to the
@@ -382,8 +368,8 @@ def forward(
     TypeError
         If ``Nf`` or ``Nt`` is not an integer, or ``dt`` is not a real number.
     ValueError
-        If ``Nf`` or ``Nt`` is not positive and even, if ``x_rfft``
-        does not have length ``N//2 + 1``, or if it holds a ``nan`` or
+        If ``Nf`` or ``Nt`` is not positive and even, if the last axis of
+        ``x_rfft`` does not have length ``N//2 + 1``, or if it holds a ``nan`` or
         ``inf`` (see :func:`domainia.wilson.validate_finite` -- one bad bin would
         otherwise silently make every output coefficient ``nan``).
 
@@ -397,131 +383,22 @@ def forward(
     (9, 16)
     >>> bool(np.isclose(np.sum(w**2), dt * np.sum(x**2)))  # Parseval
     True
+    >>> xs = np.random.default_rng(1).standard_normal((2, 3, Nf * Nt))   # leading axes
+    >>> wilson.forward(np.fft.rfft(xs), Nf, Nt, dt).shape
+    (2, 3, 9, 16)
     """
     validate_grid(Nf, Nt)
     validate_dt(dt)
     N = n_samples(Nf, Nt)
     x_rfft = np.asarray(x_rfft)
-    if x_rfft.shape != (N // 2 + 1,):
+    if x_rfft.shape[-1:] != (N // 2 + 1,):
         raise ValueError(
-            f"x_rfft must have shape ({N // 2 + 1},) for Nf={Nf}, Nt={Nt}; "
+            f"x_rfft must have shape (..., {N // 2 + 1}) for Nf={Nf}, Nt={Nt}; "
             f"got {x_rfft.shape}"
         )
     validate_finite(x_rfft, "forward: x_rfft")
     out = _gather_bands(x_rfft, Nf, Nt, dt, window=window)
     return out
-
-
-def forward_many(
-    x_rfft: CArray,
-    Nf: int,
-    Nt: int,
-    dt: float,
-    *,
-    window: Window = MEYER,
-) -> Array:
-    """Forward-transform a stack of spectra: $(B, N/2+1) \\to (B, N_f+1, N_t)$.
-
-    Same result as looping :func:`forward` over the first axis, but the whole
-    stack goes through **one** batched IFFT and one parity assembly instead of
-    $B$ of each.  The saving is the per-call Python and NumPy-dispatch
-    overhead, which is what dominates for small grids -- exactly the regime of
-    a global fit evaluating many sources on the same grid.
-
-    Bit-identical to the loop, not merely close; :func:`forward` and this
-    function run the same arithmetic in the same order.
-
-    Parameters
-    ----------
-    x_rfft : ndarray, complex, shape (B, N//2+1)
-        Stack of one-sided spectra sharing one grid.
-    Nf, Nt : int
-    dt : float
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
-
-    Returns
-    -------
-    ndarray, float, shape (B, Nf+1, Nt)
-
-    Raises
-    ------
-    ValueError
-        If ``x_rfft`` is not 2-D with second axis ``N//2+1``, or holds a
-        ``nan``/``inf``.
-
-    Examples
-    --------
-    >>> import numpy as np; from domainia import wilson
-    >>> Nf, Nt, dt = 8, 16, 1.0
-    >>> xs = np.random.default_rng(0).standard_normal((5, Nf * Nt))
-    >>> W = wilson.forward_many(np.fft.rfft(xs, axis=-1), Nf, Nt, dt)
-    >>> W.shape
-    (5, 9, 16)
-    >>> bool(np.allclose(W[2], wilson.forward(np.fft.rfft(xs[2]), Nf, Nt, dt)))
-    True
-    """
-    validate_grid(Nf, Nt)
-    validate_dt(dt)
-    N = n_samples(Nf, Nt)
-    x_rfft = np.asarray(x_rfft)
-    if x_rfft.ndim != 2 or x_rfft.shape[1] != N // 2 + 1:
-        raise ValueError(
-            f"x_rfft must have shape (B, {N // 2 + 1}) for Nf={Nf}, Nt={Nt}; "
-            f"got {x_rfft.shape}"
-        )
-    validate_finite(x_rfft, "forward_many: x_rfft")
-    out = _gather_bands(x_rfft, Nf, Nt, dt, window=window)
-    return out
-
-
-def forward_time_many(
-    x: Array,
-    Nf: int,
-    Nt: int,
-    dt: float,
-    *,
-    window: Window = MEYER,
-) -> Array:
-    """Convenience wrapper: a stack of time series $(B, N) \\to (B, N_f+1, N_t)$.
-
-    Equivalent to ``forward_many(np.fft.rfft(x, axis=-1), ...)``.
-
-    Parameters
-    ----------
-    x : ndarray, float, shape (B, N)
-    Nf, Nt : int
-    dt : float
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
-
-    Returns
-    -------
-    ndarray, float, shape (B, Nf+1, Nt)
-
-    Examples
-    --------
-    >>> import numpy as np; from domainia import wilson
-    >>> Nf, Nt, dt = 8, 16, 1.0
-    >>> xs = np.random.default_rng(0).standard_normal((4, Nf * Nt))
-    >>> wilson.forward_time_many(xs, Nf, Nt, dt).shape
-    (4, 9, 16)
-    """
-    validate_grid(Nf, Nt)
-    x = np.asarray(x)
-    expected = n_samples(Nf, Nt)
-    if x.ndim != 2 or x.shape[1] != expected:
-        raise ValueError(
-            f"x must have shape (B, {expected}) = (B, Nf*Nt) for Nf={Nf}, "
-            f"Nt={Nt}; got {x.shape}"
-        )
-    validate_finite(x, "forward_time_many: x")
-    # At least double before the rfft, which keeps a lower-precision float's precision.
-    # A complex x stays complex, and the rfft refuses it.
-    x_rfft = np.fft.rfft(x.astype(np.result_type(x, np.float64), copy=False), axis=-1)
-    return forward_many(x_rfft, Nf, Nt, dt, window=window)
 
 
 def inverse(
@@ -542,8 +419,8 @@ def inverse(
 
     Parameters
     ----------
-    wmn : ndarray, float, shape (Nf+1, Nt)
-        WDM coefficient grid.
+    wmn : ndarray, float, shape (..., Nf+1, Nt)
+        WDM coefficient grid, with any leading axes.
     Nf, Nt : int
         Frequency and time bin counts.
     dt : float
@@ -554,7 +431,7 @@ def inverse(
 
     Returns
     -------
-    ndarray, complex, shape (N//2+1,)
+    ndarray, complex, shape (..., N//2+1)
         Reconstructed one-sided DFT (compatible with ``np.fft.irfft``).
 
     Raises
@@ -585,117 +462,18 @@ def inverse(
     wmn = np.asarray(wmn)
     # A complex grid would have its imaginary part silently discarded.
     require_dtype("wmn", wmn, REAL_KINDS, "a real numeric array")
-    if wmn.shape != (Nf + 1, Nt):
-        raise ValueError(f"wmn must have shape ({Nf + 1}, {Nt}); got {wmn.shape}")
+    if wmn.shape[-2:] != (Nf + 1, Nt):
+        raise ValueError(f"wmn must have shape (..., {Nf + 1}, {Nt}); got {wmn.shape}")
     validate_finite(wmn, "inverse: wmn")
 
     phi_c = sample_window(window, Nf, Nt, dt)
     wmn_work = _prepare_edges_for_inverse(wmn, Nf, Nt)
 
     lam = 1.0 / (np.sqrt(2.0) * dt)
-    X = np.zeros(N // 2 + 1, dtype=complex)
+    X = np.zeros((*wmn.shape[:-2], N // 2 + 1), dtype=complex)
     X = _scatter_interior_bands(X, wmn_work, Nf, Nt, phi_c, lam)
     X = _scatter_edge_bands(X, wmn_work, Nf, Nt, N, phi_c, lam)
     return X
-
-
-def inverse_many(
-    wmn: Array,
-    Nf: int,
-    Nt: int,
-    dt: float,
-    *,
-    window: Window = MEYER,
-) -> CArray:
-    """Inverse-transform a stack: $(B, N_f+1, N_t) \\to (B, N/2+1)$.
-
-    The batched counterpart of :func:`inverse`, and the return leg of
-    :func:`forward_many`.  Shares every helper with the unbatched form -- the
-    scatter routines are generic in the leading axes -- so the two cannot
-    drift apart.  Bit-identical to looping :func:`inverse`.
-
-    Parameters
-    ----------
-    wmn : ndarray, float, shape (B, Nf+1, Nt)
-    Nf, Nt : int
-    dt : float
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
-
-    Returns
-    -------
-    ndarray, complex, shape (B, N//2+1)
-
-    Examples
-    --------
-    >>> import numpy as np; from domainia import wilson
-    >>> Nf, Nt, dt = 8, 16, 1.0
-    >>> xs = np.random.default_rng(0).standard_normal((4, Nf * Nt))
-    >>> W = wilson.forward_time_many(xs, Nf, Nt, dt)
-    >>> wilson.inverse_many(W, Nf, Nt, dt).shape
-    (4, 65)
-    """
-    validate_grid(Nf, Nt)
-    validate_dt(dt)
-    N = n_samples(Nf, Nt)
-    wmn = np.asarray(wmn)
-    # A complex grid would have its imaginary part silently discarded.
-    require_dtype("wmn", wmn, REAL_KINDS, "a real numeric array")
-    if wmn.ndim != 3 or wmn.shape[1:] != (Nf + 1, Nt):
-        raise ValueError(
-            f"wmn must have shape (B, {Nf + 1}, {Nt}) for Nf={Nf}, Nt={Nt}; "
-            f"got {wmn.shape}"
-        )
-    validate_finite(wmn, "inverse_many: wmn")
-
-    phi_c = sample_window(window, Nf, Nt, dt)
-    wmn_work = _prepare_edges_for_inverse(wmn, Nf, Nt)
-
-    lam = 1.0 / (np.sqrt(2.0) * dt)
-    X = np.zeros((wmn.shape[0], N // 2 + 1), dtype=complex)
-    X = _scatter_interior_bands(X, wmn_work, Nf, Nt, phi_c, lam)
-    X = _scatter_edge_bands(X, wmn_work, Nf, Nt, N, phi_c, lam)
-    return X
-
-
-def inverse_time_many(
-    wmn: Array,
-    Nf: int,
-    Nt: int,
-    dt: float,
-    *,
-    window: Window = MEYER,
-) -> Array:
-    """Convenience wrapper: $(B, N_f+1, N_t) \\to$ a stack of series $(B, N)$.
-
-    Equivalent to ``np.fft.irfft(inverse_many(wmn, ...), n=N, axis=-1)``.
-
-    Parameters
-    ----------
-    wmn : ndarray, float, shape (B, Nf+1, Nt)
-    Nf, Nt : int
-    dt : float
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
-
-    Returns
-    -------
-    ndarray, float, shape (B, N)
-
-    Examples
-    --------
-    >>> import numpy as np; from domainia import wilson
-    >>> Nf, Nt, dt = 8, 16, 1.0
-    >>> xs = np.random.default_rng(0).standard_normal((4, Nf * Nt))
-    >>> W = wilson.forward_time_many(xs, Nf, Nt, dt)
-    >>> bool(np.allclose(wilson.inverse_time_many(W, Nf, Nt, dt), xs, atol=1e-12))
-    True
-    """
-    N = n_samples(Nf, Nt)
-    x = np.fft.irfft(inverse_many(wmn, Nf, Nt, dt, window=window), n=N, axis=-1)
-    return x
 
 
 def forward_time(
@@ -712,8 +490,8 @@ def forward_time(
 
     Parameters
     ----------
-    x : ndarray, float, shape (N,)
-        Real time series with $N = N_f N_t$ samples.
+    x : ndarray, float, shape (..., N)
+        Real time series with $N = N_f N_t$ samples, with any leading axes.
     Nf, Nt : int
     dt : float
     window : Window, optional
@@ -722,15 +500,15 @@ def forward_time(
 
     Returns
     -------
-    ndarray, float, shape (Nf+1, Nt)
+    ndarray, float, shape (..., Nf+1, Nt)
 
     Raises
     ------
     TypeError
         If ``Nf`` or ``Nt`` is not an integer, or ``dt`` is not a real number.
     ValueError
-        If the grid is invalid, if ``x`` does not have ``Nf*Nt`` samples, or
-        if it holds a ``nan`` or ``inf``.  Gapped detector data often arrives
+        If the grid is invalid, if the last axis of ``x`` does not have ``Nf*Nt``
+        samples, or if it holds a ``nan`` or ``inf``.  Gapped detector data often arrives
         ``nan``-filled; see :func:`domainia.wilson.validate_finite` for why that has to
         be an error rather than something to propagate.
 
@@ -749,9 +527,9 @@ def forward_time(
     validate_grid(Nf, Nt)
     x = np.asarray(x)
     expected = n_samples(Nf, Nt)
-    if x.shape != (expected,):
+    if x.shape[-1:] != (expected,):
         raise ValueError(
-            f"x must have shape ({expected},) = (Nf*Nt,) for Nf={Nf}, Nt={Nt}; "
+            f"x must have shape (..., {expected}) = (..., Nf*Nt) for Nf={Nf}, Nt={Nt}; "
             f"got {x.shape}"
         )
     # Check here rather than only on the rfft: reporting "index 5 of x" beats
@@ -777,7 +555,7 @@ def inverse_time(
 
     Parameters
     ----------
-    wmn : ndarray, float, shape (Nf+1, Nt)
+    wmn : ndarray, float, shape (..., Nf+1, Nt)
     Nf, Nt : int
     dt : float
     window : Window, optional
@@ -786,7 +564,7 @@ def inverse_time(
 
     Returns
     -------
-    ndarray, float, shape (N,)
+    ndarray, float, shape (..., N)
 
     Examples
     --------
@@ -808,7 +586,7 @@ def inverse_time(
 
 
 # ---------------------------------------------------------------------------
-# Atoms and band-limited analysis
+# Atoms
 # ---------------------------------------------------------------------------
 
 
@@ -817,11 +595,10 @@ def base_atom_spectra(Nf: int, Nt: int, dt: float, *,
     """rfft of the atoms of the cells ``(m, a)``, ``a in {0, 1}`` (active only).
 
     Every other atom of band ``m`` is a circular shift of one of these by an
-    even number of columns (:func:`atom_spectrum`).  ``dt * inverse_many(e)``:
+    even number of columns (:func:`atom_spectrum`).  ``dt * inverse(e)``:
     :func:`inverse` returns ``rfft(W_a^{-1} e) = rfft(atom) / dt``.  With the default
     window (:data:`domainia.wilson.MEYER`) these spectra and the Eq. 45 constants built from
-    them are bit-identical to the Meyer baseline (pinned by
-    ``tests/wilson/test_meyer_baseline.py``).
+    them are the Meyer baseline's (``tests/wilson/test_meyer_baseline.py``).
 
     Parameters
     ----------
@@ -841,7 +618,7 @@ def base_atom_spectra(Nf: int, Nt: int, dt: float, *,
                 continue
             e = np.zeros((Nf + 1, Nt))
             e[m, a] = 1.0
-            out[m, a] = dt * inverse_many(e[None], Nf, Nt, dt, window=window)[0]
+            out[m, a] = dt * inverse(e, Nf, Nt, dt, window=window)
     return out
 
 
@@ -911,167 +688,3 @@ def atom_spectrum(m: int, n: int, Nf: int, Nt: int, dt: float, *,
     _check_base_spectrum(base, base[m, a], Nf, Nt, dt)
     k = np.arange(n_samples(Nf, Nt) // 2 + 1)
     return base[m, a] * np.exp(-2j * np.pi * k * (n - a) / Nt)
-
-
-def _check_interior_bands(bands: NDArray[np.integer], Nf: int) -> NDArray[np.integer]:
-    bands = index_array("bands", bands).ravel()
-    if bands.size == 0 or bands.min() < 1 or bands.max() > Nf - 1:
-        raise ValueError(f"bands must be interior bands 1..{Nf - 1}; got {bands.tolist()}")
-    return bands
-
-
-def band_atoms(bands: NDArray[np.integer], Nf: int, Nt: int, dt: float, *,
-               window: Window = MEYER) -> CArray:
-    """``(nb, Nt, Nt)`` complex unit-norm atoms of ``bands`` on their ``Nt``-bin windows.
-
-    Atom ``[b, n, s]`` multiplies the rfft bin ``(m_b - 1) Nt/2 + s`` of a
-    record's spectrum.  The atoms are unit-norm (the spectrum of a basis function, not a
-    coefficient): for rfft bins ``z = numpy.fft.rfft(x)`` of an ``N = Nf Nt``-sample record,
-    ``sqrt(2 dt / N) * Re(atoms[b, n] . z[window])`` is the Wilson coefficient
-    ``forward(z)[m_b, n]``, which :func:`forward_bands` returns.  Ported verbatim from the
-    galactic-binary toy model (not shipped), with ``window``'s samples (Hz normalisation).
-
-    Parameters
-    ----------
-    bands : array_like of int
-        Interior bands, each in ``1..Nf-1``.
-    Nf, Nt : int
-    dt : float
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
-    """
-    validate_grid(Nf, Nt)
-    validate_dt(dt)
-    bands = _check_interior_bands(bands, Nf)
-    phi = sample_window(window, Nf, Nt, dt)
-    s = np.arange(Nt)
-    carrier = np.exp(2j * np.pi * np.outer(np.arange(Nt), s - Nt // 2) / Nt)  # (n, s)
-    atoms = np.empty((len(bands), Nt, Nt), complex)
-    for b, m in enumerate(bands):
-        ph = carrier_phase(int(m), Nt)
-        quad = (int(m) + np.arange(Nt)) % 2
-        u = ph[:, None] * phi[None, :] * carrier
-        u = np.where(quad[:, None] == 1, -1j * u, u)
-        atoms[b] = u / np.linalg.norm(phi)
-    return atoms
-
-
-def _band_phase(bands: NDArray[np.integer], Nt: int, phi: Array) -> CArray:
-    """``(nb, Nt)``: ``carrier_phase * quad * (-1)^n * Nt / |phi|``."""
-    n = np.arange(Nt)
-    out = np.empty((bands.size, Nt), complex)
-    for b, m in enumerate(bands):
-        quad = np.where((int(m) + n) % 2 == 1, -1j, 1.0)
-        out[b] = carrier_phase(int(m), Nt) * quad * (-1.0) ** n * Nt / np.linalg.norm(phi)
-    return out
-
-
-def _band_windows(bands: NDArray[np.integer], k0: int, n_bins: int, Nt: int) -> NDArray[np.integer]:
-    """``(nb, Nt)`` positions, inside a bin array starting at absolute bin ``k0``,
-    of every band window bin ``(m - 1) Nt/2 + s``."""
-    ell = (bands[:, None] - 1) * (Nt // 2) + np.arange(Nt)[None, :] - int(k0)
-    if ell.min() < 0 or ell.max() >= n_bins:
-        raise ValueError(
-            f"the bins [{k0}, {k0 + n_bins}) do not cover the band windows "
-            f"[{ell.min() + k0}, {ell.max() + k0 + 1})"
-        )
-    return ell
-
-
-def forward_bands(z: CArray, k0: int, bands: NDArray[np.integer], Nf: int, Nt: int,
-                  dt: float, *, window: Window = MEYER) -> Array:
-    """Wilson coefficients of ``bands`` from band-limited rfft bins: ``(..., n) -> (..., nb, Nt)``.
-
-    ``z[..., j]`` is the rfft bin ``k0 + j`` in ``numpy.fft.rfft`` units (no ``dt``).  On a
-    whole record, ``z = rfft(x)``, the result is ``forward(z)[bands]`` (<= 1e-12 relative).
-    Cell ``(b, n)`` is ``sqrt(2 dt / N) Re(band_atoms[b, n] . z[window_b])``, ``N = Nf Nt``,
-    computed with one length-``Nt`` IFFT per band:
-    ``sqrt(2 dt / N) Re(phase * ifft(phi * z[window]))``.  It agrees with the dense
-    ``sqrt(2 dt / N) Re(band_atoms @ z)`` to ~1e-15 (not bitwise).  Interior bands only.
-    Cost ``O(nb Nt log Nt)`` against ``O(nb Nt^2)`` dense.
-    A non-finite ``z`` is rejected (as in :func:`forward`): one ``nan`` bin
-    would otherwise make every cell of each band whose window covers it
-    ``nan``, without a warning.
-
-    Parameters
-    ----------
-    z : ndarray, complex, shape (..., n)
-        rfft bins ``k0 .. k0+n-1`` of a record (``numpy.fft.rfft`` units); they must cover
-        every band window.
-    k0 : int
-        Absolute rfft bin of ``z[..., 0]``.
-    bands : array_like of int
-        Interior bands, each in ``1..Nf-1``.
-    Nf, Nt : int
-    dt : float
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
-    """
-    validate_grid(Nf, Nt)
-    validate_dt(dt)
-    require_int("k0", k0)
-    bands = _check_interior_bands(bands, Nf)
-    z = np.asarray(z)
-    ell = _band_windows(bands, k0, z.shape[-1], Nt)
-    validate_finite(z, "forward_bands: z")
-    phi = sample_window(window, Nf, Nt, dt)
-    phase = _band_phase(bands, Nt, phi)
-    Y = np.fft.ifft(phi * z[..., ell], axis=-1)
-    # Wilson units: the unit-norm-atom cells times sqrt(2 dt / N) (band_atoms' docstring).
-    return np.real(phase * Y) * np.sqrt(2.0 * dt / n_samples(Nf, Nt))
-
-
-def inverse_bands(w: Array, k0: int, n_bins: int, bands: NDArray[np.integer], Nf: int,
-                  Nt: int, dt: float, *, window: Window = MEYER) -> CArray:
-    """rfft bins from the Wilson coefficients of ``bands``: ``(..., nb, Nt) -> (..., n_bins)``.
-
-    It is ``inverse(w_full)[k0:k0 + n_bins]`` (<= 1e-12 relative), ``w_full`` the
-    ``(Nf + 1, Nt)`` grid holding ``w`` on ``bands`` and zeros elsewhere: bin ``k0 + j``
-    receives ``sqrt(N / (2 dt)) sum_n w[b, n] conj(atom[b, n, s])`` from every band window
-    covering it (``sqrt(N / (2 dt)) phi * fft(conj(phase) * w) / Nt``, scattered band by
-    band).  It is ``N / (2 dt)`` times the adjoint of :func:`forward_bands`: for the real
-    inner products ``<w, w'> = sum w w'`` and ``<z, z'> = Re sum conj(z) z'``,
-    ``<forward_bands(z), w> == (2 dt / N) <z, inverse_bands(w)>`` in exact arithmetic.
-    ``inverse_bands(forward_bands(z))`` is ``z`` on the covered bins only when ``z``'s
-    Wilson coefficients vanish outside ``bands``.  ``w`` must be real and finite (as in
-    :func:`inverse`).
-
-    Parameters
-    ----------
-    w : ndarray, float, shape (..., nb, Nt)
-        Cells of ``bands``.
-    k0 : int
-        Absolute rfft bin of the first output bin.
-    n_bins : int
-        Number of output bins; ``[k0, k0+n_bins)`` must cover every band window.
-    bands : array_like of int
-        Interior bands, each in ``1..Nf-1``.
-    Nf, Nt : int
-    dt : float
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
-    """
-    validate_grid(Nf, Nt)
-    validate_dt(dt)
-    require_int("k0", k0)
-    require_int("n_bins", n_bins)
-    bands = _check_interior_bands(bands, Nf)
-    w = np.asarray(w)
-    # The adjoint identity holds only for real cells: a complex w would give a complex
-    # result that is not the adjoint of any cells.
-    require_dtype("w", w, REAL_KINDS, "a real numeric array")
-    if w.shape[-2:] != (bands.size, Nt):
-        raise ValueError(f"w must end in ({bands.size}, {Nt}); got {w.shape}")
-    validate_finite(w, "inverse_bands: w")
-    ell = _band_windows(bands, k0, n_bins, Nt)
-    phi = sample_window(window, Nf, Nt, dt)
-    phase = _band_phase(bands, Nt, phi)
-    V = phi * np.fft.fft(np.conj(phase) * w, axis=-1) / Nt
-    out = np.zeros((*w.shape[:-2], n_bins), dtype=complex)
-    for b in range(bands.size):
-        np.add.at(out, (..., ell[b]), V[..., b, :])
-    # rfft units: N / (2 dt) times the adjoint of forward_bands' sqrt(2 dt / N).
-    return out * np.sqrt(n_samples(Nf, Nt) / (2.0 * dt))

@@ -31,10 +31,8 @@ def test_packed_grid_matches_the_dense_transform(rng):
     assert g.size == N
     np.testing.assert_array_equal(g.mask, active_mask(NF, NT))
     x = rng.standard_normal((3, N))
-    np.testing.assert_allclose(g.forward_many(x), x @ Wa.T, atol=1e-12)
+    np.testing.assert_allclose(np.stack([g.forward(r) for r in x]), x @ Wa.T, atol=1e-12)
     np.testing.assert_allclose(g.forward(x[0]), forward_time(x[0], NF, NT, DT)[g.mask], atol=0)
-    # round trip: W^{-1} = W^T / dt
-    np.testing.assert_allclose(g.inverse_many(g.forward_many(x)), x, atol=1e-12)
 
 
 def test_atoms_are_the_rows_of_the_transform():

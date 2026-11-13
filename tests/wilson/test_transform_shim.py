@@ -1,6 +1,6 @@
 """The transform against the frozen oracle vendored_2f7136c.
 
-It matches to rounding on random grids, dt != 1, batched and unbatched.
+It matches to rounding on random grids, dt != 1, one record and a stack of three.
 Bit-identical up to v0.11.0; the Hz window of v0.12.0 (Paper I eq:Meyer-def: phi
 flat value 1/sqrt(Delta F), kappa = sqrt(2)/Nf, lambda = 1/(sqrt(2) dt), against the
 oracle's omega-normalised 1/sqrt(2 pi Delta F), 2 sqrt(pi)/Nf, sqrt(pi)/dt) is the
@@ -23,8 +23,8 @@ ORACLE_RTOL = 1e-14     # Hz window (v0.12.0): measured 4.2e-16 fwd, 5.4e-16 inv
 
 
 def _assert_is_the_oracle_to_rounding(got, ref):
-    """The oracle's dtype, and its values to rounding."""
-    assert got.dtype == ref.dtype
+    """The oracle's dtype and shape, and its values to rounding."""
+    assert got.dtype == ref.dtype and got.shape == ref.shape
     assert np.max(np.abs(got - ref)) <= ORACLE_RTOL * np.max(np.abs(ref))
 
 
@@ -37,9 +37,9 @@ def test_forward_family_is_the_oracle_to_rounding(grid, rng):
     pairs = [
         (T.forward_time(x, Nf, Nt, dt), oracle.forward_time(x, Nf, Nt, dt)),
         (T.forward(np.fft.rfft(x), Nf, Nt, dt), oracle.forward(np.fft.rfft(x), Nf, Nt, dt)),
-        (T.forward_time_many(X, Nf, Nt, dt), oracle.forward_time_many(X, Nf, Nt, dt)),
-        (T.forward_many(np.fft.rfft(X, axis=-1), Nf, Nt, dt),
-         oracle.forward_many(np.fft.rfft(X, axis=-1), Nf, Nt, dt)),
+        (T.forward_time(X, Nf, Nt, dt), np.stack([oracle.forward_time(r, Nf, Nt, dt) for r in X])),
+        (T.forward(np.fft.rfft(X), Nf, Nt, dt),
+         np.stack([oracle.forward(np.fft.rfft(r), Nf, Nt, dt) for r in X])),
     ]
     for got, ref in pairs:
         _assert_is_the_oracle_to_rounding(got, ref)
@@ -53,11 +53,24 @@ def test_inverse_family_is_the_oracle_to_rounding(grid, rng):
     pairs = [
         (T.inverse(w, Nf, Nt, dt), oracle.inverse(w, Nf, Nt, dt)),
         (T.inverse_time(w, Nf, Nt, dt), oracle.inverse_time(w, Nf, Nt, dt)),
-        (T.inverse_many(W, Nf, Nt, dt), oracle.inverse_many(W, Nf, Nt, dt)),
-        (T.inverse_time_many(W, Nf, Nt, dt), oracle.inverse_time_many(W, Nf, Nt, dt)),
+        (T.inverse(W, Nf, Nt, dt), np.stack([oracle.inverse(r, Nf, Nt, dt) for r in W])),
+        (T.inverse_time(W, Nf, Nt, dt), np.stack([oracle.inverse_time(r, Nf, Nt, dt) for r in W])),
     ]
     for got, ref in pairs:
         _assert_is_the_oracle_to_rounding(got, ref)
+
+
+def test_leading_axes_are_the_loop_over_the_slices(rng):
+    """Each kernel takes any leading axes: a (3, 2, ...) stack gives the loop over its
+    slices, and an input one entry short on its last axis is refused."""
+    Nf, Nt, dt = 8, 16, 0.5
+    x = rng.standard_normal((3, 2, Nf * Nt))
+    w = rng.standard_normal((3, 2, Nf + 1, Nt))
+    for f, a in ((T.forward, np.fft.rfft(x)), (T.forward_time, x), (T.inverse, w), (T.inverse_time, w)):
+        want = np.stack([np.stack([f(s, Nf, Nt, dt) for s in row]) for row in a])
+        _assert_is_the_oracle_to_rounding(f(a, Nf, Nt, dt), want)
+        with pytest.raises(ValueError, match="must have shape"):
+            f(a[..., 1:], Nf, Nt, dt)
 
 
 def test_inputs_are_not_mutated(rng):

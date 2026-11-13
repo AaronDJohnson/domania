@@ -13,11 +13,9 @@ Public API
 ----------
 Forward / inverse data transforms:
 
-* :func:`forward`, :func:`inverse`
+* :func:`forward`, :func:`inverse` (any leading axes: a stack of series sharing one
+  grid goes through one FFT)
 * :func:`forward_time`, :func:`inverse_time` (time-domain wrappers)
-* :func:`forward_many`, :func:`inverse_many` and their ``_time`` wrappers
-  (batched over a stack of series sharing one grid -- one FFT for the whole
-  stack, bit-identical to looping)
 
 A validated ``(Nf, Nt, dt)`` container, which removes the one misuse the
 package cannot otherwise detect (swapping the two same-typed ints):
@@ -112,16 +110,7 @@ from .noise import (
     whittle_variance,
     whittle_variance_from_array,
 )
-from .transform import (
-    forward,
-    forward_many,
-    forward_time,
-    forward_time_many,
-    inverse,
-    inverse_many,
-    inverse_time,
-    inverse_time_many,
-)
+from .transform import forward, forward_time, inverse, inverse_time
 from .windows import (
     MEYER,
     Meyer,
@@ -155,13 +144,9 @@ __all__ = [
     "filter",
     # Transform
     "forward",
-    "forward_many",
     "forward_time",
-    "forward_time_many",
     "inverse",
-    "inverse_many",
     "inverse_time",
-    "inverse_time_many",
     "matrix",
     # Grid
     "n_samples",

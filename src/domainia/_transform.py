@@ -113,21 +113,18 @@ def transform(x: Any, source: str, target: str, *, N: int, dt: float,
     sg, tg = _grid("source", source, source_wdm, N), _grid("target", target, target_wdm, N)
     y = _checked(x, source, N, sg)
     if (source, sg) != (target, tg):
-        lead = y.shape[:y.ndim - (2 if source == "wdm" else 1)]
         if source == "time":
             R = np.fft.rfft(y, axis=-1)
         elif source == "frequency":
             R = y / dt
         else:
-            R = wilson.inverse_many(y.reshape(-1, sg[0] + 1, sg[1]), *sg, dt,
-                                    window=window).reshape(lead + (N // 2 + 1,))
+            R = wilson.inverse(y, *sg, dt, window=window)
         if target == "time":
             y = np.fft.irfft(R, n=N, axis=-1)
         elif target == "frequency":
             y = dt * R
         else:
-            y = wilson.forward_many(R.reshape(-1, N // 2 + 1), *tg, dt,
-                                    window=window).reshape(lead + (tg[0] + 1, tg[1]))
+            y = wilson.forward(R, *tg, dt, window=window)
     if target == "frequency":
         y[..., 0] = y[..., 0].real
         if N % 2 == 0:
