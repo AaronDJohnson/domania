@@ -15791,4 +15791,82 @@ Size after Task 13 (prototype): src 4059 lines / 1849 code; tests 4346 (+ oracle
 
 ## Execution errata
 
-(none yet)
+Executed on 2026-11-13, subagent-driven, in the main checkout on `translation-core`. Nothing is pushed.
+
+### How it ran
+
+* Task 0 and Task 13 make no commit; they were verification runs, and every Expected held.
+* Tasks 1–12 each went to one implementer subagent, chosen by the task's model tier: Sonnet for standard tasks, Opus for Tasks 3, 8 and 9. One reviewer then checked each task for spec compliance and code quality.
+* Each task commit's tree was also compared byte for byte with the prototype clone's tree after the same task, with `docs/superpowers` excluded and `.npz` files compared by content. All twelve were identical, so every task reproduced the prototype exactly.
+* Every review approved. Minor findings in code the plan dictates were deferred to the fix-ups below, because later tasks quote that code verbatim.
+* Commits that implementer subagents made end with the Co-Authored-By line of the model that wrote them (Claude Sonnet 5.5 for the standard-tier tasks), not the Conventions' "Claude Opus 5.5" line. The coordinator's own commits keep the Opus line.
+* Each task's completion was recorded in the tasks file by its own docs-only commit, "Plan: Task N completed".
+
+| Task | Commit |
+|---|---|
+| 1 | b3e78f1 |
+| 2 | a4023f6 |
+| 3 | f58d1e6 |
+| 4 | a4c1275 |
+| 5 | b9dd185 |
+| 6 | 8a9fd3c |
+| 7 | 1c48285 |
+| 8 | 4b27bdb |
+| 9 | a4cde5c |
+| 10 | 6d55cc6 |
+| 11 | c513c3e |
+| 12 | 63f0f06 |
+| fix-ups | 526ebdc, 9544b38 |
+
+### Plan text corrections
+
+* **Task 2, Step 11.** The two `log_coordinate_scale` tests are not "the last two functions in the file"; they sit mid-file in `tests/test_translate.py`. They were deleted whole.
+* **Task 3, Step 8.** The Expected stat is `5 files changed, 275 insertions(+), 5 deletions(-)`, not 272. The task's own texts add up to 275 (137 + 129 + 4 + 4 + 1).
+* **Task 4, Step 12, Edit 4 (`pyproject.toml`).** The Old text is a substring that ends mid-line at "on sys.path.", and the rest of that line stays.
+  * The first implementer read it as whole lines and stopped with nothing committed. A second finished the task from that edit.
+  * From Task 5 on, the implementer prompt said that Old texts are exact substrings.
+
+### Final review and fix-ups
+
+After Task 13, an Opus review of the whole branch read the end state through four lenses: spec conformance, the new functions' correctness, the kept code and docs, and the tests. A separate skeptic tried to refute each Critical or Important finding.
+
+* **No Critical findings.** Probes found the three public functions correct, fp64 throughout, exactly Hermitian and linear, and 0 at the inactive cells.
+* **One verified Important finding.** `test_every_refusal` says a WDM model "is checked in every chunk", but it reached only chunk (0, 0).
+* **Rejected as a defect:** `test_dom_testing`'s columns against §3.3. That is this plan's recorded decision, so it stays an open point.
+* **Fix-up commit 526ebdc** (contracts, test first):
+  * `wdm_covariance` hands the model read-only `f` and `t`. A model that wrote into them silently corrupted later chunks.
+  * A masked model output is refused with `TypeError`.
+  * `_hermitian` builds Sᴴ once.
+  * `transform` checks `window` on every route, and refuses an `(Nf, Nt)` argument that is not a pair, naming the argument.
+  * The Raises sections now say: a non-real `dt` is a `TypeError`, and an inadmissible window is a `WindowError` (a `ValueError`). The CHUNK bound now reads max(CHUNK, J).
+  * New tests pin the 1e-12 and 1e-10 tolerances, a later chunk, the stationary chunk count, `time_domain_factor`'s `dt` check, and the replay comparator's own-peak scaling.
+  * Each new test kills a mutant that the old tests let through.
+* **Fix-up commit 9544b38** (cuts and stale text):
+  * deleted `Eq45Plan.fold_has_duplicates`, the fixtures `lisa_grid` and `chirp_signal`, `flatten`'s `None` branch, and the oracle-only `test_wrap_fractions_match_the_atoms_directly`;
+  * fixed the stale text in `eq45_coeffs_bessel`, `grid.py`'s summary and the vendored test file's header;
+  * scoped two README sentences to the top-level functions.
+* **Final state, measured after the fix-ups:**
+  * 950 passed and 3 skipped under `-W error` in all four lanes (PY, floor312, cur313, cur314). The one test fewer is the oracle-only test that was cut.
+  * The replay is bit-exact in all four lanes: 0 of 1408 arrays differ.
+  * The public API and the version are unchanged, and `import domainia` loads no jax.
+  * Size is src 4077 lines / 1859 code and tests 4335 (+ oracle 4135). The fix-ups added a net 7 lines.
+
+### Open points left for the user
+
+None of these was changed, because each is a semantics or scope choice:
+
+1. **A constant model on the WDM route.** `frequency_covariance` accepts a `(K, K, 1)` output, but `wdm_covariance(lambda f, t: S0(f), …)` refuses it: `_hermitian` requires 2 + len(points) axes, while spec §3.1 says the output must be "broadcastable". Left-padding the point axes in `_hermitian` would be a one-line change.
+2. **Spec §6.1's oracle comparisons.** §6.1 says to move the exact comparisons against oracle copies (`test_evolutionary_kernels.py`, `test_noise_stationary.py`) to the tolerance helper. They are not moved. They are bit-exact today on NumPy 2.1–2.5, and on 1.26.4 too.
+3. **§3.3's columns.** `test_dom_testing`'s columns against §3.3's `wrap_cut_columns` sentence is the header's recorded decision. The spec text may want the edit.
+4. **NumPy-integer grid sizes.** `validate_grid` admits a NumPy integer `Nf`/`Nt`, and arithmetic in its dtype can overflow (`np.int8`, `np.int16`). Converting to `int` in `validate_grid` would fix this package-wide.
+5. **Argument kinds in `forward`/`forward_time`.** `wilson.forward`/`forward_time` compute on a bool array, and refuse complex or str input with NumPy's own message. `inverse` checks its kind. This predates the branch.
+6. **The duplicated Eq. 36 sampling.** `wdm_covariance` repeats `evolutionary_band_variance`'s Eq. 36 sampling, as the spec specifies. A shared private helper is a candidate for the next cut.
+7. **Minor review notes not acted on:**
+   * `_block_spec`'s unused `Nf`;
+   * `transform` reports a non-finite entry by flat index;
+   * `noise.py`'s two elementwise refusals are untested;
+   * `test_window_threading`'s `CONSUMERS` lacks `transform`;
+   * the vendored `test_evolutionary.py` module docstring still names `wdm.evolutionary`;
+   * `band_averaged_variance` no longer maps an overflowed `inf` mean to 0 (Task 10 accepts this).
+
+The Known open points above about the historical comment in the vendored test file and the stale `maps/` and `covariance/` directories are resolved: 9544b38 rewrote the comment, and the directories are gone.
