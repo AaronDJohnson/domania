@@ -71,7 +71,6 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ._checks import REAL_KINDS, require_dtype
-from .backend import Backend, get_backend, is_tracer
 from .grid import n_samples, sanitize_psd, validate_dt, validate_grid
 from .windows import MEYER, Window, sample_window
 
@@ -817,7 +816,6 @@ def apply_lambda_from_psd(
     dt: float,
     Sn_rfft: Array,
     *,
-    be: Backend | None = None,
     window: Window = MEYER,
 ) -> Array:
     r"""Apply $\Lambda$ to a WDM vector via the operator-form forward.
@@ -848,13 +846,9 @@ def apply_lambda_from_psd(
     Sn_rfft : ndarray, float, shape (N//2 + 1,)
         One-sided PSD evaluated on the ``rfftfreq(N, dt)`` grid.  Last, like
         every other PSD argument in the package.  ``inf`` samples are zero
-        power on every path (:func:`domainia.wilson.grid.sanitize_psd`).  Under
-        ``jax.jit`` the PSD is a tracer and negative or ``nan`` samples are not
-        checked: they are accepted silently instead of raising.
+        power (:func:`domainia.wilson.grid.sanitize_psd`).
     Nf, Nt : int
     dt : float
-    be : Backend, optional
-        Array backend; inferred from ``x_wmn`` and ``Sn_rfft`` when omitted.
     window : Window, optional
         The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
         See :mod:`domainia.wilson.windows`.
@@ -893,24 +887,16 @@ def apply_lambda_from_psd(
 
     validate_grid(Nf, Nt)
     validate_dt(dt)
-    be = be or get_backend(x_wmn, Sn_rfft)
-    # Concrete input goes through sanitize_psd on the host.  A tracer cannot be
-    # checked (negative/nan pass through), but it still gets the same inf -> 0.0
-    # policy, so every path gives the same answer for the same PSD.
-    if is_tracer(Sn_rfft):
-        Sn_rfft = be.asarray(Sn_rfft)
-        Sn_rfft = be.xp.where(be.xp.isinf(Sn_rfft), 0.0, Sn_rfft)
-    else:
-        Sn_rfft = be.asarray(sanitize_psd(Sn_rfft, "apply_lambda_from_psd"))
+    Sn_rfft = sanitize_psd(Sn_rfft, "apply_lambda_from_psd")
     n_rfft = n_samples(Nf, Nt) // 2 + 1
     if Sn_rfft.shape != (n_rfft,):
         raise ValueError(
             f"apply_lambda_from_psd: Sn_rfft must have shape ({n_rfft},) -- the "
             f"np.fft.rfftfreq(N, dt) grid; got {Sn_rfft.shape}"
         )
-    y = _inverse(x_wmn, Nf, Nt, dt, be=be, window=window)
+    y = _inverse(x_wmn, Nf, Nt, dt, window=window)
     z = (Sn_rfft / 2.0) * y
-    return _forward(z, Nf, Nt, dt, be=be, window=window)
+    return _forward(z, Nf, Nt, dt, window=window)
 
 
 def psd_from_lambda_blocks(

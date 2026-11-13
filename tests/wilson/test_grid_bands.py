@@ -72,20 +72,6 @@ def test_pack_unpack_round_trip_and_active_W_order(rng):
     assert np.array_equal(pack(unpack(Y, Nf, Nt), Nf, Nt), Y)
 
 
-def test_pack_unpack_on_jax(jax_be, rng):
-    import jax
-
-    Nf, Nt = 8, 16
-    w = rng.standard_normal((2, Nf + 1, Nt))
-    packed = pack(jax_be.asarray(w), Nf, Nt)
-    assert isinstance(packed, jax.Array), type(packed)      # no eager NumPy fallback
-    assert np.array_equal(np.asarray(packed), pack(w, Nf, Nt))
-    y = pack(w, Nf, Nt)
-    unpacked = unpack(jax_be.asarray(y), Nf, Nt)
-    assert isinstance(unpacked, jax.Array), type(unpacked)
-    assert np.array_equal(np.asarray(unpacked), unpack(y, Nf, Nt))
-
-
 def test_edge_columns_and_endpoint_weights():
     assert edge_columns(256, 6, 5) == (0, 1, 2, 3, 4, 5, 251, 252, 253, 254, 255)
     assert edge_columns(16, 0, 0) == ()
@@ -230,7 +216,7 @@ def test_window_and_atoms_are_bitwise_the_gb_copies(tmp_path):
 
 
 @pytest.mark.parametrize("grid", [(8, 16, 1.0), (16, 32, 0.5), (6570, 240, 5.0)])
-def test_forward_bands_is_the_dense_atom_analysis(grid, backend, rng):
+def test_forward_bands_is_the_dense_atom_analysis(grid, rng):
     Nf, Nt, dt = grid
     bands = np.array([2, 3, 4]) if Nf < 100 else np.array([65, 66, 67])
     k0 = (bands[0] - 1) * (Nt // 2) - 3
@@ -242,7 +228,7 @@ def test_forward_bands_is_the_dense_atom_analysis(grid, backend, rng):
         np.real(np.einsum("ns,...s->...n", atoms[b],
                           z[..., (m - 1) * (Nt // 2) - k0 + np.arange(Nt)]))
         for b, m in enumerate(bands)], axis=-2)
-    got = np.asarray(forward_bands(backend.asarray(z), k0, bands, Nf, Nt, dt))
+    got = forward_bands(z, k0, bands, Nf, Nt, dt)
     assert got.shape == (2, bands.size, Nt)
     assert np.max(np.abs(got - dense)) <= 1e-12 * np.max(np.abs(dense))
 
@@ -283,7 +269,7 @@ def test_inverse_bands_is_the_inverse_on_its_bins(grid, rng):
         assert np.max(np.abs(got - want[k0:k0 + n_bins])) <= 1e-12 * np.max(np.abs(want))
 
 
-def test_inverse_bands_is_the_adjoint(backend, rng):
+def test_inverse_bands_is_the_adjoint(rng):
     """sum(forward_bands(z) w) = (2 dt / N) Re<z, inverse_bands(w)>: inverse_bands is
     N / (2 dt) times the adjoint."""
     Nf, Nt, dt = 16, 32, 0.5
@@ -292,9 +278,9 @@ def test_inverse_bands_is_the_adjoint(backend, rng):
     k0, n_bins = 20, 120
     z = rng.standard_normal(n_bins) + 1j * rng.standard_normal(n_bins)
     w = rng.standard_normal((bands.size, Nt))
-    lhs = np.sum(np.asarray(forward_bands(backend.asarray(z), k0, bands, Nf, Nt, dt)) * w)
-    rhs = (2.0 * dt / N) * np.real(np.sum(np.conj(z) * np.asarray(
-        inverse_bands(backend.asarray(w), k0, n_bins, bands, Nf, Nt, dt))))
+    lhs = np.sum(forward_bands(z, k0, bands, Nf, Nt, dt) * w)
+    rhs = (2.0 * dt / N) * np.real(np.sum(np.conj(z) * inverse_bands(w, k0, n_bins, bands, Nf,
+                                                                      Nt, dt)))
     assert np.isclose(lhs, rhs, rtol=1e-12, atol=0)
     with pytest.raises(ValueError, match="do not cover"):
         forward_bands(z, k0 + 100, bands, Nf, Nt, dt)
@@ -302,45 +288,27 @@ def test_inverse_bands_is_the_adjoint(backend, rng):
         band_atoms([0, 1], Nf, Nt, dt)
 
 
-def test_forward_bands_rejects_non_finite_bins(backend):
+def test_forward_bands_rejects_non_finite_bins():
     Nf, Nt, dt = 8, 16, 1.0
     bands = np.array([2, 3])
     z = np.ones(40, complex)
     z[10] = np.nan
     with pytest.raises(ValueError, match="forward_bands: z: .* not finite"):
-        forward_bands(backend.asarray(z), 0, bands, Nf, Nt, dt)
+        forward_bands(z, 0, bands, Nf, Nt, dt)
     z[10] = np.inf
     with pytest.raises(ValueError, match="forward_bands: z: .* not finite"):
-        forward_bands(backend.asarray(z), 0, bands, Nf, Nt, dt)
+        forward_bands(z, 0, bands, Nf, Nt, dt)
 
 
-def test_inverse_bands_rejects_complex_and_non_finite_cells(backend):
+def test_inverse_bands_rejects_complex_and_non_finite_cells():
     Nf, Nt, dt = 8, 16, 1.0
     bands = np.array([2, 3])
     w = np.ones((bands.size, Nt))
     with pytest.raises(TypeError, match="w must be a real numeric array, got dtype complex128"):
-        inverse_bands(backend.asarray(w + 1j), 0, 40, bands, Nf, Nt, dt)
+        inverse_bands(w + 1j, 0, 40, bands, Nf, Nt, dt)
     w[1, 4] = np.nan
     with pytest.raises(ValueError, match="inverse_bands: w: .* not finite"):
-        inverse_bands(backend.asarray(w), 0, 40, bands, Nf, Nt, dt)
-
-
-def test_band_analysis_checks_are_skipped_under_jit(jax_be, rng):
-    """The host-side checks see tracers under jit and must not break tracing."""
-    import jax
-
-    Nf, Nt, dt = 8, 16, 1.0
-    bands = np.array([2, 3])
-    z = rng.standard_normal(40) + 1j * rng.standard_normal(40)
-    w = rng.standard_normal((bands.size, Nt))
-    fwd = jax.jit(lambda z: forward_bands(z, 0, bands, Nf, Nt, dt))
-    inv = jax.jit(lambda w: inverse_bands(w, 0, 40, bands, Nf, Nt, dt))
-    cells, bins = fwd(jax_be.asarray(z)), inv(jax_be.asarray(w))
-    assert isinstance(cells, jax.Array) and isinstance(bins, jax.Array)
-    assert np.allclose(np.asarray(cells),
-                       forward_bands(z, 0, bands, Nf, Nt, dt), rtol=0, atol=1e-12)
-    assert np.allclose(np.asarray(bins),
-                       inverse_bands(w, 0, 40, bands, Nf, Nt, dt), rtol=0, atol=1e-12)
+        inverse_bands(w, 0, 40, bands, Nf, Nt, dt)
 
 
 def test_atom_spectrum_rejects_out_of_range_n_and_foreign_base():

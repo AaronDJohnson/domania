@@ -61,7 +61,7 @@ class WindowError(ValueError):
 
 @runtime_checkable
 class Window(Protocol):
-    """A Wilson window: frozen and hashable (static under ``jax.jit``)."""
+    """A Wilson window: frozen and hashable (a cache key)."""
 
     @property
     def name(self) -> str: ...
@@ -146,9 +146,9 @@ def _check_callable(what: str, fn: Any) -> None:
     try:
         hash(fn)
     except TypeError:
-        raise TypeError(f"{what} must be hashable (a window is a cache key and static under "
-                        f"jax.jit), got an unhashable {type(fn).__name__}: use a module-level "
-                        f"function or a frozen dataclass instance") from None
+        raise TypeError(f"{what} must be hashable (a window is a cache key), got an unhashable "
+                        f"{type(fn).__name__}: use a module-level function or a frozen dataclass "
+                        f"instance") from None
 
 
 def _meyer_geometry(Nf: int, Nt: int, dt: float) -> tuple[np.ndarray, float, float, float]:

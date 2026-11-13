@@ -238,71 +238,12 @@ def test_complex_psd_is_rejected(build, imag):
                 pytest.fail(f"{build} accepted a complex {form} PSD")
 
 
-def _on_device(out):
-    """``out`` on the host, after checking it came back as a ``jax.Array``."""
-    import jax
-
-    assert isinstance(out, jax.Array), type(out)      # no eager NumPy fallback
-    return np.asarray(out)
-
-
-def test_apply_lambda_from_psd_on_jax(jax_be, rng):
+def test_apply_lambda_from_psd_inf_psd_is_zero_power(rng):
+    """An inf PSD sample (the LISA f = 0 case) is zero power: ``sanitize_psd`` maps it to 0.0."""
     Nf, Nt, dt = 8, 16, 0.5
     S = _psd(np.fft.rfftfreq(Nf * Nt, d=dt))
     x = rng.standard_normal((Nf + 1, Nt))
-    ref = stat.apply_lambda_from_psd(x, Nf, Nt, dt, S)
-    got = _on_device(stat.apply_lambda_from_psd(jax_be.asarray(x), Nf, Nt, dt, jax_be.asarray(S)))
-    assert np.max(np.abs(got - ref)) <= 1e-13 * np.max(np.abs(ref))
-
-
-def _jit_apply(Nf, Nt, dt):
-    """``apply_lambda_from_psd`` under ``jax.jit`` with both x and S traced."""
-    import jax
-
-    return jax.jit(lambda x, S: stat.apply_lambda_from_psd(x, Nf, Nt, dt, S))
-
-
-def test_apply_lambda_from_psd_under_jit(jax_be, rng):
-    """The tracer branch (x and S both traced) matches eager JAX and NumPy."""
-    Nf, Nt, dt = 8, 16, 0.5
-    S = _psd(np.fft.rfftfreq(Nf * Nt, d=dt))
-    x = rng.standard_normal((Nf + 1, Nt))
-    ref = stat.apply_lambda_from_psd(x, Nf, Nt, dt, S)
-    xj, Sj = jax_be.asarray(x), jax_be.asarray(S)
-    eager = _on_device(stat.apply_lambda_from_psd(xj, Nf, Nt, dt, Sj))
-    got = _on_device(_jit_apply(Nf, Nt, dt)(xj, Sj))
-    assert np.max(np.abs(got - eager)) <= 1e-13 * np.max(np.abs(eager))
-    assert np.max(np.abs(got - ref)) <= 1e-13 * np.max(np.abs(ref))
-
-
-def test_apply_lambda_from_psd_inf_psd_under_jit(jax_be, rng):
-    """An inf PSD sample (the LISA f = 0 case) is zero power on every path.
-
-    The host path maps it to 0.0 through ``sanitize_psd``; the tracer branch
-    must apply the same policy or the inf leaks into the coefficients.
-    """
-    Nf, Nt, dt = 8, 16, 0.5
-    S = _psd(np.fft.rfftfreq(Nf * Nt, d=dt))
+    S[0] = 0.0
+    want = stat.apply_lambda_from_psd(x, Nf, Nt, dt, S)
     S[0] = np.inf
-    x = rng.standard_normal((Nf + 1, Nt))
-    ref = stat.apply_lambda_from_psd(x, Nf, Nt, dt, S)
-    assert np.all(np.isfinite(ref))
-    xj, Sj = jax_be.asarray(x), jax_be.asarray(S)
-    eager = _on_device(stat.apply_lambda_from_psd(xj, Nf, Nt, dt, Sj))
-    got = _on_device(_jit_apply(Nf, Nt, dt)(xj, Sj))
-    assert np.all(np.isfinite(got)), f"{np.count_nonzero(~np.isfinite(got))} non-finite"
-    assert np.max(np.abs(got - ref)) <= 1e-13 * np.max(np.abs(ref))
-    assert np.max(np.abs(got - eager)) <= 1e-13 * np.max(np.abs(eager))
-
-
-def test_apply_lambda_from_psd_explicit_numpy_backend(jax_be, rng):
-    """``be=NUMPY`` on JAX inputs runs the host path: bitwise the NumPy result."""
-    from domainia.wilson.backend import NUMPY
-
-    Nf, Nt, dt = 8, 16, 0.5
-    S = _psd(np.fft.rfftfreq(Nf * Nt, d=dt))
-    x = rng.standard_normal((Nf + 1, Nt))
-    ref = stat.apply_lambda_from_psd(x, Nf, Nt, dt, S)
-    got = stat.apply_lambda_from_psd(jax_be.asarray(x), Nf, Nt, dt, jax_be.asarray(S), be=NUMPY)
-    assert isinstance(got, np.ndarray)
-    assert got.dtype == ref.dtype and np.array_equal(got, ref)
+    assert np.array_equal(stat.apply_lambda_from_psd(x, Nf, Nt, dt, S), want)

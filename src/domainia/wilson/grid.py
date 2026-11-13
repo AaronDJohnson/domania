@@ -24,7 +24,6 @@ from numpy.typing import NDArray
 
 from ._checks import REAL_KINDS, require_dtype
 from ._checks import require_int as _require_int, validate_dt, validate_finite
-from .backend import Backend, get_backend
 
 type Array = NDArray[np.floating]
 type BoolArray = NDArray[np.bool_]
@@ -540,25 +539,24 @@ def packed_cells(Nf: int, Nt: int) -> tuple[IntArray, IntArray]:
     return m, n
 
 
-def pack(w: Array, Nf: int, Nt: int, *, be: Backend | None = None) -> Array:
+def pack(w: Array, Nf: int, Nt: int) -> Array:
     """``(..., Nf+1, Nt) -> (..., N)``: the active cells in band order."""
-    be = be or get_backend(w)
     m, n = packed_cells(Nf, Nt)
-    w = be.asarray(w)
+    w = np.asarray(w)
     if w.shape[-2:] != (Nf + 1, Nt):
         raise ValueError(f"w must end in ({Nf + 1}, {Nt}); got {w.shape}")
     return w[..., m, n]
 
 
-def unpack(y: Array, Nf: int, Nt: int, *, be: Backend | None = None) -> Array:
+def unpack(y: Array, Nf: int, Nt: int) -> Array:
     """``(..., N) -> (..., Nf+1, Nt)``, inactive edge pixels exactly 0."""
-    be = be or get_backend(y)
     m, n = packed_cells(Nf, Nt)
-    y = be.asarray(y)
+    y = np.asarray(y)
     if y.shape[-1] != m.size:
         raise ValueError(f"y must end in N = {m.size}; got {y.shape}")
-    out = be.xp.zeros((*y.shape[:-1], Nf + 1, Nt), dtype=y.dtype)
-    return be.set(out, (..., m, n), y, copy=False)
+    out = np.zeros((*y.shape[:-1], Nf + 1, Nt), dtype=y.dtype)
+    out[..., m, n] = y
+    return out
 
 
 def edge_columns(Nt: int, lead: int, trail: int) -> tuple[int, ...]:

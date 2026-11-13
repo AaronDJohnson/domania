@@ -1,9 +1,8 @@
-"""The stateless WDM Paper II kernels (domainia.wilson.evolutionary,
-domainia.wilson.special, domainia.wilson.noise).
+"""The stateless WDM Paper II kernels (domainia.wilson.evolutionary, domainia.wilson.noise).
 
 Every kernel is checked against its source: the frozen wdm_dev oracle
 (``wdm_dev_ev``), the block builder of the WDM Paper II toy models in a lineage-A
-subprocess, dense references, and across backends.  Both sources run the
+subprocess, and dense references.  Both sources run the
 omega-normalised window of releases <= 0.11 and were matched bit for bit until then; the
 Hz window of v0.12.0 (Paper I eq:Meyer-def, the same products rounded differently) leaves
 every window-dependent kernel equal to them to rounding (``ORACLE_RTOL`` of the
@@ -22,7 +21,6 @@ import pytest
 from wdm_dev_ev import evolutionary as ev
 
 from domainia.wilson import evolutionary as E
-from domainia.wilson import special
 from domainia.wilson.matrix import active_W
 from domainia.wilson.noise import evolutionary_band_variance
 
@@ -253,35 +251,10 @@ def test_bessel_blocks_are_the_wt_toy_to_rounding(tmp_path):
         assert _block_gap((diag, up), (d0, u0)) <= ORACLE_RTOL, tag
 
 
-def test_eq45_kernels_on_jax(jax_be):
-    import jax
-
-    ac, ad = -2.0, 1.2
-    plan = E.eq45_plan(NF, NT, DT)
-    L = _L(plan.f)
-    diag, up = E.eq45_blocks_cheb(plan, lambda k: E.eq45_coeffs_bessel(L[k], ac, ad, 24, r=1.0))
-    jd, ju = E.eq45_blocks_cheb(
-        plan, lambda k: E.eq45_coeffs_bessel(jax_be.asarray(L[k]), ac, ad, 24, r=1.0), be=jax_be)
-    scale = max(np.abs(b).max() for b in diag)
-    for a, b in zip(diag + up, jd + ju, strict=True):
-        assert isinstance(b, jax.Array), type(b)      # no eager NumPy fallback
-        assert np.max(np.abs(np.asarray(b) - a)) <= 1e-13 * scale
-    gp = E.eq45_gram_plan(plan)
-    al = ac + ad * (gp.gT / (N * DT) - 0.5)
-    gL = E.eq45_gram_gather(gp, L)
-    nd, nu = E.eq45_blocks_gram(gp, al, gL)
-    xd, xu = E.eq45_blocks_gram(gp, jax_be.asarray(al), jax_be.asarray(gL))
-    assert isinstance(xd, jax.Array) and isinstance(xu, jax.Array), (type(xd), type(xu))
-    assert np.max(np.abs(np.asarray(xd) - nd)) <= 1e-13 * scale
-    assert np.max(np.abs(np.asarray(xu) - nu)) <= 1e-13 * scale
-
-
-# -- Eq. (45) plans are pytrees: pass them to jit as ARGUMENTS ------------------------
+# -- the sinusoid grid ----------------------------------------------------------------
 
 SIN_NF, SIN_NT, SIN_DT = 64, 256, 2.0**-10        # the sinusoid grid
 SIN_T_OBS = SIN_NF * SIN_NT * SIN_DT
-HLO_LIMIT = 5_000_000      # chars; measured 0.2 MB (gram) and 2.5 MB (cheb) with the plan as
-                           # an argument, 102 MB and 404 MB with the plan closed over
 
 
 def _L_sin(f):
@@ -351,77 +324,7 @@ def test_gram_matches_bessel_on_the_sinusoid_grid(sin_plans, tag, ac, ad):
     assert _rel_gap(gram, diag + up) <= GRAM_VS_BESSEL_TOL
 
 
-def test_eq45_plans_are_pytrees(jax_be):
-    """Array fields are leaves; ints, floats and the per-block band indices (m, m2) are
-    static -- in the treedef, so part of the jit cache key and never traced."""
-    import jax
-
-    plan = E.eq45_plan(NF, NT, DT)
-    gp = E.eq45_gram_plan(plan)
-    for p in (plan, gp, plan.specs[0]):
-        leaves, tree = jax.tree_util.tree_flatten(p)
-        assert len(leaves) > 1 and all(isinstance(x, np.ndarray) for x in leaves), type(p)
-        back = jax.tree_util.tree_unflatten(tree, leaves)
-        assert type(back) is type(p)
-    # Equal plans built twice have equal treedefs (a jit cache hit); array-valued
-    # static fields would make this comparison raise instead.
-    assert jax.tree_util.tree_structure(plan) == jax.tree_util.tree_structure(E.eq45_plan(NF, NT, DT))
-    assert jax.tree_util.tree_structure(gp) == jax.tree_util.tree_structure(E.eq45_gram_plan(plan))
-    seen = {}
-
-    @jax.jit
-    def probe(p, g):
-        seen["plan"] = (p.Nf, p.Nt, p.dt, p.N, p.T, p.K, p.P, p.t_max, p.fold_has_duplicates)
-        seen["blocks"] = [(s.m, s.m2) for s in p.specs]
-        seen["gram"] = (g.nb, g.B, g.Kb)
-        seen["traced"] = isinstance(p.Tp, jax.core.Tracer) and isinstance(g.gG, jax.core.Tracer)
-        return p.Tp.sum() + g.gW.sum()
-
-    probe(plan, gp)
-    assert seen["plan"] == (plan.Nf, plan.Nt, plan.dt, plan.N, plan.T, plan.K, plan.P,
-                            plan.t_max, plan.fold_has_duplicates)
-    assert all(type(v) in (int, float, bool) for v in seen["plan"])
-    assert seen["blocks"] == [(s.m, s.m2) for s in plan.specs]
-    assert all(type(m) is int and type(m2) is int for m, m2 in seen["blocks"])
-    assert seen["gram"] == (gp.nb, gp.B, gp.Kb) and seen["traced"]
-
-
-def test_eq45_gram_jits_with_the_plan_as_an_argument(jax_be, sin_plans):
-    """64 x 256: the Gram plan as a jit ARGUMENT -- a small program, NumPy's numbers."""
-    import jax
-
-    _, gp, _ = sin_plans["raw"]
-    gL = E.eq45_gram_gather(gp, _L_sin(sin_plans["raw"][0].f))
-    alpha = 0.0 + 1.2 * (gp.gT / SIN_T_OBS - 0.5)
-    ref = E.eq45_blocks_gram(gp, alpha, gL)
-    lowered = jax.jit(lambda p, a: E.eq45_blocks_gram(p, a, gL)).lower(gp, alpha)
-    assert len(lowered.as_text()) < HLO_LIMIT
-    got = lowered.compile()(gp, jax_be.asarray(alpha))
-    assert all(isinstance(b, jax.Array) for b in got)
-    assert _rel_gap(got, ref) <= 1e-13
-
-
-def test_eq45_cheb_jits_with_the_plan_as_an_argument(jax_be, sin_plans):
-    """64 x 256: the Chebyshev plan as a jit ARGUMENT, coefficients from traced alphas."""
-    import jax
-
-    plan, _, r = sin_plans["raw"]
-    L = _L_sin(plan.f)
-    ac, ad = 0.0, 1.2
-    ref_d, ref_u = E.eq45_blocks_cheb(plan, E.eq45_coeffs_bessel(L, ac, ad, plan.P, r=r))
-
-    def blocks(p, a, L):
-        return E.eq45_blocks_cheb(p, E.eq45_coeffs_bessel(L, a[0], a[1], p.P, r=r))
-
-    alpha = np.array([ac, ad])
-    lowered = jax.jit(blocks).lower(plan, alpha, L)
-    assert len(lowered.as_text()) < HLO_LIMIT
-    got_d, got_u = lowered.compile()(plan, jax_be.asarray(alpha), jax_be.asarray(L))
-    assert all(isinstance(b, jax.Array) for b in got_d + got_u)
-    assert _rel_gap(got_d + got_u, ref_d + ref_u) <= 1e-13
-
-
-def test_separable_kernels_and_assembly(backend, rng):
+def test_separable_kernels_and_assembly(rng):
     P, G = 12, 20
     U = rng.standard_normal((P, G)) + 1j * rng.standard_normal((P, G))
     sI, sG = rng.uniform(0.5, 2.0, G), rng.uniform(0.5, 2.0, G)
@@ -435,25 +338,21 @@ def test_separable_kernels_and_assembly(backend, rng):
     half = n[:, None] + n[None, :]
     g_half = np.exp(rng.standard_normal(15))
     ref = KI + g_half[half] * KG
-    got = E.eq45_separable_assemble(backend.asarray(KI), backend.asarray(KG),
-                                    backend.asarray(g_half), half, be=backend)
-    assert type(got) is type(backend.asarray(ref))      # the backend's array type
-    assert np.max(np.abs(np.asarray(got) - ref)) <= 1e-15 * np.abs(ref).max()
+    got = E.eq45_separable_assemble(KI, KG, g_half, half)
+    assert np.max(np.abs(got - ref)) <= 1e-15 * np.abs(ref).max()
 
 
-# -- special ----------------------------------------------------------------------
-
-def test_special(backend, rng):
-    a = rng.uniform(-3.2, 3.2, 40)
-    got = special.bessel_i(24, backend.asarray(a), be=backend)
-    assert type(got) is type(backend.asarray(a))      # the backend's array type
-    got = np.asarray(got)
-    from scipy.special import ive
-    ref = ive(np.arange(24)[:, None], a[None, :]) * np.exp(np.abs(a))[None, :]
-    assert np.max(np.abs(got - ref) / np.abs(ref)) <= 1e-13
-    T = special.chebyshev_basis(64, 5)
+def test_bessel_coefficients_are_the_chebyshev_series_of_the_log_linear_spectrum(rng):
+    """``sum_p c_p T_p(u) = exp(alpha(t) L)`` on the record (``r = 1``, ``u = 2 t / T - 1``):
+    ``c_p`` is ``I_p(a)`` (``scipy.special.ive(p, a) exp|a|``), doubled for ``p >= 1``.  With
+    ``alpha_c = 0`` and ``alpha_d = 2``, ``a = L`` and ``alpha(t) = u``; ``|a| <= 3.2`` is the
+    range the sinusoid priors need."""
+    L, P = rng.uniform(-3.2, 3.2, 40), 24
     u = 2.0 * (np.arange(64) / 64 - 0.5)
-    assert np.allclose(T[3], 4 * u**3 - 3 * u, rtol=0, atol=1e-14)
+    T = np.cos(np.arange(P)[:, None] * np.arccos(u))                 # T_p(u), (P, 64)
+    got = T.T @ E.eq45_coeffs_bessel(L, 0.0, 2.0, P, r=1.0)
+    want = np.exp(u[:, None] * L[None, :])
+    assert np.max(np.abs(got - want)) <= 1e-13 * np.max(want)
 
 
 def test_evolutionary_has_no_classes_left():

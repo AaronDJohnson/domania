@@ -241,38 +241,6 @@ def test_eq45_plan_keep_message_names_the_dtype():
         wilson.evolutionary.eq45_plan(8, 16, 1.0, np.ones(128, np.int64))
 
 
-@pytest.mark.parametrize(("value", "kind"), [(1, "int"), (b"numpy", "bytes"), (True, "bool"),
-                                             (np, "module")], ids=["int", "bytes", "bool", "module"])
-def test_get_backend_backend_of_the_wrong_kind_raises_type_error(value, kind):
-    with pytest.raises(TypeError, match=_exact(f"backend must be a string, got {kind}")):
-        wilson.backend.get_backend(np.zeros(2), backend=value)
-
-
-def test_get_backend_keeps_its_choices():
-    get_backend, NUMPY = wilson.backend.get_backend, wilson.backend.NUMPY
-    for backend in (None, "numpy", np.str_("numpy"), NUMPY):
-        assert get_backend(np.zeros(2), backend=backend) is NUMPY
-    message = "backend must be 'numpy', 'jax' or a Backend; got 'torch'"
-    with pytest.raises(ValueError, match=_exact(message)):
-        get_backend(backend="torch")
-
-
-@pytest.mark.parametrize(("impl", "kind"), [(1, "int"), (None, "NoneType"), (b"numpy", "bytes")],
-                         ids=["int", "None", "bytes"])
-def test_cholesky_impl_of_the_wrong_kind_raises_type_error(backend, impl, kind):
-    with pytest.raises(TypeError, match=_exact(f"impl must be a string, got {kind}")):
-        backend.cholesky(backend.asarray(np.eye(2)), impl=impl)
-
-
-def test_cholesky_keeps_its_choices(backend):
-    A = backend.asarray(np.array([[4.0, 2.0], [2.0, 3.0]]))
-    for impl in ("numpy", "scipy"):
-        L, ok = backend.cholesky(A, impl=np.str_(impl))
-        assert bool(ok) and np.allclose(np.asarray(L) @ np.asarray(L).T, np.asarray(A))
-    with pytest.raises(ValueError, match=_exact("impl must be 'numpy' or 'scipy'; got 'lapack'")):
-        backend.cholesky(A, impl="lapack")
-
-
 #: The real-array checks: the call, an accepted float64 array, and the name in
 #: the message.
 _REAL_ARRAYS = {
@@ -325,8 +293,8 @@ class _UnhashableRamp:
     (lambda: wilson.RampWindow(np.sqrt, 3), "window name must be a non-empty string, got 3"),
     (lambda: wilson.RampWindow("x", "r"), "ramp must be callable, got str"),
     (lambda: wilson.RampWindow(_UnhashableRamp(), "r"),
-     "ramp must be hashable (a window is a cache key and static under jax.jit), got an unhashable "
-     "_UnhashableRamp: use a module-level function or a frozen dataclass instance"),
+     "ramp must be hashable (a window is a cache key), got an unhashable _UnhashableRamp: use a "
+     "module-level function or a frozen dataclass instance"),
     (lambda: wilson.windows.require_window(wilson.Meyer),
      "window must be a Window instance, got the class Meyer: pass an instance, e.g. Meyer() or "
      "domainia.wilson.MEYER"),
@@ -336,24 +304,3 @@ class _UnhashableRamp:
 def test_the_window_kind_messages_take_the_got_form(make, message):
     with pytest.raises(TypeError, match=_exact(message)):
         make()
-
-
-@pytest.mark.jax
-def test_the_real_array_checks_read_a_jit_tracers_dtype(jax_be):
-    """Under ``jax.jit`` the checks see tracers: a real grid passes, a complex one raises
-    ``TypeError`` while tracing (JAX adds a note, so the message is compared whole)."""
-    import jax
-    import jax.numpy as jnp
-
-    inv = jax.jit(lambda w: wilson.inverse(w, 8, 16, 1.0))
-    inv_bands = jax.jit(lambda w: _T.inverse_bands(w, 0, 65, _BANDS, 8, 16, 1.0))
-    fwd_bands = jax.jit(lambda z: _T.forward_bands(z, np.int64(0), _BANDS, 8, 16, 1.0))
-    want_bands = _T.inverse_bands(_W_BANDS, 0, 65, _BANDS, 8, 16, 1.0)
-    for got, want in ((inv(jnp.asarray(_W)), wilson.inverse(_W, 8, 16, 1.0)),
-                      (inv_bands(jnp.asarray(_W_BANDS)), want_bands),
-                      (fwd_bands(jnp.asarray(_Z)), _W_BANDS)):
-        assert isinstance(got, jax.Array) and np.allclose(np.asarray(got), want, rtol=0, atol=1e-12)
-    for jitted, arg, name in ((inv, _W, "wmn"), (inv_bands, _W_BANDS, "w")):
-        with pytest.raises(TypeError) as info:
-            jitted(jnp.asarray(arg) + 0j)
-        assert str(info.value) == f"{name} must be a real numeric array, got dtype complex128"

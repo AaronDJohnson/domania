@@ -131,8 +131,8 @@ def require_callable(name: str, value: object) -> Any:
 def require_dtype(name: str, a: object, kinds: str, expected: str) -> None:
     """``TypeError`` unless the dtype kind of ``a`` is one of ``kinds``.
 
-    Reads ``a.dtype`` without converting ``a`` when it has one, so a JAX array or tracer
-    passes through untouched; anything else (a list, a scalar) is read through
+    Reads ``a.dtype`` without converting ``a`` when it has one; anything else (a list, a
+    scalar) is read through
     :func:`numpy.asarray`. ``expected`` is the phrase after "must be", article included
     (``"a real numeric array"``). Use :data:`REAL_KINDS` for a real numeric array.
 

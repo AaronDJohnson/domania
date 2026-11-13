@@ -81,12 +81,10 @@ Windows (in :mod:`domainia.wilson.windows`):
 from __future__ import annotations
 
 from . import (
-    backend,
     evolutionary,
     filter,
     matrix,
     noise,
-    special,
     stationary,
     windows,
 )
@@ -144,7 +142,6 @@ __all__ = [
     "Window",
     "WindowError",
     "active_mask",
-    "backend",
     "band_averaged_variance",
     "band_frequencies",
     "count_active",
@@ -176,7 +173,6 @@ __all__ = [
     # Windows
     "require_window",
     "sample_window",
-    "special",
     "stationary",
     "time_pixel_centers",
     "unpack",

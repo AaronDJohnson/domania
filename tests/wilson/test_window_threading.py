@@ -23,8 +23,7 @@ from .meyer_cases import THREADED, domainia_cases, psd, psd_ft, wilson_cases
 #: must never be scanned: they are where the Meyer samples come from (``phi_centered``,
 #: ``phi_fft_order``) and where ``.sample`` is called, behind ``sample_window``'s validation.
 SCANNED = ("wilson/transform.py", "wilson/matrix.py", "wilson/stationary.py", "wilson/noise.py",
-           "wilson/evolutionary.py", "wilson/grid.py", "wilson/backend.py",
-           "wilson/special.py", "wilson/__init__.py", "wilson/_checks.py",
+           "wilson/evolutionary.py", "wilson/grid.py", "wilson/__init__.py", "wilson/_checks.py",
            "testing.py", "__init__.py", "_transform.py")
 #: The two modules that legitimately sample the Meyer window directly.
 UNSCANNED = frozenset({"wilson/filter.py", "wilson/windows.py"})
@@ -216,13 +215,12 @@ def test_the_scan_covers_every_module_but_filter_and_windows():
 
 @pytest.mark.parametrize("source, flagged", [
     ("forward(x, Nf, Nt, dt, window=window)", False),
-    ("forward(x, Nf, Nt, dt, be=be, window=self.dst.window)", False),
+    ("forward(x, Nf, Nt, dt, window=self.dst.window)", False),
     ("sample_window(window, Nf, Nt, dt)", False),
     ("sample_window(self.window, Nf, Nt, dt)", False),
     ("atom_spectrum(m, n, Nf, Nt, dt, base=base)", False),
     ("np.fft.rfft(x)", False),
     ("forward(x, Nf, Nt, dt)", True),
-    ("forward(x, Nf, Nt, dt, be=be)", True),
     ("forward(x, Nf, Nt, dt, base=base)", True),
     ("forward(x, Nf, Nt, dt, window=MEYER)", True),
     ("Tr.forward(x, Nf, Nt, dt, window=wilson.MEYER)", True),
@@ -249,10 +247,10 @@ _PASS_ON = "    return forward(x, Nf, Nt, dt, window=window)\n"
 
 @pytest.mark.parametrize("source, flagged", [
     # Rebinding and aliases: every call passes window=window, the body hard-codes MEYER.
-    ("def f(x, *, window=MEYER):\n    window = MEYER if is_tracer(x) else window\n" + _PASS_ON, True),
+    ("def f(x, *, window=MEYER):\n    window = MEYER if x is None else window\n" + _PASS_ON, True),
     ("def f(x, *, bands=None, window=MEYER):\n    if bands is not None:\n        window = MEYER\n"
      + _PASS_ON, True),
-    ("def f(x, *, window=MEYER):\n    window = window if be.xp is np else wilson.MEYER\n" + _PASS_ON,
+    ("def f(x, *, window=MEYER):\n    window = window if x.ndim else wilson.MEYER\n" + _PASS_ON,
      True),
     ("def f(x, *, window=None):\n    window = Meyer(8) if window is None else window\n" + _PASS_ON,
      True),
@@ -545,75 +543,19 @@ def test_stationary_backward_maps_recover_the_psd(window, Nf, Nt, dt):
            "psd_from_lambda_blocks(blocks of build_C_wdm)")
 
 
-#: Static arguments of a jitted kernel: the grid and the window (hashable, so a cache key).
-_STATIC = ("Nf", "Nt", "dt", "window")
-
-
-def _on_device(out):
-    """``out`` on the host, after checking it came back as a ``jax.Array`` (no NumPy fallback)."""
-    import jax
-
-    assert isinstance(out, jax.Array), type(out)
-    return np.asarray(out)
-
-
-#: Every grid on NumPy; the JAX lanes on two grids only (a dropped window shows on any grid).
-#: Not GRIDS[1] (16, 8, 0.25): there every test window but ALT_WINDOW samples alike.
-_LANES = ([(*g, "numpy") for g in GRIDS]
-          + [(*g, lane) for g in (GRIDS[0], GRIDS[2]) for lane in ("jax", "jax-jit")])
-
-
 @pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
-@pytest.mark.parametrize("Nf, Nt, dt, lane", _LANES)
-def test_apply_lambda_from_psd_is_the_dense_covariance(window, Nf, Nt, dt, lane, request):
+@pytest.mark.parametrize("Nf, Nt, dt", GRIDS)
+def test_apply_lambda_from_psd_is_the_dense_covariance(window, Nf, Nt, dt):
     """``apply_lambda_from_psd(x)`` is ``build_C_wdm_active @ x`` on the active cells (junk in
-    the inactive cells of ``x`` is ignored) on NumPy, on JAX with ``be=jax`` and under
-    ``jax.jit`` with the window static (the JAX lanes skip without jax)."""
+    the inactive cells of ``x`` is ignored)."""
     N = Nf * Nt
     mask = wilson.active_mask(Nf, Nt)
     x = np.random.default_rng(N + Nf + 3).standard_normal((Nf + 1, Nt))
     S = psd(np.fft.rfftfreq(N, dt))
     want = np.zeros_like(x)
     want[mask] = _dense(window, Nf, Nt, dt)[3] @ x[mask]
-    if lane == "numpy":
-        got = St.apply_lambda_from_psd(x, Nf, Nt, dt, S, window=window)
-    else:
-        be = request.getfixturevalue("jax_be")
-        if lane == "jax":
-            out = St.apply_lambda_from_psd(be.asarray(x), Nf, Nt, dt, be.asarray(S), be=be,
-                                           window=window)
-        else:
-            import jax
-
-            jitted = jax.jit(St.apply_lambda_from_psd, static_argnames=_STATIC)
-            out = jitted(be.asarray(x), Nf=Nf, Nt=Nt, dt=dt, Sn_rfft=be.asarray(S), window=window)
-        got = _on_device(out)
-    _close(got, want, RTOL_KERNEL, f"apply_lambda_from_psd[{lane}]")
-
-
-@pytest.mark.parametrize("lane", ["jax", "jax-jit"])
-def test_forward_and_inverse_take_the_window_on_jax(lane, jax_be):
-    """``forward`` and ``inverse`` with ``window=ALT_WINDOW`` on JAX (``be=jax``, and jitted with
-    the window static) are the NumPy kernels, which the value tests above pin."""
-    Nf, Nt, dt = 8, 16, 1.0
-    N = Nf * Nt
-    rng = np.random.default_rng(N + Nf + 6)
-    z = np.fft.rfft(rng.standard_normal(N))
-    w = rng.standard_normal((Nf + 1, Nt))
-    if lane == "jax":
-        fwd = wilson.forward(jax_be.asarray(z), Nf, Nt, dt, be=jax_be, window=ALT_WINDOW)
-        inv = wilson.inverse(jax_be.asarray(w), Nf, Nt, dt, be=jax_be, window=ALT_WINDOW)
-    else:
-        import jax
-
-        fwd = jax.jit(wilson.forward, static_argnames=_STATIC)(
-            jax_be.asarray(z), Nf=Nf, Nt=Nt, dt=dt, window=ALT_WINDOW)
-        inv = jax.jit(wilson.inverse, static_argnames=_STATIC)(
-            jax_be.asarray(w), Nf=Nf, Nt=Nt, dt=dt, window=ALT_WINDOW)
-    _close(_on_device(fwd), wilson.forward(z, Nf, Nt, dt, window=ALT_WINDOW), RTOL_KERNEL,
-           f"forward[{lane}]")
-    _close(_on_device(inv), wilson.inverse(w, Nf, Nt, dt, window=ALT_WINDOW), RTOL_KERNEL,
-           f"inverse[{lane}]")
+    got = St.apply_lambda_from_psd(x, Nf, Nt, dt, S, window=window)
+    _close(got, want, RTOL_KERNEL, "apply_lambda_from_psd")
 
 
 @pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)

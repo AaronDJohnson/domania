@@ -103,24 +103,15 @@ array where real numbers are taken). `ValueError` means the right kind with a wr
 shape, range, finiteness, integrality, an unknown option string, inactive cells, endpoints,
 or a domain or window mismatch. `WindowError` (a `ValueError`) means an inadmissible window,
 complex window samples included. In `domainia.translate`, complex values on a time or WDM
-domain raise `ValueError`, because they are valid on a `FourierDomain`. Backend handles passed
-as `be=` are not checked.
+domain raise `ValueError`, because they are valid on a `FourierDomain`.
 
 ## Install and test
 
 ```bash
-pip install -e ".[test]"          # add ",jax" for the JAX backend
-PYTHONDONTWRITEBYTECODE=1 JAX_PLATFORMS=cpu python -P -m pytest -q
+pip install -e ".[test]"
+PYTHONDONTWRITEBYTECODE=1 python -P -m pytest -q
 ```
 
 Three oracle tests compare against source trees outside this repository; they skip unless
 `DOMAINIA_ORACLE_ROOT` names the directory that holds them (the skip message lists the
 subdirectories each one expects).
-
-`import domainia` (any of its modules) never imports JAX. JAX is imported only on use:
-when you build the JAX backend (`domainia.wilson.backend.jax_backend()` or
-`domainia.wilson.backend.get_backend(backend="jax")`) to pass as the `be=` of a kernel, map
-or covariance that takes one, turn on float64 with `domainia.wilson.backend.enable_x64()`,
-or build JAX device constants. The JAX backend needs float64: call `enable_x64()` (or set
-`JAX_ENABLE_X64=true`) first, or it raises `RuntimeError`. A kernel that takes `be=`, given
-JAX arrays and no `be=`, infers the JAX backend, with the same requirement.

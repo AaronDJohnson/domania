@@ -66,8 +66,8 @@ Single precision propagates: a ``float32`` series (or ``complex64`` spectrum)
 is transformed in single precision and returns ``float32``.  Every constant
 that multiplies a working array (the sign patterns, ``kappa``, ``lam``, the
 window samples, the edge-band ``sqrt(2)``, the band phases) is cast to the
-working dtype first, so every FFT receives a single-precision array, on NumPy
-and on JAX.  Anything else, integers included, promotes to double.  It is
+working dtype first, so every FFT receives a single-precision array.  Anything
+else, integers included, promotes to double.  It is
 opt-in by dtype rather than by flag, so the precision of a result is readable
 off its own ``.dtype``.
 
@@ -79,9 +79,7 @@ or an FFT (complex64 bins of order 1e36 at ``dt=1e4`` do, in
 points (``forward``/``inverse``, their ``_time`` and ``_many`` forms, and
 ``forward_bands``/``inverse_bands``) checks the single-precision arrays it
 computes, and the message names the function whose array overflowed and
-suggests float64 input.  The check is host work, like the input check: it is
-skipped for double results and under ``jax.jit``, where a tracer has no values
-to read and an overflow still comes back as ``inf``/``nan``.
+suggests float64 input.  The check is skipped for double results.
 
 float64 runs are bit for bit what they were before the casts (a cast to
 float64 is a no-op, and no float64 expression is regrouped).  The Meyer
@@ -128,7 +126,6 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ._checks import REAL_KINDS, index_array, require_dtype, require_int
-from .backend import NUMPY, Backend, get_backend, is_tracer
 from .grid import (
     active_mask,
     carrier_phase,
@@ -203,31 +200,19 @@ def _working_dtypes(a: NDArray[np.generic]) -> tuple[np.dtype, np.dtype]:
     return np.dtype(np.float64), np.dtype(np.complex128)
 
 
-def _check_finite(values: NDArray[np.generic], context: str) -> None:
-    """:func:`domainia.wilson.validate_finite` on concrete input; skipped for JAX tracers.
-
-    Validation is host work, not arithmetic: a tracer has no values to check,
-    and a concrete JAX array is checked on the host like a NumPy one.
-    """
-    if not is_tracer(values):
-        validate_finite(values, context)
-
-
 def _check_single_output(out: NDArray[np.generic], entry: str) -> None:
     """Raise ``ValueError`` if a single-precision result of ``entry`` is not finite.
 
-    The entry points check their input first (:func:`_check_finite`), so a
-    ``nan`` or ``inf`` here was made by the transform itself: a float32
-    product, FFT or scaling overflowed.  NumPy only warns on the way and JAX
-    says nothing, so the caller would get ``nan`` cells.  Each entry point
-    checks the arrays it computes itself, so the message names the function
-    whose array overflowed.
+    The entry points check their input first (:func:`domainia.wilson.validate_finite`),
+    so a ``nan`` or ``inf`` here was made by the transform itself: a float32 product,
+    FFT or scaling overflowed.  NumPy only warns on the way, so the caller would get
+    ``nan`` cells.  Each entry point checks the arrays it computes itself, so the
+    message names the function whose array overflowed.
 
-    Host work, as :func:`_check_finite` is: skipped for a double-precision
-    result (float64 runs gain no pass) and for a JAX tracer.  It does not
+    Skipped for a double-precision result (float64 runs gain no pass).  It does not
     change ``np.errstate``.
     """
-    if _working_dtypes(out)[0] != np.float32 or is_tracer(out):
+    if _working_dtypes(out)[0] != np.float32:
         return
     arr = np.asarray(out)
     bad = ~np.isfinite(arr)
@@ -243,28 +228,26 @@ def _check_single_output(out: NDArray[np.generic], entry: str) -> None:
     )
 
 
-def _set_rounded(a: Array, idx: object, v: Array, be: Backend) -> Array:
-    """``a[idx] = v`` with ``v`` cast to ``a.dtype`` (``copy=False``).
+def _set_rounded(a: Array, idx: object, v: Array) -> Array:
+    """``a[idx] = v`` in place, with ``v`` cast to ``a.dtype``; returns ``a``.
 
     The transforms form ``v`` in the working dtype (their constants are cast
-    first), so the cast is a no-op for them.  It stays as the guard that keeps
-    the scatter dtype-safe on JAX: storing float64 values into a float32 array
-    warns in jax 0.9 (``FutureWarning``: "scatter inputs have incompatible
-    types"), and a later JAX will reject it.
+    first), so the cast is a no-op for them.
     """
-    return be.set(a, idx, be.asarray(v, dtype=a.dtype), copy=False)
+    a[idx] = np.asarray(v, dtype=a.dtype)
+    return a
 
 
-def _add_rounded(a: Array, idx: object, v: Array, be: Backend) -> Array:
-    """``a[idx] += v`` for a duplicate-free ``idx``, stored in ``a.dtype``.
+def _add_rounded(a: Array, idx: object, v: Array) -> Array:
+    """``a[idx] += v`` in place for a duplicate-free ``idx``, stored in ``a.dtype``; returns
+    ``a``.
 
-    Gather, add, cast, set: the functional form of NumPy's in-place ``+=``,
-    so float64 bits are the in-place statement's.  The inverse transforms hand
-    it a ``v`` already in ``a``'s dtype, so a float32 run adds in single
-    precision and the cast is a no-op; the cast keeps the scatter dtype-safe
-    on JAX (see :func:`_set_rounded`).
+    Gather, add, cast, set, so float64 bits are the in-place statement's.  The inverse
+    transforms hand it a ``v`` already in ``a``'s dtype, so a float32 run adds in single
+    precision and the cast is a no-op.
     """
-    return be.set(a, idx, be.asarray(a[idx] + v, dtype=a.dtype), copy=False)
+    a[idx] = np.asarray(a[idx] + v, dtype=a.dtype)
+    return a
 
 
 def _parity(m: int | np.integer, n_arr: NDArray[np.integer]) -> tuple[BoolArray, Array]:
@@ -282,7 +265,6 @@ def _parity(m: int | np.integer, n_arr: NDArray[np.integer]) -> tuple[BoolArray,
 
 def _build_slab(
     X_rfft: CArray, m: int, Nf: int, Nt: int, cdtype: np.dtype = _C128,
-    be: Backend = NUMPY,
 ) -> CArray:
     """Linear-centred slab $u_m[k] = X[\\ell_{m,k}]$ for $k \\in [0, N_t-1]$.
 
@@ -314,23 +296,21 @@ def _build_slab(
     """
     N = n_samples(Nf, Nt)
     ell = np.arange(Nt) + (m - 1) * (Nt // 2)
-    # Every slot is written below, so zeros (not np.empty) costs nothing and is
-    # the only allocation JAX offers.  Integer positions replace the boolean
-    # masks: the same assignments, and concrete indices for JAX.
-    slab = be.xp.zeros((*X_rfft.shape[:-1], Nt), dtype=cdtype)
+    # Every slot is written below.
+    slab = np.zeros((*X_rfft.shape[:-1], Nt), dtype=cdtype)
     neg = np.flatnonzero(ell < 0)
     over = np.flatnonzero(ell > N // 2)
     direct = np.flatnonzero((ell >= 0) & (ell <= N // 2))
-    slab = be.set(slab, (..., direct), X_rfft[..., ell[direct]], copy=False)
+    slab[..., direct] = X_rfft[..., ell[direct]]
     if neg.size:
-        slab = be.set(slab, (..., neg), be.xp.conj(X_rfft[..., -ell[neg]]), copy=False)
+        slab[..., neg] = np.conj(X_rfft[..., -ell[neg]])
     if over.size:
-        slab = be.set(slab, (..., over), be.xp.conj(X_rfft[..., N - ell[over]]), copy=False)
+        slab[..., over] = np.conj(X_rfft[..., N - ell[over]])
     return slab
 
 
 def _prepare_edges_for_inverse(
-    wmn: Array, Nf: int, Nt: int, rdtype: np.dtype = _F64, be: Backend = NUMPY
+    wmn: Array, Nf: int, Nt: int, rdtype: np.dtype = _F64
 ) -> Array:
     """Working copy of ``wmn`` with the edge bands put into ``inverse``'s form.
 
@@ -351,12 +331,12 @@ def _prepare_edges_for_inverse(
     Shape-generic in the leading axes, so :func:`inverse` and
     :func:`inverse_many` share it.
     """
-    work = wmn.astype(rdtype)          # NumPy: always a fresh copy, so copy=False below is safe
+    work = wmn.astype(rdtype)          # always a fresh copy, so updating it in place is safe
     mask = active_mask(Nf, Nt)
     root2 = rdtype.type(np.sqrt(2))   # mask[m] * root2 is then in the working dtype too
-    # ``work[..., 0, :] *= mask[0] * root2`` as a functional update.
-    work = _set_rounded(work, (..., 0, slice(None)), work[..., 0, :] * (mask[0] * root2), be)
-    work = _set_rounded(work, (..., Nf, slice(None)), work[..., Nf, :] * (mask[Nf] * root2), be)
+    # ``work[..., 0, :] *= mask[0] * root2``.
+    work = _set_rounded(work, (..., 0, slice(None)), work[..., 0, :] * (mask[0] * root2))
+    work = _set_rounded(work, (..., Nf, slice(None)), work[..., Nf, :] * (mask[Nf] * root2))
     return work
 
 
@@ -367,7 +347,6 @@ def _scatter_interior_bands(
     Nt: int,
     phi_c: Array,
     lam: float,
-    be: Backend = NUMPY,
 ) -> CArray:
     """Accumulate the interior bands into the rfft accumulator ``X``; returns it.
 
@@ -392,25 +371,23 @@ def _scatter_interior_bands(
     # In the working dtype, so a float32 G (and so the FFT) stays complex64;
     # the callers pass ``phi_c`` and ``lam`` in that dtype too.
     sign_int = (1.0 - 2.0 * ((1 - m_par)[:, None] * n_par[None, :])).astype(wmn_work.dtype)
-    xp = be.xp
     scaled_int = wmn_work[..., 1:Nf, :] * sign_int
     # g = w' * C_mn * (-1)^{(m+1)n}: real where (m+n) even, imaginary otherwise.
-    G = xp.where(even_int, scaled_int, 0.0) + 1j * xp.where(even_int, 0.0, scaled_int)
-    W_int = be.fft.fft(G, axis=-1) * (lam * phi_c)
+    G = np.where(even_int, scaled_int, 0.0) + 1j * np.where(even_int, 0.0, scaled_int)
+    W_int = np.fft.fft(G, axis=-1) * (lam * phi_c)
     # Sequential slice-adds in band order, exactly the oracle's ``+=`` loop.
     # Every rfft bin receives at most two addends (adjacent interior bands
     # overlap by Nt/2; the edge bands only touch bins also covered by band 1 or
     # band Nf-1, plus bin N/2 alone), and a + b == b + a in IEEE arithmetic, so
-    # the order is immaterial on any backend.  Each slice is duplicate-free.
+    # the order is immaterial.  Each slice is duplicate-free.
     for i, m_i in enumerate(m_int):
         start = int(m_i - 1) * (Nt // 2)
-        X = _add_rounded(X, (..., slice(start, start + Nt)), W_int[..., i, :], be)
+        X = _add_rounded(X, (..., slice(start, start + Nt)), W_int[..., i, :])
     return X
 
 
 def _scatter_edge_bands(
     X: CArray, wmn_work: Array, Nf: int, Nt: int, N: int, phi_c: Array, lam: float,
-    be: Backend = NUMPY,
 ) -> CArray:
     """Accumulate the DC and Nyquist bands into ``X``; returns it.
 
@@ -422,22 +399,21 @@ def _scatter_edge_bands(
     duplicate-free and a plain ``+=`` is exact -- ``np.add.at`` was only ever
     guarding against duplicates that cannot occur here.
     """
-    xp = be.xp
     n_arr = np.arange(Nt)
     for m in (0, Nf):
         even, sign = _parity(m, n_arr)
         scaled = wmn_work[..., m, :] * sign.astype(wmn_work.dtype)
-        g = xp.where(even, scaled, 0.0) + 1j * xp.where(even, 0.0, scaled)
-        Wm = be.fft.fft(g, axis=-1)
+        g = np.where(even, scaled, 0.0) + 1j * np.where(even, 0.0, scaled)
+        Wm = np.fft.fft(g, axis=-1)
         ell = n_arr + (m - 1) * (Nt // 2)
         valid = np.flatnonzero((ell >= 0) & (ell <= N // 2))
         # ``X[..., ell[valid]] += v``: the indices are strictly increasing, so the
         # fancy-index add is one addition per bin either way.
-        X = _add_rounded(X, (..., ell[valid]), lam * phi_c[valid] * Wm[..., valid], be)
+        X = _add_rounded(X, (..., ell[valid]), lam * phi_c[valid] * Wm[..., valid])
     return X
 
 
-def _gather_bands(x_rfft: CArray, Nf: int, Nt: int, dt: float, be: Backend = NUMPY, *,
+def _gather_bands(x_rfft: CArray, Nf: int, Nt: int, dt: float, *,
                   window: Window = MEYER) -> Array:
     """Coefficient grid(s) from spectra: ``(..., N//2+1) -> (..., Nf+1, Nt)``.
 
@@ -456,18 +432,17 @@ def _gather_bands(x_rfft: CArray, Nf: int, Nt: int, dt: float, be: Backend = NUM
     Edge bands $m \\in \\{0, N_f\\}$ take the Hermitian-symmetry slab path.
     Two bands, so the Python loop over them is irrelevant to the cost.
     """
-    xp = be.xp
     rdtype, cdtype = _working_dtypes(x_rfft)
     phi_c = sample_window(window, Nf, Nt, dt).astype(rdtype)          # host constant
     # Every constant below is in the working dtype, so a float32 run stays float32
     # after the FFT (for float64 the casts are no-ops).
     kappa = rdtype.type(np.sqrt(2.0) / Nf)
     n_arr = np.arange(Nt)
-    out: Array = xp.zeros((*x_rfft.shape[:-1], Nf + 1, Nt), dtype=rdtype)
+    out: Array = np.zeros((*x_rfft.shape[:-1], Nf + 1, Nt), dtype=rdtype)
 
     m_int = np.arange(1, Nf)
     ell = (m_int - 1)[:, None] * (Nt // 2) + n_arr[None, :]  # (Nf-1, Nt)
-    Y = be.fft.ifft(x_rfft[..., ell] * phi_c, axis=-1)
+    Y = np.fft.ifft(x_rfft[..., ell] * phi_c, axis=-1)
 
     # The parity patterns depend only on the parities of m and n, so build them
     # from 1D parity vectors instead of forming (m+1)*n over the whole grid.
@@ -475,23 +450,23 @@ def _gather_bands(x_rfft: CArray, Nf: int, Nt: int, dt: float, be: Backend = NUM
     n_par = n_arr & 1
     even_int = m_par[:, None] == n_par[None, :]  # (m+n) even <=> parities equal
     # Re(C_mn^* y_m[n]): even -> Re(y_m); odd -> Re(-i y_m) = Im(y_m).
-    re_or_im_int = xp.where(even_int, Y.real, Y.imag)
+    re_or_im_int = np.where(even_int, Y.real, Y.imag)
     # (-1)^{(m+1)n}; exponent parity = ((m+1) & 1) * (n & 1).
     sign_int = (1.0 - 2.0 * ((1 - m_par)[:, None] * n_par[None, :])).astype(rdtype)
     # ``out[..., 1:Nf, :] = (kappa * sign_int) * re_or_im_int``, in the working dtype.
-    out = _set_rounded(out, (..., slice(1, Nf), slice(None)), kappa * sign_int * re_or_im_int, be)
+    out = _set_rounded(out, (..., slice(1, Nf), slice(None)), kappa * sign_int * re_or_im_int)
 
     for m in (0, Nf):
-        y_m = be.fft.ifft(_build_slab(x_rfft, m, Nf, Nt, cdtype, be) * phi_c, axis=-1)
+        y_m = np.fft.ifft(_build_slab(x_rfft, m, Nf, Nt, cdtype) * phi_c, axis=-1)
         even, sign = _parity(m, n_arr)
         out = _set_rounded(out, (..., m, slice(None)),
-                           kappa * sign.astype(rdtype) * xp.where(even, y_m.real, y_m.imag), be)
+                           kappa * sign.astype(rdtype) * np.where(even, y_m.real, y_m.imag))
 
     # Unit-norm edge basis functions. Not optional: see the module docstring.
     # ``out[..., 0, :] /= sqrt(2)``, with sqrt(2) in the working dtype.
     root2 = rdtype.type(np.sqrt(2))
-    out = _set_rounded(out, (..., 0, slice(None)), out[..., 0, :] / root2, be)
-    out = _set_rounded(out, (..., Nf, slice(None)), out[..., Nf, :] / root2, be)
+    out = _set_rounded(out, (..., 0, slice(None)), out[..., 0, :] / root2)
+    out = _set_rounded(out, (..., Nf, slice(None)), out[..., Nf, :] / root2)
     return out
 
 
@@ -501,7 +476,6 @@ def forward(
     Nt: int,
     dt: float,
     *,
-    be: Backend | None = None,
     window: Window = MEYER,
 ) -> Array:
     """Forward WDM transform: $\\text{rfft}(x) \\to w_{mn}$.
@@ -568,15 +542,14 @@ def forward(
     validate_grid(Nf, Nt)
     validate_dt(dt)
     N = n_samples(Nf, Nt)
-    be = be or get_backend(x_rfft)
-    x_rfft = be.asarray(x_rfft)
+    x_rfft = np.asarray(x_rfft)
     if x_rfft.shape != (N // 2 + 1,):
         raise ValueError(
             f"x_rfft must have shape ({N // 2 + 1},) for Nf={Nf}, Nt={Nt}; "
             f"got {x_rfft.shape}"
         )
-    _check_finite(x_rfft, "forward: x_rfft")
-    out = _gather_bands(x_rfft, Nf, Nt, dt, be, window=window)
+    validate_finite(x_rfft, "forward: x_rfft")
+    out = _gather_bands(x_rfft, Nf, Nt, dt, window=window)
     _check_single_output(out, "forward")
     return out
 
@@ -587,7 +560,6 @@ def forward_many(
     Nt: int,
     dt: float,
     *,
-    be: Backend | None = None,
     window: Window = MEYER,
 ) -> Array:
     """Forward-transform a stack of spectra: $(B, N/2+1) \\to (B, N_f+1, N_t)$.
@@ -635,15 +607,14 @@ def forward_many(
     validate_grid(Nf, Nt)
     validate_dt(dt)
     N = n_samples(Nf, Nt)
-    be = be or get_backend(x_rfft)
-    x_rfft = be.asarray(x_rfft)
+    x_rfft = np.asarray(x_rfft)
     if x_rfft.ndim != 2 or x_rfft.shape[1] != N // 2 + 1:
         raise ValueError(
             f"x_rfft must have shape (B, {N // 2 + 1}) for Nf={Nf}, Nt={Nt}; "
             f"got {x_rfft.shape}"
         )
-    _check_finite(x_rfft, "forward_many: x_rfft")
-    out = _gather_bands(x_rfft, Nf, Nt, dt, be, window=window)
+    validate_finite(x_rfft, "forward_many: x_rfft")
+    out = _gather_bands(x_rfft, Nf, Nt, dt, window=window)
     _check_single_output(out, "forward_many")
     return out
 
@@ -654,7 +625,6 @@ def forward_time_many(
     Nt: int,
     dt: float,
     *,
-    be: Backend | None = None,
     window: Window = MEYER,
 ) -> Array:
     """Convenience wrapper: a stack of time series $(B, N) \\to (B, N_f+1, N_t)$.
@@ -683,19 +653,18 @@ def forward_time_many(
     (4, 9, 16)
     """
     validate_grid(Nf, Nt)
-    be = be or get_backend(x)
-    x = be.asarray(x)
+    x = np.asarray(x)
     expected = n_samples(Nf, Nt)
     if x.ndim != 2 or x.shape[1] != expected:
         raise ValueError(
             f"x must have shape (B, {expected}) = (B, Nf*Nt) for Nf={Nf}, "
             f"Nt={Nt}; got {x.shape}"
         )
-    _check_finite(x, "forward_time_many: x")
-    x_rfft = be.fft.rfft(x, axis=-1)
+    validate_finite(x, "forward_time_many: x")
+    x_rfft = np.fft.rfft(x, axis=-1)
     # Before forward_many's input check, which would report an overflow here as a gap.
     _check_single_output(x_rfft, "forward_time_many")
-    return forward_many(x_rfft, Nf, Nt, dt, be=be, window=window)
+    return forward_many(x_rfft, Nf, Nt, dt, window=window)
 
 
 def inverse(
@@ -704,7 +673,6 @@ def inverse(
     Nt: int,
     dt: float,
     *,
-    be: Backend | None = None,
     window: Window = MEYER,
 ) -> CArray:
     """Inverse WDM transform: $w_{mn} \\to \\text{rfft}(x)$.
@@ -757,22 +725,21 @@ def inverse(
     validate_grid(Nf, Nt)
     validate_dt(dt)
     N = n_samples(Nf, Nt)
-    be = be or get_backend(wmn)
-    wmn = be.asarray(wmn)
+    wmn = np.asarray(wmn)
     # A complex grid would have its imaginary part silently discarded.
     require_dtype("wmn", wmn, REAL_KINDS, "a real numeric array")
     if wmn.shape != (Nf + 1, Nt):
         raise ValueError(f"wmn must have shape ({Nf + 1}, {Nt}); got {wmn.shape}")
-    _check_finite(wmn, "inverse: wmn")
+    validate_finite(wmn, "inverse: wmn")
 
     rdtype, cdtype = _working_dtypes(wmn)
     phi_c = sample_window(window, Nf, Nt, dt).astype(rdtype)
-    wmn_work = _prepare_edges_for_inverse(wmn, Nf, Nt, rdtype, be)
+    wmn_work = _prepare_edges_for_inverse(wmn, Nf, Nt, rdtype)
 
     lam = rdtype.type(1.0 / (np.sqrt(2.0) * dt))
-    X = be.xp.zeros(N // 2 + 1, dtype=cdtype)
-    X = _scatter_interior_bands(X, wmn_work, Nf, Nt, phi_c, lam, be)
-    X = _scatter_edge_bands(X, wmn_work, Nf, Nt, N, phi_c, lam, be)
+    X = np.zeros(N // 2 + 1, dtype=cdtype)
+    X = _scatter_interior_bands(X, wmn_work, Nf, Nt, phi_c, lam)
+    X = _scatter_edge_bands(X, wmn_work, Nf, Nt, N, phi_c, lam)
     _check_single_output(X, "inverse")
     return X
 
@@ -783,7 +750,6 @@ def inverse_many(
     Nt: int,
     dt: float,
     *,
-    be: Backend | None = None,
     window: Window = MEYER,
 ) -> CArray:
     """Inverse-transform a stack: $(B, N_f+1, N_t) \\to (B, N/2+1)$.
@@ -818,8 +784,7 @@ def inverse_many(
     validate_grid(Nf, Nt)
     validate_dt(dt)
     N = n_samples(Nf, Nt)
-    be = be or get_backend(wmn)
-    wmn = be.asarray(wmn)
+    wmn = np.asarray(wmn)
     # A complex grid would have its imaginary part silently discarded.
     require_dtype("wmn", wmn, REAL_KINDS, "a real numeric array")
     if wmn.ndim != 3 or wmn.shape[1:] != (Nf + 1, Nt):
@@ -827,16 +792,16 @@ def inverse_many(
             f"wmn must have shape (B, {Nf + 1}, {Nt}) for Nf={Nf}, Nt={Nt}; "
             f"got {wmn.shape}"
         )
-    _check_finite(wmn, "inverse_many: wmn")
+    validate_finite(wmn, "inverse_many: wmn")
 
     rdtype, cdtype = _working_dtypes(wmn)
     phi_c = sample_window(window, Nf, Nt, dt).astype(rdtype)
-    wmn_work = _prepare_edges_for_inverse(wmn, Nf, Nt, rdtype, be)
+    wmn_work = _prepare_edges_for_inverse(wmn, Nf, Nt, rdtype)
 
     lam = rdtype.type(1.0 / (np.sqrt(2.0) * dt))
-    X = be.xp.zeros((wmn.shape[0], N // 2 + 1), dtype=cdtype)
-    X = _scatter_interior_bands(X, wmn_work, Nf, Nt, phi_c, lam, be)
-    X = _scatter_edge_bands(X, wmn_work, Nf, Nt, N, phi_c, lam, be)
+    X = np.zeros((wmn.shape[0], N // 2 + 1), dtype=cdtype)
+    X = _scatter_interior_bands(X, wmn_work, Nf, Nt, phi_c, lam)
+    X = _scatter_edge_bands(X, wmn_work, Nf, Nt, N, phi_c, lam)
     _check_single_output(X, "inverse_many")
     return X
 
@@ -847,7 +812,6 @@ def inverse_time_many(
     Nt: int,
     dt: float,
     *,
-    be: Backend | None = None,
     window: Window = MEYER,
 ) -> Array:
     """Convenience wrapper: $(B, N_f+1, N_t) \\to$ a stack of series $(B, N)$.
@@ -877,8 +841,7 @@ def inverse_time_many(
     True
     """
     N = n_samples(Nf, Nt)
-    be = be or get_backend(wmn)
-    x = be.fft.irfft(inverse_many(wmn, Nf, Nt, dt, be=be, window=window), n=N, axis=-1)
+    x = np.fft.irfft(inverse_many(wmn, Nf, Nt, dt, window=window), n=N, axis=-1)
     _check_single_output(x, "inverse_time_many")
     return x
 
@@ -889,7 +852,6 @@ def forward_time(
     Nt: int,
     dt: float,
     *,
-    be: Backend | None = None,
     window: Window = MEYER,
 ) -> Array:
     """Convenience wrapper: time-domain $x_k \\to w_{mn}$.
@@ -933,8 +895,7 @@ def forward_time(
     ValueError: forward_time: x: 1 of 128 entries are not finite...
     """
     validate_grid(Nf, Nt)
-    be = be or get_backend(x)
-    x = be.asarray(x)
+    x = np.asarray(x)
     expected = n_samples(Nf, Nt)
     if x.shape != (expected,):
         raise ValueError(
@@ -943,11 +904,11 @@ def forward_time(
         )
     # Check here rather than only on the rfft: reporting "index 5 of x" beats
     # reporting that every bin of the transformed spectrum went non-finite.
-    _check_finite(x, "forward_time: x")
-    x_rfft = be.fft.rfft(x)
+    validate_finite(x, "forward_time: x")
+    x_rfft = np.fft.rfft(x)
     # Before forward's input check, which would report an overflow here as a gap.
     _check_single_output(x_rfft, "forward_time")
-    return forward(x_rfft, Nf, Nt, dt, be=be, window=window)
+    return forward(x_rfft, Nf, Nt, dt, window=window)
 
 
 def inverse_time(
@@ -956,7 +917,6 @@ def inverse_time(
     Nt: int,
     dt: float,
     *,
-    be: Backend | None = None,
     window: Window = MEYER,
 ) -> Array:
     """Convenience wrapper: $w_{mn} \\to$ time-domain $x_k$.
@@ -990,9 +950,8 @@ def inverse_time(
     True
     """
     N = n_samples(Nf, Nt)
-    be = be or get_backend(wmn)
-    x_rfft = inverse(wmn, Nf, Nt, dt, be=be, window=window)
-    x = be.fft.irfft(x_rfft, n=N)
+    x_rfft = inverse(wmn, Nf, Nt, dt, window=window)
+    x = np.fft.irfft(x_rfft, n=N)
     _check_single_output(x, "inverse_time")
     return x
 
@@ -1170,7 +1129,7 @@ def _band_windows(bands: NDArray[np.integer], k0: int, n_bins: int, Nt: int) -> 
 
 
 def forward_bands(z: CArray, k0: int, bands: NDArray[np.integer], Nf: int, Nt: int,
-                  dt: float, *, be: Backend | None = None, window: Window = MEYER) -> Array:
+                  dt: float, *, window: Window = MEYER) -> Array:
     """Wilson coefficients of ``bands`` from band-limited rfft bins: ``(..., n) -> (..., nb, Nt)``.
 
     ``z[..., j]`` is the rfft bin ``k0 + j`` in ``numpy.fft.rfft`` units (no ``dt``).  On a
@@ -1195,8 +1154,6 @@ def forward_bands(z: CArray, k0: int, bands: NDArray[np.integer], Nf: int, Nt: i
         Interior bands, each in ``1..Nf-1``.
     Nf, Nt : int
     dt : float
-    be : Backend, optional
-        Array backend (default: the backend of ``z``).
     window : Window, optional
         The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
         See :mod:`domainia.wilson.windows`.
@@ -1204,24 +1161,22 @@ def forward_bands(z: CArray, k0: int, bands: NDArray[np.integer], Nf: int, Nt: i
     validate_grid(Nf, Nt)
     validate_dt(dt)
     require_int("k0", k0)
-    be = be or get_backend(z)
     bands = _check_interior_bands(bands, Nf)
-    z = be.asarray(z)
+    z = np.asarray(z)
     ell = _band_windows(bands, k0, z.shape[-1], Nt)
-    _check_finite(z, "forward_bands: z")
+    validate_finite(z, "forward_bands: z")
     rdtype, cdtype = _working_dtypes(z)
     phi = sample_window(window, Nf, Nt, dt)
     phase = _band_phase(bands, Nt, phi).astype(cdtype)
-    Y = be.fft.ifft(phi.astype(rdtype) * z[..., ell], axis=-1)
+    Y = np.fft.ifft(phi.astype(rdtype) * z[..., ell], axis=-1)
     # Wilson units: the unit-norm-atom cells times sqrt(2 dt / N) (band_atoms' docstring).
-    out = be.xp.real(phase * Y) * rdtype.type(np.sqrt(2.0 * dt / n_samples(Nf, Nt)))
+    out = np.real(phase * Y) * rdtype.type(np.sqrt(2.0 * dt / n_samples(Nf, Nt)))
     _check_single_output(out, "forward_bands")
     return out
 
 
 def inverse_bands(w: Array, k0: int, n_bins: int, bands: NDArray[np.integer], Nf: int,
-                  Nt: int, dt: float, *, be: Backend | None = None,
-                  window: Window = MEYER) -> CArray:
+                  Nt: int, dt: float, *, window: Window = MEYER) -> CArray:
     """rfft bins from the Wilson coefficients of ``bands``: ``(..., nb, Nt) -> (..., n_bins)``.
 
     It is ``inverse(w_full)[k0:k0 + n_bins]`` (<= 1e-12 relative), ``w_full`` the
@@ -1247,8 +1202,6 @@ def inverse_bands(w: Array, k0: int, n_bins: int, bands: NDArray[np.integer], Nf
         Interior bands, each in ``1..Nf-1``.
     Nf, Nt : int
     dt : float
-    be : Backend, optional
-        Array backend (default: the backend of ``w``).
     window : Window, optional
         The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
         See :mod:`domainia.wilson.windows`.
@@ -1257,23 +1210,22 @@ def inverse_bands(w: Array, k0: int, n_bins: int, bands: NDArray[np.integer], Nf
     validate_dt(dt)
     require_int("k0", k0)
     require_int("n_bins", n_bins)
-    be = be or get_backend(w)
     bands = _check_interior_bands(bands, Nf)
-    w = be.asarray(w)
+    w = np.asarray(w)
     # The adjoint identity holds only for real cells: a complex w would give a complex
     # result that is not the adjoint of any cells.
     require_dtype("w", w, REAL_KINDS, "a real numeric array")
     if w.shape[-2:] != (bands.size, Nt):
         raise ValueError(f"w must end in ({bands.size}, {Nt}); got {w.shape}")
-    _check_finite(w, "inverse_bands: w")
+    validate_finite(w, "inverse_bands: w")
     ell = _band_windows(bands, k0, n_bins, Nt)
     rdtype, cdtype = _working_dtypes(w)
     phi = sample_window(window, Nf, Nt, dt)
     phase = _band_phase(bands, Nt, phi)
-    V = phi.astype(rdtype) * be.fft.fft(np.conj(phase).astype(cdtype) * w, axis=-1) / Nt
-    out = be.xp.zeros((*w.shape[:-2], n_bins), dtype=cdtype)
+    V = phi.astype(rdtype) * np.fft.fft(np.conj(phase).astype(cdtype) * w, axis=-1) / Nt
+    out = np.zeros((*w.shape[:-2], n_bins), dtype=cdtype)
     for b in range(bands.size):
-        out = be.add_at(out, (..., ell[b]), V[..., b, :], copy=False)
+        np.add.at(out, (..., ell[b]), V[..., b, :])
     # rfft units: N / (2 dt) times the adjoint of forward_bands' sqrt(2 dt / N).
     out = out * rdtype.type(np.sqrt(n_samples(Nf, Nt) / (2.0 * dt)))
     _check_single_output(out, "inverse_bands")

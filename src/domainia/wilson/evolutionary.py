@@ -18,7 +18,7 @@ Everything here is a pure function of ``(grid, spectrum, arrays)``.
     references) or :func:`eq45_coeffs_interp` (any
     ``Sn(f, t)``, interpolated at ``P`` Chebyshev nodes; wdm_dev), then
     :func:`eq45_blocks_cheb`;
-  - the Gram form for the log-linear family (the JAX build):
+  - the Gram form for the log-linear family:
     :func:`eq45_gram_plan`, :func:`eq45_gram_gather`, :func:`eq45_blocks_gram`;
   - the separable form :math:`S_c = s_I + g(t) s_G`:
     :func:`eq45_separable_kernels`, :func:`eq45_separable_assemble`;
@@ -36,7 +36,7 @@ PSDs are callables ``Sn(f, t)``: elementwise, broadcasting, argument order
 Numerics: every NumPy path is an operation-order-preserving transcription of its
 source (wdm_dev ``evolutionary.py``, frozen in ``tests/wilson/oracle/wdm_dev_ev``, and
 the WDM Paper II toy models, their GPU port and the galactic-binary toy model, none of
-which ships), so it is bit-identical to it; the JAX paths agree to round-off.
+which ships), so it is bit-identical to it.
 """
 
 from __future__ import annotations
@@ -47,9 +47,9 @@ from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
+from scipy.special import ive
 
 from ._checks import require_dtype, require_real
-from .backend import NUMPY, Backend, get_backend, pytree_dataclass
 from .grid import (
     _require_int,
     active_mask,
@@ -317,7 +317,6 @@ def exact_covariance(Nf: int, Nt: int, dt: float, Sn: PsdFtFunc, *,
 # ---------------------------------------------------------------------------
 
 
-@pytree_dataclass(data=("R", "C", "combo", "d", "s", "B"), meta=("m", "m2"))
 @dataclass(frozen=True, eq=False)
 class Eq45BlockSpec:
     """One band block ``(m, m2)``, ``m2 in {m, m+1}``, of an :class:`Eq45Plan`.
@@ -325,11 +324,6 @@ class Eq45BlockSpec:
     ``R``/``C`` (row/column packed cells), ``combo = 2a + b`` (base-atom parities),
     ``d`` (circular column lag), ``s = n + n'`` (mid-time index; ``t_bar = s dT/2``)
     and ``B = {combo: (k, eta_k G_ma(k) G*_m2b(k) / T)}`` over the support bins.
-
-    A JAX pytree: the band indices ``m``/``m2`` are static (they pick the block's
-    slot and whether it is symmetrised); every array is a leaf.  ``R``/``C`` are
-    leaves too, because JAX rejects arrays as static fields; only their shapes,
-    which stay static under tracing, matter to a kernel.
     """
 
     m: int
@@ -342,11 +336,6 @@ class Eq45BlockSpec:
     B: dict[int, tuple[IntArray, CArray]]
 
 
-@pytree_dataclass(
-    data=("f", "eta", "m", "n", "t", "base", "keep", "cells", "pos", "band_cells", "Tp",
-          "specs", "k_used"),
-    meta=("Nf", "Nt", "dt", "N", "T", "K", "P", "t_max", "fold_has_duplicates"),
-)
 @dataclass(frozen=True, eq=False)
 class Eq45Plan:
     """Host (NumPy float64) constants of Eq. (45) on the kept cells of one grid.
@@ -354,21 +343,6 @@ class Eq45Plan:
     ``specs`` holds one :class:`Eq45BlockSpec` per band block ``(m, m2)``,
     ``m2 in {m, m+1}``.  Built line for line in the ported order (it fixes the float64
     bits).
-
-    A JAX pytree: the grid scalars (``Nf, Nt, dt, N, T, K, P, t_max``) and
-    ``fold_has_duplicates`` are static; every array is a leaf.  (Registered
-    with JAX lazily, see :func:`domainia.wilson.backend.pytree_dataclass`: at import if JAX
-    was imported first, else by the first :func:`domainia.wilson.backend.enable_x64` /
-    :func:`domainia.wilson.backend.jax_backend` call.)
-
-    .. warning::
-       Under ``jax.jit`` pass the plan as an **argument**
-       (``jax.jit(lambda plan, c: eq45_blocks_cheb(plan, c))(plan, coeffs)``);
-       never close over it.  A closed-over plan bakes every array (219 MB at
-       64 x 256) into the compiled program: 404 MB of HLO text and ~25 s to
-       lower and compile, against 2.5 MB and ~4 s as an argument (measured,
-       CPU).  ``jax.device_put(plan)`` once keeps the arrays on the device
-       between calls.
     """
 
     Nf: int
@@ -506,8 +480,7 @@ def eq45_plan(Nf: int, Nt: int, dt: float, keep: BoolArray | None = None, *,
 # ---------------------------------------------------------------------------
 
 
-def eq45_coeffs_bessel(L: Array, alpha_c: Any, alpha_d: Any, P: int, *, r: float,
-                       be: Backend | None = None) -> Array:
+def eq45_coeffs_bessel(L: Array, alpha_c: Any, alpha_d: Any, P: int, *, r: float) -> Array:
     r"""``(P, len(L))``: Chebyshev coefficients of :math:`e^{\alpha(\bar t) L}` in
     :math:`u = 2\bar t/t_{\max} - 1` for the log-linear family
     :math:`\alpha(t) = \alpha_c + \alpha_d (t/T_{\rm obs} - 1/2)`, exactly (Bessel I):
@@ -517,16 +490,13 @@ def eq45_coeffs_bessel(L: Array, alpha_c: Any, alpha_d: Any, P: int, *, r: float
     ``r`` is a required keyword: ``plan.t_max / T_obs``, i.e. ``1.0`` on the
     data grid and ``Nt' / Nt`` on a padded grid (``272/256`` for the sinusoid
     pad).  It used to default to ``1.0``, which is silently wrong on a padded
-    plan.  Ported verbatim: keep the operation order (it fixes the float64 bits).  On JAX
-    the Bessel functions are the 40-term series of
-    :meth:`domainia.wilson.backend.Backend.bessel_i`.
+    plan.  Ported verbatim: keep the operation order (it fixes the float64 bits).
+    :math:`I_p(a)` is ``scipy.special.ive(p, a) * exp(|a|)``.
     """
-    be = be or get_backend(L, alpha_c, alpha_d)
-    xp = be.xp
-    a = 0.5 * alpha_d * r * L
-    c = be.bessel_i(P, a)
-    c = be.set(c, slice(1, None), c[1:] * 2.0, copy=False)          # c[1:] *= 2.0
-    return c * xp.exp((alpha_c + alpha_d * (0.5 * r - 0.5)) * L)[None, :]
+    a = np.asarray(0.5 * alpha_d * r * L)
+    c = ive(np.arange(P)[:, None], a[None, :]) * np.exp(np.abs(a))[None, :]      # I_p(a)
+    c[1:] *= 2.0
+    return c * np.exp((alpha_c + alpha_d * (0.5 * r - 0.5)) * L)[None, :]
 
 
 def eq45_coeffs_interp(Sn: PsdFtFunc, f: Array, t_max: float, P: int, *,
@@ -551,8 +521,8 @@ def eq45_coeffs_interp(Sn: PsdFtFunc, f: Array, t_max: float, P: int, *,
     return out
 
 
-def eq45_blocks_cheb(plan: Eq45Plan, coeffs: Array | Callable[[IntArray], Array], *,
-                     be: Backend | None = None) -> tuple[list[Array], list[Array]]:
+def eq45_blocks_cheb(plan: Eq45Plan, coeffs: Array | Callable[[IntArray], Array]
+                     ) -> tuple[list[Array], list[Array]]:
     """Diagonal (symmetrised) and upper band blocks of Eq. (45) from Chebyshev coefficients.
 
     ``coeffs`` is either a ``(P, K)`` array over every rfft bin
@@ -562,29 +532,22 @@ def eq45_blocks_cheb(plan: Eq45Plan, coeffs: Array | Callable[[IntArray], Array]
     one length-``Nt`` FFT per order.  The NumPy path is wdm_dev
     ``TriCovariance.blocks`` line for line (``np.add.at`` fold).
     Returns ragged lists (``diag[m]``: kept cells of band ``m`` squared).
-
-    Under ``jax.jit`` pass ``plan`` as an argument (see :class:`Eq45Plan`) and
-    ``coeffs`` as the ``(P, K)`` array (a callable would index host arrays with
-    the traced ``k``).  The backend follows ``coeffs`` and the plan's arrays.
     """
-    if be is None:
-        be = get_backend(plan.Tp) if callable(coeffs) else get_backend(coeffs, plan.Tp)
-    xp = be.xp
     P, Nt = plan.P, plan.Nt
-    Tp = be.asarray(plan.Tp)
+    Tp = np.asarray(plan.Tp)
     diag: list[Array] = [None] * (plan.Nf + 1)  # type: ignore[list-item]
     up: list[Array] = [None] * plan.Nf  # type: ignore[list-item]
     for spec in plan.specs:
-        F = xp.zeros((4, P, Nt), complex)
+        F = np.zeros((4, P, Nt), complex)
         for cb, (k, Bk) in spec.B.items():
             Ck = coeffs(k) if callable(coeffs) else coeffs[:, k]
             V = Ck * Bk[None, :]                                        # (P, |k|)
-            folded = xp.zeros((P, Nt), complex)
-            folded = be.add_at(folded, (slice(None), k % Nt), V, copy=False)
-            F = be.set(F, cb, be.fft.fft(folded, axis=1), copy=False)   # F_p(d)
+            folded = np.zeros((P, Nt), complex)
+            np.add.at(folded, (slice(None), k % Nt), V)                # k % Nt may repeat
+            F[cb] = np.fft.fft(folded, axis=1)                          # F_p(d)
         Fg = F[spec.combo, :, spec.d]                                   # (nR, nC, P)
         Tg = Tp[:, spec.s]                                              # (P, nR, nC)
-        blk = xp.real(xp.einsum("ijp,pij->ij", Fg, Tg))
+        blk = np.real(np.einsum("ijp,pij->ij", Fg, Tg))
         if spec.m2 == spec.m:
             diag[spec.m] = 0.5 * (blk + blk.T)
         else:
@@ -597,8 +560,6 @@ def eq45_blocks_cheb(plan: Eq45Plan, coeffs: Array | Callable[[IntArray], Array]
 # ---------------------------------------------------------------------------
 
 
-@pytree_dataclass(data=("sup", "slot", "gG", "gW", "gT", "uI1", "uI2", "uW"),
-                  meta=("nb", "B", "Kb"))
 @dataclass(frozen=True, eq=False)
 class Eq45GramPlan:
     """Host constants of the Gram form, bands laid out ``(nb, B)`` with dummy slots.
@@ -607,16 +568,6 @@ class Eq45GramPlan:
     a dummy); ``gG`` the cells' atom spectra on their band's support bins
     ``sup[m]``; ``gW = eta/T``; ``gT`` the cell times; ``uI1``/``uI2``/``uW`` the
     overlap bins of adjacent bands.  Built line for line in the ported order.
-
-    A JAX pytree (registered lazily, as :class:`Eq45Plan`): the layout sizes
-    ``nb``, ``B``, ``Kb`` are static; every array is a leaf.
-
-    .. warning::
-       Under ``jax.jit`` pass the plan as an **argument**
-       (``jax.jit(lambda gp, a: eq45_blocks_gram(gp, a, gL))(gplan, alpha_cells)``);
-       never close over it.  A closed-over plan bakes ``gG`` (51 MB at 64 x 256)
-       into the compiled program: 102 MB of HLO text, against 0.2 MB as an
-       argument (measured, CPU).
     """
 
     nb: int
@@ -680,8 +631,7 @@ def eq45_gram_gather(gplan: Eq45GramPlan, values: Array) -> Array:
     return out
 
 
-def eq45_blocks_gram(gplan: Eq45GramPlan, alpha_cells: Array, gL: Array, *,
-                     be: Backend | None = None) -> tuple[Array, Array]:
+def eq45_blocks_gram(gplan: Eq45GramPlan, alpha_cells: Array, gL: Array) -> tuple[Array, Array]:
     """Eq. (45) blocks in the Gram form: diagonal ``(nb, B, B)`` and upper ``(nb-1, B, B)``.
 
     ``alpha_cells`` is ``alpha(t_p)`` per slot, ``(nb, B)``; the caller computes it
@@ -689,19 +639,15 @@ def eq45_blocks_gram(gplan: Eq45GramPlan, alpha_cells: Array, gL: Array, *,
     ``ac + ad * (gT / T_obs - 0.5)``).  ``gL`` is :func:`eq45_gram_gather` of
     ``L(f)``.  Dummy slots give zero rows and columns.  Ported verbatim: keep the operation
     order.
-    Under ``jax.jit`` pass ``gplan`` as an argument (see :class:`Eq45GramPlan`).
-    The backend follows ``alpha_cells``, ``gL`` and the plan's arrays.
     """
-    be = be or get_backend(alpha_cells, gL, gplan.gG)
-    xp = be.xp
-    gG, gW = be.asarray(gplan.gG), be.asarray(gplan.gW)
-    uI1, uI2, uW = be.asarray(gplan.uI1), be.asarray(gplan.uI2), be.asarray(gplan.uW)
-    al = be.asarray(alpha_cells)
-    V = xp.exp(0.5 * al[:, :, None] * be.asarray(gL)[:, None, :]) * gG          # (nb, B, Kb)
-    diag = xp.real(xp.einsum("bik,bjk->bij", V * gW[:, None, :], xp.conj(V)))
-    Va = xp.take_along_axis(V[:-1], uI1[:, None, :], axis=2) * uW[:, None, :]
-    Vb = xp.take_along_axis(V[1:], uI2[:, None, :], axis=2)
-    up = xp.real(xp.einsum("bik,bjk->bij", Va, xp.conj(Vb)))
+    gG, gW = np.asarray(gplan.gG), np.asarray(gplan.gW)
+    uI1, uI2, uW = np.asarray(gplan.uI1), np.asarray(gplan.uI2), np.asarray(gplan.uW)
+    al = np.asarray(alpha_cells)
+    V = np.exp(0.5 * al[:, :, None] * np.asarray(gL)[:, None, :]) * gG          # (nb, B, Kb)
+    diag = np.real(np.einsum("bik,bjk->bij", V * gW[:, None, :], np.conj(V)))
+    Va = np.take_along_axis(V[:-1], uI1[:, None, :], axis=2) * uW[:, None, :]
+    Vb = np.take_along_axis(V[1:], uI2[:, None, :], axis=2)
+    up = np.real(np.einsum("bik,bjk->bij", Va, np.conj(Vb)))
     return diag, up
 
 
@@ -721,16 +667,14 @@ def eq45_separable_kernels(U: CArray, s: Array) -> Array:
     return 0.5 * ((Ur * s) @ Ur.T + (Ui * s) @ Ui.T)
 
 
-def eq45_separable_assemble(KI: Array, KG: Array, g_half: Array, half_index: IntArray, *,
-                            be: Backend | None = None) -> Array:
+def eq45_separable_assemble(KI: Array, KG: Array, g_half: Array, half_index: IntArray) -> Array:
     r"""Eq. (45) for :math:`S = s_I + g(t)\,s_G`: :math:`K^I + g(\bar t)\,K^G`.
 
     ``g_half`` is the envelope on the half-step grid :math:`t = j\,\Delta T/2`,
     ``half_index = n_p + n_q`` (non-circular), so ``g_half[half_index]`` is
     :math:`g(\bar t_{pq})`: ``KI + g_half[half_index] * KG``.
     """
-    be = be or get_backend(g_half)
-    return be.asarray(KI) + be.asarray(g_half)[be.asarray(half_index)] * be.asarray(KG)
+    return np.asarray(KI) + np.asarray(g_half)[np.asarray(half_index)] * np.asarray(KG)
 
 
 # ---------------------------------------------------------------------------

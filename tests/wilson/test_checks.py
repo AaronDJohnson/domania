@@ -156,35 +156,6 @@ def test_require_dtype_takes_any_kinds_and_reads_dtype_without_converting():
     assert require_dtype("x", Unconvertible(), REAL_KINDS, "a real numeric array") is None
 
 
-@pytest.mark.jax
-def test_require_dtype_passes_a_jax_array_and_a_jit_tracer_through_untouched(jax_be):
-    """A conversion would show: ``np.asarray`` on a tracer raises ``TracerArrayConversionError``,
-    a ``TypeError`` without the helper's message."""
-    import jax
-    import jax.numpy as jnp
-
-    from domainia.wilson.backend import is_tracer
-
-    x = jnp.arange(3.0)
-    assert require_dtype("x", x, REAL_KINDS, "a real numeric array") is None
-    with pytest.raises(TypeError, match=_exact("x must be a real numeric array, got dtype complex128")):
-        require_dtype("x", x + 0j, REAL_KINDS, "a real numeric array")
-    traced = []
-
-    @jax.jit
-    def double(v):
-        require_dtype("v", v, REAL_KINDS, "a real numeric array")
-        traced.append(is_tracer(v))
-        return 2.0 * v
-
-    out = double(x)
-    assert traced == [True] and isinstance(out, jax.Array)
-    assert np.array_equal(np.asarray(out), [0.0, 2.0, 4.0])
-    with pytest.raises(TypeError) as info:              # raised while tracing; JAX adds a note
-        double(x + 0j)
-    assert str(info.value) == "v must be a real numeric array, got dtype complex128"
-
-
 @pytest.mark.parametrize(("value", "expected"), [
     ([1, 2], [1, 2]), (np.array([1, 2], np.int32), [1, 2]), (np.array([3], np.uint8), [3]),
     ([1, 2.0], [1, 2]), (np.array([[0.0, 4.0]], np.float32), [[0, 4]]), (3, 3), ([], []),

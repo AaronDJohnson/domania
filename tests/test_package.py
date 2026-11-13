@@ -36,12 +36,11 @@ def test_the_sdist_lists_what_it_includes():
 
 
 def test_the_project_metadata():
-    """The package ships ``py.typed`` and says so; the ``jax`` extra names ``jax`` alone
-    (``jax`` 0.9 requires its matching ``jaxlib`` itself)."""
+    """The package ships ``py.typed`` and says so; ``test`` is the only extra."""
     project = tomllib.loads((REPO / "pyproject.toml").read_text())["project"]
     assert "Typing :: Typed" in project["classifiers"]
     assert (SRC / "domainia" / "py.typed").is_file()
-    assert project["optional-dependencies"]["jax"] == ["jax>=0.9"]
+    assert project["optional-dependencies"] == {"test": ["pytest>=8"]}
 
 
 def test_the_public_names():
@@ -61,7 +60,7 @@ def test_no_release_leftovers():
 
 def test_importing_every_module_resolves_to_src_and_does_not_import_jax():
     """Every module of the package (``pkgutil.walk_packages``), imported in a fresh
-    interpreter, leaves JAX unimported."""
+    interpreter, leaves JAX unimported.  The JAX backend and its Bessel shim are gone."""
     env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PYTHONSAFEPATH")}
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["PYTHONPATH"] = str(SRC)
@@ -76,8 +75,8 @@ def test_importing_every_module_resolves_to_src_and_does_not_import_jax():
     assert out.returncode == 0, out.stderr
     info = json.loads(out.stdout.strip().splitlines()[-1])
     assert Path(info["file"]).resolve().is_relative_to(SRC.resolve())
-    assert {"domainia._transform", "domainia.wilson", "domainia.wilson.backend",
-            "domainia.testing"} <= set(info["modules"])
+    assert {"domainia._transform", "domainia.wilson", "domainia.testing"} <= set(info["modules"])
+    assert not {"domainia.wilson.backend", "domainia.wilson.special"} & set(info["modules"])
     assert info["jax"] == []
 
 

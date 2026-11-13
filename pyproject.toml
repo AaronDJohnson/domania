@@ -18,7 +18,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-jax = ["jax>=0.9"]
 test = ["pytest>=8"]
 
 [tool.hatch.build.targets.wheel]
@@ -38,7 +37,3 @@ pythonpath = ["src"]
 addopts = "-ra --doctest-modules -p no:cacheprovider"
 norecursedirs = [".*", "__pycache__", "oracle", "data"]
 xfail_strict = true
-markers = [
-    "jax: needs jax; skipped when jax is not importable",
-    "slow: heavy constructions (opt-in: -m slow)",
-]
