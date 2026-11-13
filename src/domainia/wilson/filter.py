@@ -10,12 +10,8 @@ It is the window that, paired with the half-shifted Wilson lattice and the
 $C_{mn}$ phase factor, gives an orthonormal time-frequency basis at
 critical density (the partition-of-unity property).
 
-Parameters
-----------
-The shape parameter ``d`` (default ``4``) controls the smoothness of the
-rolloff.  The basis functions decay as $|t|^{-(d+1)}$ in time (measured
-slopes -3.00/-4.00/-4.99/-6.94/-9.01 at d = 2/3/4/6/8; lisa/wdm b5973b7
-corrected the earlier $|t|^{-2d}$ claim).
+The shape parameter ``d`` (default ``4``) sets the smoothness of the rolloff; the basis
+functions decay as $|t|^{-(d+1)}$ in time.
 """
 
 from __future__ import annotations
@@ -36,22 +32,8 @@ __all__ = [
 
 
 def nu_d(x: Array, d: int = 4) -> Array:
-    """Regularized incomplete beta function $I_x(d, d)$.
-
-    This is the smooth ramp used in the Meyer rolloff:
-    $\\nu_d(0) = 0$, $\\nu_d(1) = 1$, and $\\nu_d$ is $C^{d-1}$ smooth.
-
-    Parameters
-    ----------
-    x : ndarray
-        Input values; clipped to ``[0, 1]`` internally.
-    d : int, optional
-        Smoothness order (default 4).
-
-    Returns
-    -------
-    ndarray
-        $I_x(d, d)$ evaluated element-wise.
+    """Regularized incomplete beta function $I_x(d, d)$, element-wise, with ``x`` clipped to
+    ``[0, 1]``: the Meyer rolloff's ramp, $\\nu_d(0) = 0$, $\\nu_d(1) = 1$, $C^{d-1}$ smooth.
 
     Raises
     ------
@@ -74,30 +56,14 @@ def nu_d(x: Array, d: int = 4) -> Array:
 
 
 def phi_centered(Nf: int, Nt: int, dt: float, d: int = 4) -> Array:
-    """Meyer filter $\\hat\\phi(f)$ (Paper I eq:Meyer-def) on a length-$N_t$
-    frequency grid, centered at index $N_t/2$.
+    """Meyer filter $\\hat\\phi(f)$ (Paper I eq:Meyer-def), shape ``(Nt,)``, centered at
+    index $N_t/2$, with rolloff smoothness ``d``.
 
     The grid spans frequencies $f \\in [-N_t/2,\\,N_t/2-1]/T$ with
     $T = N_f N_t \\delta t$.  In the flat region ($|f| < \\Delta F/4$)
     the value is $1/\\sqrt{\\Delta F}$; in the rolloff region
     ($\\Delta F/4 \\le |f| < 3\\Delta F/4$) it follows the Meyer
     cosine taper; otherwise it is zero.
-
-    Parameters
-    ----------
-    Nf : int
-        Number of frequency bands (sets $\\Delta F$).
-    Nt : int
-        Number of time bins (sets the frequency grid length).
-    dt : float
-        Sampling interval.
-    d : int, optional
-        Smoothness order for the rolloff (default 4).
-
-    Returns
-    -------
-    ndarray, shape (Nt,)
-        Filter samples in centered ordering (peak at index $N_t/2$).
 
     Raises
     ------
@@ -116,9 +82,6 @@ def phi_centered(Nf: int, Nt: int, dt: float, d: int = 4) -> Array:
     """
     validate_grid(Nf, Nt)
     validate_dt(dt)
-    # grid.delta_F is the same expression, 1/(2 dt Nf), so the window is bitwise
-    # unchanged; it raises when that width is 0 or inf (an unrepresentable dt*Nf),
-    # where the inline form returned a window -- and a transform -- of exact zeros.
     dF = delta_F(Nf, dt)
     T = Nf * Nt * float(dt)
     f = (np.arange(Nt) - Nt // 2) / T

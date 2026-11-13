@@ -23,27 +23,16 @@ $(-1)^{(m+1)(n+n')}$ and Wilson parity factor $C^*_{mn}\\,C_{m'n'}$.
 Total cost: $\\mathcal O((N_f+1)\\,N_t\\,\\log N_t + N_f\\,N_t^2)$,
 versus $\\mathcal O(N^3)$ for the dense $W\\,C_{\\rm time}\\,W^T$.
 
-Scope
------
-The interior-only tier of the vendored package (``build_lambda_blocks``,
-``build_lambda_blocks_packed``, ``unpack_diag_block``, ``assemble_lambda``)
-is not carried: it drops the edge bands, an approximation the paper never
-uses.  :func:`build_lambda_blocks_full_active` covers **every** band pair,
+:func:`build_lambda_blocks_full_active` covers **every** band pair,
 including the parity-restricted edge bands $m \\in \\{0, N_f\\}$, via
-half-slab Hermitian-extended IFFTs.  The full-active result matches
+half-slab Hermitian-extended IFFTs, with the edge $\\sqrt 2$ factors of the unit-norm
+basis (:mod:`domainia.wilson.transform`) built in.  It matches
 the dense $W_a\\,C_{\\rm time}\\,W_a^T$ at machine precision.
-
-Edge-band convention
---------------------
-There is one coefficient convention (unit-norm basis functions; see
-:mod:`domainia.wilson.transform`), so nothing here is parameterised by it.  The edge
-$\\sqrt 2$ factors are baked into the builders that touch the edge bands.
 
 Backward maps (Paper I Alg. 4)
 ------------------------------
-:func:`psd_from_K` (was ``lambda_to_psd_slab``) recovers $S_n$ from the
-diagonal $K$ vectors; :func:`psd_from_lambda_blocks` (was the vendored
-operator-form ``lambda_to_psd``) recovers it from stored blocks.
+:func:`psd_from_K` recovers $S_n$ from the diagonal $K$ vectors;
+:func:`psd_from_lambda_blocks` recovers it from stored blocks.
 
 Inputs
 ------
@@ -88,20 +77,8 @@ __all__ = [
 
 
 def is_diagonal(matrix: NDArray[np.number], *, rtol: float = 1e-10) -> bool:
-    """Check whether ``matrix`` is diagonal up to a relative tolerance.
-
-    Parameters
-    ----------
-    matrix : ndarray, shape (M, M)
-    rtol : float, optional
-        Off-diagonal entries are tolerated if their absolute value is at
-        most ``rtol`` times the maximum absolute diagonal entry.
-        Default ``1e-10``.
-
-    Returns
-    -------
-    bool
-        True if every off-diagonal entry satisfies the tolerance.
+    """Whether the square ``matrix`` is diagonal: every off-diagonal entry is at most
+    ``rtol`` times the largest finite absolute diagonal entry (exactly 0 if that is 0).
 
     Examples
     --------
@@ -131,11 +108,6 @@ def _mirror_to_two_sided(one_sided: Array, N: int) -> Array:
     Hermitian symmetry of a real process: $S(f_{N-k}) = S(f_{-k}) = S(|f_k|)$,
     so bins $1 \\ldots N/2-1$ mirror in reverse and DC and Nyquist -- which
     have no partner -- are left alone.
-
-    Written out inline twice before (once for the 1D-array branch, once for
-    the 2D-diagonal branch).  The two copies happened to agree, but the
-    off-by-one at the Nyquist end is the kind of thing that gets fixed in one
-    place and missed in the other.
     """
     n_rfft = N // 2 + 1
     out = np.empty(N, dtype=float)
@@ -151,39 +123,19 @@ def _normalize_noise_to_sigma2(
     *,
     rtol: float = 1e-10,
 ) -> Array:
-    """Normalize a stationary-noise specification to a length-$N$ $\\sigma^2$ array.
+    """The per-bin variance $\\sigma_k^2 = N\\,S_n(|f_k|)/(2\\,\\delta t)$, shape ``(N,)``, on
+    the two-sided ``fftfreq(N, dt)`` grid.
 
-    Every input form expresses the **one-sided PSD** $S_n(f)$ — never
-    the already-scaled covariance. This function applies the single
-    physical scaling $\\sigma_k^2 = N\\,S_n(|f_k|)/(2\\,\\delta t)$ to
-    every form, so callers don't have to remember to do it themselves.
-
-    Returns the per-bin variance $\\sigma_k^2$ on the full two-sided
-    ``fftfreq(N, dt)`` grid.
-
-    Parameters
-    ----------
-    noise : callable, 1D ndarray, or 2D ndarray
-        See :func:`build_lambda_blocks_full_active` for accepted forms — all of
-        which are interpreted as $S_n$ values (no internal scaling).
-    N : int
-        Total time-domain sample count.
-    dt : float
-        Sampling interval.
-    rtol : float, optional
-        Relative tolerance for the diagonality check on 2D inputs.
-
-    Returns
-    -------
-    sigma2_full : ndarray, float, shape (N,)
+    Every accepted form of ``noise`` (module docstring) is the **one-sided PSD** $S_n(f)$,
+    never the already-scaled covariance; the scaling is applied here, once.  ``rtol`` is the
+    diagonality tolerance of a 2D input (:func:`is_diagonal`).
 
     Raises
     ------
     TypeError
         If the PSD is not a real numeric array in any form: complex (even with a
         zero imaginary part), bool, str or object.  It is rejected before any
-        cast, rather than truncated to its real part (with only a
-        ``ComplexWarning`` for callables and 1D arrays, silently for 2D ones), as
+        cast, rather than truncated to its real part, as
         :func:`domainia.wilson.grid.sanitize_psd` does.
     ValueError
         If a 2D matrix input is not diagonal (i.e., the noise is not
@@ -260,10 +212,6 @@ def _carriers(Nt: int) -> dict[tuple[int, int], CArray]:
     ``a_n(m) = (-1)^{(m+1)n}`` and ``C_{m,n} = i^{(m+n) mod 2}``.  It depends on
     the band indices only through their parities, so all ``2 N_f + 1`` blocks
     are covered by four matrices.
-
-    This lives at module level on purpose: it is the single most error-prone
-    convention in the file, and it used to be duplicated verbatim inside three
-    different builders, where fixing a sign in one left the other two wrong.
     """
     n_arr = np.arange(Nt)
 
@@ -282,9 +230,7 @@ def _interior_slab_K(
     """Batched interior-band slab IFFTs: ``(K_diag[1:Nf], K_off[1:Nf-1])``.
 
     The interior slab for band ``m`` starts at ``(m-1)*Nt/2`` and is a pure
-    gather, so all ``Nf-1`` bands go through one length-``Nt`` IFFT.  This is
-    the single definition of that recipe; it used to appear verbatim in three
-    builders.
+    gather, so all ``Nf-1`` bands go through one length-``Nt`` IFFT.
 
     ``sigma2`` is the one-sided ``sigma2_rfft = sigma2_full / N`` grid, the
     module's single convention (``sigma2_full[:N//2+1] / N``).  Interior slabs
@@ -309,11 +255,8 @@ def _block_from_K_with_carrier(
     """Block expansion given a precomputed outer-product carrier matrix.
 
     The carrier $\\mathrm{carrier}[n, n'] = v_l[n]\\,v_r[n']$ encodes the
-    band-dependent sign + Wilson parity factors. Building it once per
-    distinct $(m_l\\%2, m_r\\%2)$ pattern (only 4 patterns total across
-    all band pairs) and reusing it for every block of that pattern
-    halves the wall-clock cost: one fused element-wise complex multiply
-    plus one $\\Re$ instead of two broadcasts.
+    band-dependent sign + Wilson parity factors.  It is built once per
+    $(m_l\\%2, m_r\\%2)$ pattern (4 in all) and shared by every block of that pattern.
     """
     return pref * np.real(carrier * K[diff])
 
@@ -337,25 +280,14 @@ def _slab_K(
 ) -> tuple[list[CArray], list[CArray]]:
     """Toeplitz-coefficient vectors $K^{(m,m)}$ and $K^{(m,m+1)}$ for every band.
 
-    This is the single definition of the slab-IFFT recipe.  Both
+    The one definition of the slab-IFFT recipe, for
     :func:`build_lambda_blocks_full_active` (which expands these into dense
-    blocks) and :func:`build_K_full_active` (which returns them as-is) go
-    through here; the two used to carry byte-identical copies of the five
-    stanzas below, so a slab or index fix had to land twice.
+    blocks) and :func:`build_K_full_active` (which returns them as-is).
 
     Interior bands read a full length-$N_t$ slab; the two edge bands read a
     half-slab and Hermitian-extend it, and the edge cross terms pick up the
-    $\\sqrt 2$ from the unit-norm edge rescaling.
-
-    Parameters
-    ----------
-    Nf, Nt : int
-    dt : float
-    sigma2_rfft : ndarray
-        Per-bin variance on the one-sided grid, already divided by $N$.
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
+    $\\sqrt 2$ from the unit-norm edge rescaling.  ``sigma2_rfft`` is the per-bin
+    variance on the one-sided grid, already divided by $N$.
 
     Returns
     -------
@@ -454,16 +386,12 @@ def build_lambda_blocks_full_active(
 
     Parameters
     ----------
-    Nf, Nt : int
-    dt : float
     noise : callable, 1D ndarray, or 2D ndarray
         The one-sided PSD: a callable ``f -> S_n(f)``, a 1D array on the
         ``fftfreq`` (length ``N``) or ``rfftfreq`` (length ``N//2+1``) grid, or
         a diagonal 2D array of either size.  Never pre-scaled.
     rtol : float, optional
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
+        The diagonality tolerance of a 2D ``noise`` (:func:`is_diagonal`).
 
     Returns
     -------
@@ -542,11 +470,8 @@ def _check_block_layout(
     n_active: list[NDArray[np.integer]],
     Nf: int,
 ) -> None:
-    """Validate a block-tridiagonal layout against the grid it claims to be on.
-
-    Without this a list that is short by one silently produces a plausible but
-    badly wrong answer (measured: a PSD off by 110%) rather than raising, which
-    is the one place in the package where that was still possible.
+    """Validate a block-tridiagonal layout against the grid it claims to be on: a list
+    that is short by one would otherwise give a plausible but wrong answer.
     """
     if len(diag_blocks) != Nf + 1:
         raise ValueError(
@@ -626,18 +551,8 @@ def build_K_full_active(
     $K^{(m,m)} = N_t \cdot \mathrm{ifft}(|\hat\phi_c|^2 \odot \sigma^2_{\rm rfft}[\mathrm{slab}_m])$,
     where slab$_m = [(m-1)N_t/2, (m-1)N_t/2 + N_t)$. Edge bands use the
     Hermitian-extended half-slab. Off-diagonals use the cross-band
-    window product $\hat\phi_c \cdot \hat\phi_{c, \rm shift}$.
-
-    Parameters
-    ----------
-    Nf, Nt : int
-    dt : float
-    noise : callable, 1D ndarray, or 2D ndarray
-        Same accepted forms as :func:`build_lambda_blocks_full_active`.
-    rtol : float, optional
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
+    window product $\hat\phi_c \cdot \hat\phi_{c, \rm shift}$.  ``noise`` and ``rtol`` are
+    as in :func:`build_lambda_blocks_full_active`.
 
     Returns
     -------
@@ -685,12 +600,7 @@ def psd_from_K(
     Parameters
     ----------
     K_diag : list of $N_f + 1$ ndarrays, each shape $(N_t,)$, complex
-        As produced by :func:`build_K_full_active`.
-    Nf, Nt : int
-    dt : float
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform):
-        the one ``K_diag`` was built with.  See :mod:`domainia.wilson.windows`.
+        As produced by :func:`build_K_full_active`, with the same ``window``.
 
     Returns
     -------
@@ -699,36 +609,13 @@ def psd_from_K(
 
     Notes
     -----
-    Cost: one length-$N_t$ FFT per band + bin assignment scan. Total
-    $O(N \log N_t)$ — same as the forward :func:`build_K_full_active`
-    and as :func:`apply_lambda_from_psd`. Compared with
-    :func:`psd_from_lambda_blocks` (operator form on stored blocks), this avoids
-    the $O(N_f N_t^2)$ block-tridiag matvec.  A few times faster than
-    :func:`psd_from_lambda_blocks` in practice -- short of the $N_t/\log N_t$ the
-    asymptotics alone suggest, because both routines are dominated by their
-    FFTs at these sizes rather than by the matvec.  Run
-    ``python tools/benchmark.py`` for the figure on your machine.
+    Cost: one length-$N_t$ FFT per band and a bin-assignment scan, $O(N \log N_t)$; it
+    avoids the $O(N_f N_t^2)$ block-tridiag matvec of :func:`psd_from_lambda_blocks`.
 
-    **Why the three band groups are not one loop.** The body handles DC, the
-    interior bands and Nyquist separately, which looks like avoidable
-    duplication and is not: :func:`_slab_K` packs each band's slab into $V$
-    differently, so the map from a $V$ index to its window index differs.
-
-    ==========  =====================================  ====================
-    band        built by :func:`_slab_K` as             $V$ index $j$ pairs
-    ==========  =====================================  ====================
-    $m=0$       ``V[:half]  = phi[half:]**2 * s2[...]``  ``phi2[half + j]``
-    $1..N_f-1$  ``V[k]      = phi[k]**2 * s2[start+k]``  ``phi2[j]``
-    $m=N_f$     ``V[:half+1]= phi[:half+1]**2 * s2[.]``  ``phi2[j]``
-    ==========  =====================================  ====================
-
-    Only DC carries the ``+half`` offset, because its half-slab lies *below*
-    DC and is Hermitian-extended about 0 -- it is packed from ``V[0]`` upward
-    while its window comes from the upper half of $\hat\phi$.  A unified loop
-    using one index for both silently uses the wrong window on band 0; that
-    was tried, and
-    ``test_psd_from_K_dc_band_uses_the_offset_window`` now fails when
-    it is tried again.
+    DC, the interior bands and Nyquist are handled apart because :func:`_slab_K` packs
+    their slabs into $V$ differently.  Only DC pairs ``V[j]`` with the window bin
+    ``half + j`` (the others with bin ``j``): its half-slab lies *below* DC and is packed
+    from ``V[0]`` upward, while its window comes from the upper half of $\hat\phi$.
 
     Examples
     --------
@@ -758,16 +645,14 @@ def psd_from_K(
     V_all = (np.fft.fft(np.asarray(K_diag), axis=-1) / Nt).real  # (Nf+1, Nt)
     phi2 = phi_c * phi_c
     # Window values at or below eps count as zero.  Relative to the peak, because
-    # |phi|^2 scales with 1/dF = 2 dt Nf: an absolute 1e-30 dropped every bin once
-    # 2 dt Nf fell below it (dt = 1e-33 gave an all-zero PSD).
+    # |phi|^2 scales with 1/dF = 2 dt Nf.
     eps = 1e-30 * np.max(phi2)
 
     k_loc_half = np.arange(Nt // 2)
     k_loc_full = np.arange(Nt)
 
     # Each band contributes candidates (rfft bin, estimate, window weight).
-    # DC's window index is offset by `half` where the other two are not -- see
-    # the table in this function's Notes for why, before trying to merge them.
+    # DC's window index is offset by `half` where the other two are not (see the Notes).
     bins_list = [k_loc_half]
     est_list = [
         V_all[0, : Nt // 2] / np.where(phi2[Nt // 2 :] > eps, phi2[Nt // 2 :], 1.0)
@@ -797,8 +682,7 @@ def psd_from_K(
     bins, est, wgt = bins[usable], est[usable], wgt[usable]
 
     # Reverse first, then stable-sort by ascending weight, so that the final
-    # write per bin is the *earliest* candidate among equal weights -- matching
-    # the strict ``w > best_w`` comparison of the original scan.
+    # write per bin is the *earliest* candidate among equal weights.
     order = np.argsort(wgt[::-1], kind="stable")
     sigma2 = np.zeros(n_rfft)
     sigma2[bins[::-1][order]] = est[::-1][order]
@@ -826,29 +710,17 @@ def apply_lambda_from_psd(
                           \mathtt{inverse}(\bm x)\bigr),
 
     i.e., inverse-WDM, pointwise scale each rfft bin by half the PSD,
-    forward-WDM. No assembly of $\Lambda$ as a matrix is needed.
-
-    This is the operator dual of :func:`psd_from_lambda_blocks`: where the latter
-    extracts a PSD from a stored $\Lambda$ in one inverse-WDM call, this
-    one applies a $\Lambda$ implied by a stored PSD to any vector in two
-    WDM-transform calls.
+    forward-WDM. No assembly of $\Lambda$ as a matrix is needed.  It is the operator
+    dual of :func:`psd_from_lambda_blocks`.
 
     Parameters
     ----------
     x_wmn : ndarray, float, shape (Nf+1, Nt)
         Input WDM coefficient array.  Inactive (parity-killed) edge entries
-        are ignored on read -- :func:`domainia.wilson.transform.inverse` masks them -- so
-        junk there does not affect the result (measured deviation exactly
-        0.0).
+        are ignored.
     Sn_rfft : ndarray, float, shape (N//2 + 1,)
-        One-sided PSD evaluated on the ``rfftfreq(N, dt)`` grid.  Last, like
-        every other PSD argument in the package.  ``inf`` samples are zero
-        power (:func:`domainia.wilson.grid.sanitize_psd`).
-    Nf, Nt : int
-    dt : float
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
+        One-sided PSD evaluated on the ``rfftfreq(N, dt)`` grid.  ``inf`` samples are
+        zero power (:func:`domainia.wilson.grid.sanitize_psd`).
 
     Returns
     -------
@@ -858,12 +730,8 @@ def apply_lambda_from_psd(
     Notes
     -----
     Cost is $O(N \log N_t)$ per call — dominated by the two fast WDM
-    transforms.  ``assemble_lambda_full_active`` builds the matrix in
-    $O(N_f N_t^2)$ time and $O(N_f N_t^2)$ storage; for downstream uses
-    that only ever need matvecs (MCMC, conjugate-gradient solves) the
-    operator form is preferable.
-
-    The result equals ``Lambda @ x.ravel()`` from
+    transforms — against $O(N_f N_t^2)$ time and storage to assemble the matrix
+    (:func:`assemble_lambda_full_active`).  The result equals ``Lambda @ x.ravel()`` from
     :func:`build_lambda_blocks_full_active` plus
     :func:`assemble_lambda_full_active` to machine precision.
 
@@ -928,18 +796,8 @@ def psd_from_lambda_blocks(
 
     The round-trip with :func:`build_lambda_blocks_full_active` holds to
     machine precision: feeding the returned $\mathcal{S}_n$ back to the
-    forward reproduces $\Lambda$.
-
-    Parameters
-    ----------
-    diag_blocks, offd_blocks, n_active
-        Block representation of $\Lambda$, as produced by
-        :func:`build_lambda_blocks_full_active`.
-    Nf, Nt : int
-    dt : float
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform):
-        the one $\Lambda$ was built with.  See :mod:`domainia.wilson.windows`.
+    forward reproduces $\Lambda$.  ``diag_blocks``, ``offd_blocks`` and ``n_active`` are
+    its output, with the same ``window``.
 
     Returns
     -------
@@ -950,7 +808,6 @@ def psd_from_lambda_blocks(
     -----
     Cost: one forward-WDM call (test vector) + one block-tridiag matvec
     ($O(N_f N_t^2)$) + one inverse-WDM call ($O(N \log N_t)$).
-    This is the operator dual of :func:`apply_lambda_from_psd`.
 
     Examples
     --------
@@ -990,21 +847,9 @@ def assemble_lambda_full_active(
 ) -> Array:
     """Assemble the full-active blocks into a dense $(N_f+1)N_t \\times (N_f+1)N_t$ matrix.
 
-    Parity-killed edge entries stay exactly zero. The lower
-    off-diagonal is filled by transposition.
-
-    Parameters
-    ----------
-    diag_blocks : list of ($N_f+1$) ndarrays
-    offd_blocks : list of $N_f$ ndarrays
-    n_active : list of ($N_f+1$) integer arrays (active-$n$ per band)
-    Nf, Nt : int
-
-    Returns
-    -------
-    ndarray, shape ($(N_f+1)N_t$, $(N_f+1)N_t$)
-        Symmetric. The result is identical to dense $W\\,C_{\\rm time}\\,W^T$
-        at machine precision (verified in ``tests/wilson/vendored/test_stationary.py``).
+    The blocks are :func:`build_lambda_blocks_full_active`'s.  Parity-killed edge entries
+    stay exactly zero, and the lower off-diagonal is filled by transposition, so the result
+    is symmetric: the dense $W\\,C_{\\rm time}\\,W^T$ at machine precision.
 
     Examples
     --------

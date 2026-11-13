@@ -7,16 +7,15 @@ Everything here is a pure function of ``(grid, spectrum, arrays)``.
 * The 0.1% wrap rule: :func:`wrap_fractions`, :func:`wrap_cut_columns`.
 * The exact covariance (WDM Paper II, eq:wdm_generic_covariance, :math:`\theta = 0`):
   :func:`time_domain_factor`, :func:`time_domain_covariance`,
-  :func:`exact_covariance`, :func:`draw_noise` (dense, NumPy, small grids).
+  :func:`exact_covariance`, :func:`draw_noise` (dense, small grids).
 * WDM Paper II, Eq. (45), the nonstationary block tri-diagonal covariance
   :math:`\Lambda_{pq} = \frac1T\,\mathrm{Re}\sum_k \eta_k S(f_k, \bar t_{pq})
   \hat g_p(k)\hat g_q^*(k)`, :math:`\bar t = (t_n + t_{n'})/2` used literally:
 
-  - :func:`eq45_plan` -- host constants (one plan per grid and kept-cell set);
+  - :func:`eq45_plan` -- constants (one plan per grid and kept-cell set);
   - Chebyshev-in-time builders: :func:`eq45_coeffs_bessel` (exact Bessel-I
-    coefficients of the log-linear family, a port of the code that wrote the NumPy
-    references) or :func:`eq45_coeffs_interp` (any
-    ``Sn(f, t)``, interpolated at ``P`` Chebyshev nodes; wdm_dev), then
+    coefficients of the log-linear family) or :func:`eq45_coeffs_interp` (any
+    ``Sn(f, t)``, interpolated at ``P`` Chebyshev nodes), then
     :func:`eq45_blocks_cheb`;
   - the Gram form for the log-linear family:
     :func:`eq45_gram_plan`, :func:`eq45_gram_gather`, :func:`eq45_blocks_gram`;
@@ -32,11 +31,6 @@ the plan's atoms (``plan.base``) carry the window to every builder downstream.
 PSDs are callables ``Sn(f, t)``: elementwise, broadcasting, argument order
 ``(f, t)`` (WDM Paper II writes :math:`S(t, f)`), samples through
 :func:`domainia.wilson.grid.sanitize_psd`.  Cell times are :math:`t_n = n\Delta T`.
-
-Numerics: every NumPy path is an operation-order-preserving transcription of its
-source (wdm_dev ``evolutionary.py``, frozen in ``tests/wilson/oracle/wdm_dev_ev``, and
-the WDM Paper II toy models, their GPU port and the galactic-binary toy model, none of
-which ships), so it is bit-identical to it.
 """
 
 from __future__ import annotations
@@ -104,19 +98,8 @@ __all__ = [
 
 
 def energy_fraction(w2: Array, Nf: int, Nt: int, dt: float, *, window: Window = MEYER) -> Array:
-    """``rho_p = sum_t w2(t) g_p(t)^2 / dt`` for every active cell ``p`` (band order).
-
-    One FFT correlation per base atom (wdm_dev ``PackedGrid.energy_fraction``).
-
-    Parameters
-    ----------
-    w2 : ndarray, shape (N,)
-        Time-domain weight.
-    Nf, Nt : int
-    dt : float
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
+    """``rho_p = sum_t w2(t) g_p(t)^2 / dt`` for every active cell ``p`` (band order), from the
+    time-domain weight ``w2`` of shape ``(N,)``: one FFT correlation per base atom.
     """
     validate_grid(Nf, Nt)
     validate_dt(dt)
@@ -137,19 +120,10 @@ def energy_fraction(w2: Array, Nf: int, Nt: int, dt: float, *, window: Window = 
 def apply_time_mask(Y: Array, chi: Array, Nf: int, Nt: int, dt: float, *,
                     window: Window = MEYER) -> Array:
     """``M y`` for each packed row ``y`` of ``Y``, ``M = W chi W^T / dt``: back to time,
-    mask, forward again (wdm_dev ``PackedGrid.apply_mask``).
+    mask, forward again.
 
-    Parameters
-    ----------
-    Y : ndarray, shape (N,) or (B, N)
-        Packed rows (active cells, band order).
-    chi : ndarray, shape (N,)
-        Time-domain mask.
-    Nf, Nt : int
-    dt : float
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
+    ``Y`` is ``(N,)`` or ``(B, N)``: packed rows (active cells, band order).  ``chi`` is the
+    time-domain mask, ``(N,)``.
     """
     validate_grid(Nf, Nt)
     mask = active_mask(Nf, Nt)
@@ -172,17 +146,8 @@ def wrap_fractions(Nf: int, Nt: int, dt: float, *, bands: Array | None = None,
     For the cell :math:`(m, n)`, centred on sample :math:`n N_f`, the fraction of
     :math:`\sum_j g_{mn}(t_j)^2` at samples whose unwrapped position (measured from
     the centre along the shorter way round) lies outside :math:`[0, N)`.
-    Returns ``(Nf + 1, Nt)`` (or ``(len(bands), Nt)``), ``nan`` at inactive cells.
-
-    Parameters
-    ----------
-    Nf, Nt : int
-    dt : float
-    bands : array of int, optional
-        The bands to return (all by default).
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
+    Returns ``(Nf + 1, Nt)`` (or ``(len(bands), Nt)`` for the bands ``bands``), ``nan`` at
+    inactive cells.
     """
     validate_grid(Nf, Nt)
     N = Nf * Nt
@@ -215,22 +180,8 @@ def wrap_cut_columns(Nf: int, Nt: int, dt: float, tol: float = 1e-3, *,
     """``(leading, trailing)`` time columns to cut so that no kept atom of ``bands``
     (all by default) wraps more than ``tol`` of its energy (WDM Paper II: ``tol = 1e-3``).
 
-    The rule is geometric (it ignores the noise).  With the default window: ``(6, 5)`` on the
-    sinusoid grid ``(64, 256, 2**-10)``; ``(5, 4)`` on the 3- and 6-month galactic-binary
-    analysis bands.
-    Another window has other atoms, so other cuts.
-
-    Parameters
-    ----------
-    Nf, Nt : int
-    dt : float
-    tol : float, optional
-        The largest energy share a kept atom may wrap.
-    bands : array of int, optional
-        The bands whose atoms count (all by default).
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
+    The rule is geometric (it ignores the noise).  Another window has other atoms, so other
+    cuts.
 
     Examples
     --------
@@ -294,16 +245,7 @@ def exact_covariance(Nf: int, Nt: int, dt: float, Sn: PsdFtFunc, *,
                      window: Window = MEYER) -> Array:
     r"""Exact :math:`\Lambda = W_a \Sigma W_a^{\mathsf T}` on the active cells (band order),
     built in Gram form :math:`(W_a G)(W_a G)^{\mathsf T}`, so PSD by construction.
-
-    Parameters
-    ----------
-    Nf, Nt : int
-    dt : float
-    Sn : callable
-        ``(f, t) -> S(f, t)``, elementwise and broadcasting.
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
+    ``Sn(f, t)`` is elementwise and broadcasting.
     """
     validate_grid(Nf, Nt)
     N = Nf * Nt
@@ -315,7 +257,7 @@ def exact_covariance(Nf: int, Nt: int, dt: float, Sn: PsdFtFunc, *,
 
 
 # ---------------------------------------------------------------------------
-# WDM Paper II, Eq. (45): plans (host constants)
+# WDM Paper II, Eq. (45): plans
 # ---------------------------------------------------------------------------
 
 
@@ -340,11 +282,10 @@ class Eq45BlockSpec:
 
 @dataclass(frozen=True, eq=False)
 class Eq45Plan:
-    """Host (NumPy float64) constants of Eq. (45) on the kept cells of one grid.
+    """Constants of Eq. (45) on the kept cells of one grid.
 
     ``specs`` holds one :class:`Eq45BlockSpec` per band block ``(m, m2)``,
-    ``m2 in {m, m+1}``.  Built line for line in the ported order (it fixes the float64
-    bits).
+    ``m2 in {m, m+1}``.
     """
 
     Nf: int
@@ -395,7 +336,7 @@ def _block_spec(Nf: int, Nt: int, T: float, n: IntArray, eta: Array,
 def eq45_plan(Nf: int, Nt: int, dt: float, keep: BoolArray | None = None, *,
               P: int = 24, t_max: float | None = None,
               window: Window = MEYER) -> Eq45Plan:
-    """Static plan of Eq. (45) on the cells ``keep`` (a mask over the ``N`` packed
+    """Static plan of Eq. (45) on the cells ``keep`` (a boolean mask over the ``N`` packed
     cells, band order; all by default), Chebyshev order ``P`` in time on
     ``t_bar in [0, t_max]`` (default: this grid's ``T = N dt``).
 
@@ -406,20 +347,6 @@ def eq45_plan(Nf: int, Nt: int, dt: float, keep: BoolArray | None = None, *,
 
     ``window`` sets the atoms (``plan.base``); every Eq. (45) function downstream of the plan
     inherits it.
-
-    Parameters
-    ----------
-    Nf, Nt : int
-    dt : float
-    keep : ndarray of bool, optional
-        Mask over the packed cells (all by default).
-    P : int, optional
-        Chebyshev order in time.
-    t_max : float, optional
-        End of the Chebyshev interval (default ``T = N dt``).
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
 
     Raises
     ------
@@ -491,9 +418,7 @@ def eq45_coeffs_bessel(L: Array, alpha_c: Any, alpha_d: Any, P: int, *, r: float
 
     ``r`` is a required keyword: ``plan.t_max / T_obs``, i.e. ``1.0`` on the
     data grid and ``Nt' / Nt`` on a padded grid (``272/256`` for the sinusoid
-    pad).  It used to default to ``1.0``, which is silently wrong on a padded
-    plan.  Ported verbatim: keep the operation order (it fixes the float64 bits).
-    :math:`I_p(a)` is ``scipy.special.ive(p, a) * exp(|a|)``.
+    pad).  :math:`I_p(a)` is ``scipy.special.ive(p, a) * exp(|a|)``.
     """
     a = np.asarray(0.5 * alpha_d * r * L)
     c = ive(np.arange(P)[:, None], a[None, :]) * np.exp(np.abs(a))[None, :]      # I_p(a)
@@ -506,8 +431,7 @@ def eq45_coeffs_interp(Sn: PsdFtFunc, f: Array, t_max: float, P: int, *,
     r"""``(P, len(f))``: Chebyshev coefficients :math:`c_p(f_k)` of a general
     :math:`S(f_k, \bar t)` in :math:`u = 2\bar t/t_{\max} - 1`, by interpolation at
     the ``P`` Chebyshev nodes; zero outside the bins ``k`` (all by default; pass
-    ``plan.k_used``).  wdm_dev ``TriCovariance.chebyshev_coefficients`` verbatim.
-    NumPy (the PSD is a host callable).
+    ``plan.k_used``).
     """
     f = np.asarray(f, float)
     k = np.arange(f.size) if k is None else np.asarray(k, int)
@@ -531,8 +455,7 @@ def eq45_blocks_cheb(plan: Eq45Plan, coeffs: Array | Callable[[IntArray], Array]
     (:func:`eq45_coeffs_interp`; read as ``coeffs[:, k]``) or a callable
     ``k -> (P, len(k))`` evaluated per block (for example
     ``lambda k: eq45_coeffs_bessel(L[k], ac, ad, P, r=r)``).  Each block costs
-    one length-``Nt`` FFT per order.  The NumPy path is wdm_dev
-    ``TriCovariance.blocks`` line for line (``np.add.at`` fold).
+    one length-``Nt`` FFT per order.
     Returns ragged lists (``diag[m]``: kept cells of band ``m`` squared).
     """
     P, Nt = plan.P, plan.Nt
@@ -564,12 +487,12 @@ def eq45_blocks_cheb(plan: Eq45Plan, coeffs: Array | Callable[[IntArray], Array]
 
 @dataclass(frozen=True, eq=False)
 class Eq45GramPlan:
-    """Host constants of the Gram form, bands laid out ``(nb, B)`` with dummy slots.
+    """Constants of the Gram form, bands laid out ``(nb, B)`` with dummy slots.
 
     ``slot[m, i]`` is the kept-cell position of slot ``i`` of band ``m`` (``-1`` for
     a dummy); ``gG`` the cells' atom spectra on their band's support bins
     ``sup[m]``; ``gW = eta/T``; ``gT`` the cell times; ``uI1``/``uI2``/``uW`` the
-    overlap bins of adjacent bands.  Built line for line in the ported order.
+    overlap bins of adjacent bands.
     """
 
     nb: int
@@ -639,8 +562,7 @@ def eq45_blocks_gram(gplan: Eq45GramPlan, alpha_cells: Array, gL: Array) -> tupl
     ``alpha_cells`` is ``alpha(t_p)`` per slot, ``(nb, B)``; the caller computes it
     from ``gplan.gT`` with the **data record's** ``T_obs`` (the log-linear family:
     ``ac + ad * (gT / T_obs - 0.5)``).  ``gL`` is :func:`eq45_gram_gather` of
-    ``L(f)``.  Dummy slots give zero rows and columns.  Ported verbatim: keep the operation
-    order.
+    ``L(f)``.  Dummy slots give zero rows and columns.
     """
     gG, gW = np.asarray(gplan.gG), np.asarray(gplan.gW)
     uI1, uI2, uW = np.asarray(gplan.uI1), np.asarray(gplan.uI2), np.asarray(gplan.uW)
@@ -662,8 +584,7 @@ def eq45_separable_kernels(U: CArray, s: Array) -> Array:
     r""":math:`K^X = \tfrac12 \mathrm{Re}(U\,\mathrm{diag}(s)\,U^{\mathsf H})` in real arithmetic.
 
     ``U`` (cells x window bins) holds the unit-norm atoms; ``s`` a stationary
-    spectrum on the window bins.  ``K^X`` is in the units of ``U``.  Ported verbatim (host
-    NumPy, built once per noise component).
+    spectrum on the window bins.  ``K^X`` is in the units of ``U``.
     """
     Ur, Ui = U.real, U.imag
     return 0.5 * ((Ur * s) @ Ur.T + (Ui * s) @ Ui.T)
@@ -705,7 +626,7 @@ def _eq45_pairs(plan: Eq45Plan) -> tuple[IntArray, IntArray]:
 
 def eq45_direct(plan: Eq45Plan, Sn: PsdFtFunc) -> Array:
     """Eq. (45) on the kept cells by the direct sum over rfft bins (dense; tests and
-    small grids).  wdm_dev ``TriCovariance.pairs/values/dense`` verbatim."""
+    small grids)."""
     g = plan
     Pp, Qq = _eq45_pairs(plan)
     out = np.empty(Pp.size)

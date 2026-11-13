@@ -27,8 +27,7 @@ REAL_KINDS = "iuf"
 def require_int(name: str, value: object) -> int:
     """Return ``value`` as an ``int``; ``TypeError`` unless it is a Python or NumPy integer.
 
-    ``bool`` and ``np.bool_`` are refused, and so is every float (``2.0`` included): ``int()``
-    would truncate ``8.7`` to ``8`` silently, and ``True`` is an ``int`` subclass.
+    ``bool``, ``np.bool_`` and every float (``2.0`` included) are refused.
 
     >>> from domainia.wilson._checks import require_int
     >>> require_int("n", 3)
@@ -98,10 +97,9 @@ def require_callable(name: str, value: object) -> Any:
 def require_dtype(name: str, a: object, kinds: str, expected: str) -> None:
     """``TypeError`` unless the dtype kind of ``a`` is one of ``kinds``.
 
-    Reads ``a.dtype`` without converting ``a`` when it has one; anything else (a list, a
-    scalar) is read through
-    :func:`numpy.asarray`. ``expected`` is the phrase after "must be", article included
-    (``"a real numeric array"``). Use :data:`REAL_KINDS` for a real numeric array.
+    Reads ``a.dtype`` when ``a`` has one, else ``numpy.asarray(a).dtype``.  ``expected`` is the
+    phrase after "must be", article included (``"a real numeric array"``, with
+    :data:`REAL_KINDS`).
 
     >>> import numpy as np; from domainia.wilson._checks import require_dtype, REAL_KINDS
     >>> require_dtype("x", np.zeros(2), REAL_KINDS, "a real numeric array")
@@ -116,24 +114,13 @@ def require_dtype(name: str, a: object, kinds: str, expected: str) -> None:
 
 
 def validate_dt(dt: object) -> None:
-    """Raise unless ``dt`` is a positive finite real number.
-
-    A negative or zero sampling interval produces a nonsensical frequency grid
-    (``delta_F`` flips sign or diverges) without raising anywhere, so the
-    transform happily returns numbers that mean nothing.
-
-    Parameters
-    ----------
-    dt : float
-        Sampling interval.
+    """Raise unless the sampling interval ``dt`` is a positive finite real number.
 
     Raises
     ------
     TypeError
         If ``dt`` is not a real number (:func:`require_real`): ``None``, a ``bool``, a
         string, complex, a ``Decimal``, or an array of any shape, 0-d included.
-        ``float()`` would take ``True`` as 1.0 and ``"0.5"`` as 0.5 silently, and drop
-        the imaginary part of a NumPy complex scalar.
     ValueError
         If ``dt`` is not positive and finite.
 
@@ -154,34 +141,13 @@ def validate_dt(dt: object) -> None:
 
 
 def validate_finite(values: object, context: str) -> None:
-    """Raise ``ValueError`` if ``values`` holds a ``nan`` or an ``inf``.
+    """Check that ``values`` holds no ``nan`` or ``inf`` (both parts of a complex array);
+    ``context`` names it in the error message.
 
-    The WDM transform is *global* within a band: every coefficient is an
-    inner product against a window spanning many samples, and the
-    implementation routes each band through an FFT.  A single non-finite
-    entry therefore does not stay local.  Measured on an $N_f=8$, $N_t=16$
-    grid, one ``nan`` anywhere in the input series makes **all 144** output
-    coefficients ``nan`` -- and numpy emits no warning on the way, because
-    ``nan`` arithmetic inside an FFT is not an invalid operation.  The result
-    is a coefficient grid that is entirely meaningless yet raises nothing,
-    which is exactly the failure this rejects.
-
-    Detector data with gaps routinely arrives with ``nan`` fills, so this is
-    a live path rather than a theoretical one.  The check is one $O(N)$ pass
-    against an $O(N\\log N_t)$ transform, so it is not measurable in the
-    package's own benchmarks.
-
-    Deliberately stricter than :func:`sanitize_psd`, which maps ``inf`` to
-    ``0.0``: an infinite *PSD* sample has a physical reading ("no measurable
-    power in this bin"), an infinite *data* sample has none.
-
-    Parameters
-    ----------
-    values : array-like
-        Data, coefficient, or spectrum array.  Complex input is checked on
-        both components.
-    context : str
-        Name used in the error message.
+    One non-finite sample makes every coefficient of the transform ``nan``, silently, because
+    each band goes through an FFT.  Stricter than
+    :func:`domainia.wilson.grid.sanitize_psd`, which maps an infinite PSD sample to 0: an
+    infinite *data* sample has no physical reading.
 
     Raises
     ------

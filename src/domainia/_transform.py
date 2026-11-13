@@ -1,4 +1,4 @@
-"""Data arrays between time, frequency and WDM (domainia 3.0 spec, section 2).
+"""Data arrays between time, frequency and WDM.
 
 The layouts, on the trailing axes of an array with any leading axes (typically ``(K, ...)``):
 

@@ -1,5 +1,5 @@
-"""Dense oracles and noise helpers for tests and small grids (NumPy only).  Every dense
-oracle here is ``O(N^2)`` memory or worse: keep ``N`` <~ 2048.
+"""Dense oracles and noise helpers for tests and small grids.  Every dense oracle here is
+``O(N^2)`` memory or worse: keep ``N`` <~ 2048.
 
 * :func:`dense_W`, :func:`wdm_congruence`: the WDM rows of a set of cells
   (``wilson.matrix.active_W``) and ``W_K Sigma W_K^T``.
@@ -93,24 +93,11 @@ def colored_noise(
     Sn_func: Callable[[Any], Any],
     rng: np.random.Generator,
 ) -> NDArray[np.complex128]:
-    """Generate one realization of stationary noise with PSD $S_n(f)$.
+    """One realization of stationary noise with PSD $S_n(f)$, as the rfft of the time series.
 
-    Public (it was the vendored private
-    ``_generate_colored_noise``; same draws, same order: interior real parts,
-    interior imaginary parts, DC, Nyquist).  $O(N\\log N)$, NumPy only.
-
-    Returns the rfft of the time-domain noise, with the convention
-    $E[|X_j|^2] = N\\,S_n(f_j)/(2\\,\\delta t)$ at **every** bin.
-
-    The DC and Nyquist bins are real-valued (as they must be for a real
-    time series) but carry their full variance, not half: for real
-    Gaussian noise $E[|X_j|^2]$ is flat across the rfft grid.
-
-    .. note::
-       Before 2026-07-27 the DC and Nyquist draws were divided by
-       $\\sqrt 2$, giving them half the correct power.  That biased
-       :func:`empirical_variance` low at the two edge bands -- exactly
-       where an analytic cross-check is hardest.
+    $E[|X_j|^2] = N\\,S_n(f_j)/(2\\,\\delta t)$ at **every** bin: DC and Nyquist are real
+    but carry their full variance, not half.  ``rng`` draws the interior real parts, the
+    interior imaginary parts, DC, then Nyquist.
 
     Raises
     ------
@@ -118,14 +105,11 @@ def colored_noise(
         If ``N`` is not an integer (``bool`` included), or ``dt`` is not a real
         number.
     ValueError
-        If ``N`` is not positive and even, or ``dt`` is not positive and
-        finite.  Both are checked before the PSD is evaluated or ``rng`` is
-        drawn from.  An odd ``N`` has no Nyquist bin, yet bin ``N//2`` would
-        be drawn real-only as if it were one, and the noise would not be
-        stationary (per-sample variance 0.79--1.22 of its mean at ``N = 9``).
+        If ``N`` is not positive and even (an odd ``N`` has no Nyquist bin), or ``dt``
+        is not positive and finite.  Both are checked before the PSD is evaluated or
+        ``rng`` is drawn from.
     """
-    # Public entry point: same checks as validate_grid/validate_dt, on N itself.
-    # They only raise, so valid input takes the oracle's path bit for bit.
+    # validate_grid's checks, on N itself.
     require_int("N", N)
     if N <= 0:
         raise ValueError(f"N must be positive, got {N}")
@@ -162,30 +146,10 @@ def empirical_variance(
     *,
     window: Window = MEYER,
 ) -> Array:
-    """Monte-Carlo estimate of $\\langle w_{mn}^2 \\rangle$.
-
-    Generates ``n_realizations`` independent noise realizations with the
-    given PSD, transforms each to the WDM domain, and averages the
-    squared coefficients.  Useful for verifying the analytical
-    :func:`domainia.wilson.band_averaged_variance`.
-
-    Parameters
-    ----------
-    Nf, Nt : int
-    dt : float
-    Sn_func : callable
-    n_realizations : int, optional
-        Number of realizations to average (default 1000).
-    seed : int or None, optional
-        Seed for the RNG.
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
-
-    Returns
-    -------
-    ndarray, shape (Nf+1, Nt)
-    """
+    """Monte-Carlo estimate of $\\langle w_{mn}^2 \\rangle$, shape ``(Nf + 1, Nt)``: the mean
+    squared WDM coefficients of ``n_realizations`` draws of :func:`colored_noise` from
+    ``numpy.random.default_rng(seed)``.  It checks
+    :func:`domainia.wilson.band_averaged_variance`."""
     validate_grid(Nf, Nt)
     validate_dt(dt)
     if require_int("n_realizations", n_realizations) < 1:

@@ -1,4 +1,4 @@
-"""Per-point K x K noise covariance from a model (domainia 3.0 spec, section 3).
+"""Per-point K x K noise covariance from a model.
 
 A model returns the one-sided K x K cross-spectral density [data units^2/Hz], oriented so
 that ``E[X_a conj(X_b)] = (T_obs / 2) S_ab(f_k)`` at an interior rfft bin, with
@@ -22,8 +22,7 @@ __all__ = ["frequency_covariance", "wdm_covariance"]
 #: The model check's tolerance at a point, as a fraction of that point's largest |S_cd|.
 TOL = 1e-12
 #: The most points (bands x columns x frequency samples) per call of a WDM model.  At K = 3 a
-#: call needs about 26 MiB (real model) or 47 MiB (complex) beyond the output (tracemalloc,
-#: 512 x 512); a larger chunk is no faster.
+#: call needs about 26 MiB (real model) or 47 MiB (complex) beyond the output.
 CHUNK = 2**16
 
 

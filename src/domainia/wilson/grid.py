@@ -48,11 +48,8 @@ __all__ = [
 class Grid:
     """A validated ``(Nf, Nt, dt)`` triple, with the derived quantities.
 
-    Every function in the package takes ``Nf, Nt, dt`` positionally, and the
-    one misuse that cannot be detected downstream is swapping ``Nf`` and
-    ``Nt`` -- both are positive even ints, so ``Nf*Nt`` is unchanged and no
-    validation can see it. Building a ``Grid`` once and unpacking it at each
-    call site removes the opportunity.
+    Unpacking one ``Grid`` at each call site rules out swapping ``Nf`` and ``Nt``, which no
+    check can see (both are positive even ints with the same product).
 
     Examples
     --------
@@ -112,13 +109,6 @@ def _require_even_positive_int(name: str, value: object) -> int:
 def validate_grid(Nf: int, Nt: int) -> None:
     """Raise unless ``Nf`` and ``Nt`` are positive even integers.
 
-    Parameters
-    ----------
-    Nf : int
-        Number of frequency bands.
-    Nt : int
-        Number of time bins.
-
     Raises
     ------
     TypeError
@@ -146,34 +136,12 @@ def validate_grid(Nf: int, Nt: int) -> None:
 
 
 def sanitize_psd(values: object, context: str) -> Array:
-    """Apply the package-wide policy for non-finite PSD samples.
+    """The package-wide policy for PSD samples ``values`` (``context`` names them in messages).
 
-    Sensitivity curves routinely return ``inf`` at ``f = 0`` (a LISA
-    acceleration term goes as $f^{-4}$), so an infinite sample is a normal
-    input meaning "this bin carries no measurable power". Every module maps it
-    to ``0.0``, which is what keeps :func:`domainia.wilson.matrix.build_C_time` finite and
-    positive semi-definite.
-
-    ``nan`` is *not* treated that way: it has no physical reading, so it raises.
-    Complex input raises ``TypeError`` rather than being silently truncated to its
-    real part, and so does a bool, str or object array.
-
-    The point of routing every module through here is **uniformity**. These
-    paths previously disagreed: ``build_C_time`` and ``stationary`` mapped
-    non-finite to ``0.0``, ``noise.band_averaged_variance`` dropped the bin
-    from a weighted average (a different answer), and the Gaussian log-likelihood
-    propagated it to ``+inf``. The same PSD gave three answers depending on which
-    function you called.
-
-    Negative samples are rejected outright: a negative PSD is not a convention,
-    it is a bug in the caller's model.
-
-    Parameters
-    ----------
-    values : array-like
-        PSD samples.
-    context : str
-        Name used in the error message.
+    An infinite sample means "this bin carries no measurable power" (sensitivity curves
+    return ``inf`` at ``f = 0``), so it maps to ``0.0``; that keeps
+    :func:`domainia.wilson.matrix.build_C_time` finite and positive semi-definite.  ``nan``
+    has no physical reading and a negative PSD is a bug in the model, so both raise.
 
     Returns
     -------
@@ -219,17 +187,7 @@ def sanitize_psd(values: object, context: str) -> Array:
 
 
 def n_samples(Nf: int, Nt: int) -> int:
-    """Total time-domain sample count $N = N_f N_t$.
-
-    Parameters
-    ----------
-    Nf, Nt : int
-        Frequency and time bin counts.
-
-    Returns
-    -------
-    int
-        $N = N_f \\cdot N_t$.
+    """Total time-domain sample count $N = N_f N_t$, an ``int``.
 
     Raises
     ------
@@ -250,19 +208,7 @@ def n_samples(Nf: int, Nt: int) -> int:
 
 
 def delta_F(Nf: int, dt: float) -> float:
-    """Frequency-pixel width $\\Delta F = 1/(2\\,\\delta t\\,N_f)$.
-
-    Parameters
-    ----------
-    Nf : int
-        Number of frequency bands.
-    dt : float
-        Sampling interval.
-
-    Returns
-    -------
-    float
-        Pixel width in Hz.
+    """Frequency-pixel width $\\Delta F = 1/(2\\,\\delta t\\,N_f)$ in Hz, a ``float``.
 
     Raises
     ------
@@ -271,8 +217,8 @@ def delta_F(Nf: int, dt: float) -> float:
     ValueError
         If ``Nf`` is not positive and even, if ``dt`` is not positive
         and finite, or if $2\\,\\delta t N_f$ is so small or so large that the
-        width is not a positive finite double (lisa/wdm b5973b7: an ``inf`` or
-        ``0.0`` width made :func:`domainia.wilson.forward_time` return exact zeros).
+        width is not a positive finite double (an ``inf`` or ``0.0`` width would make
+        the transform return exact zeros).
 
     Examples
     --------
@@ -300,16 +246,7 @@ def delta_F(Nf: int, dt: float) -> float:
 
 
 def delta_T(Nf: int, dt: float) -> float:
-    """Time-pixel width $\\Delta T = N_f\\,\\delta t$.
-
-    Parameters
-    ----------
-    Nf : int
-    dt : float
-
-    Returns
-    -------
-    float
+    """Time-pixel width $\\Delta T = N_f\\,\\delta t$, a ``float``.
 
     Examples
     --------
@@ -322,18 +259,8 @@ def delta_T(Nf: int, dt: float) -> float:
 
 
 def band_frequencies(Nf: int, dt: float) -> Array:
-    """Band-center frequencies $f_m = m\\,\\Delta F$ for $m = 0,\\ldots,N_f$.
-
-    Parameters
-    ----------
-    Nf : int
-    dt : float
-
-    Returns
-    -------
-    ndarray, shape (Nf+1,)
-        Endpoints satisfy ``freqs[0] == 0`` (DC) and
-        ``freqs[Nf] == 1/(2*dt)`` (Nyquist).
+    """Band-center frequencies $f_m = m\\,\\Delta F$ for $m = 0,\\ldots,N_f$, shape ``(Nf+1,)``:
+    ``freqs[0] == 0`` (DC) and ``freqs[Nf] == 1/(2*dt)`` (Nyquist).
 
     Examples
     --------
@@ -347,27 +274,10 @@ def band_frequencies(Nf: int, dt: float) -> Array:
 
 
 def time_pixel_centers(Nf: int, Nt: int, dt: float) -> Array:
-    """Pixel-center times $t_n = n\\,\\Delta T$ for $n = 0,\\ldots,N_t-1$.
+    """Pixel-center times $t_n = n\\,\\Delta T$ for $n = 0,\\ldots,N_t-1$, shape ``(Nt,)``.
 
     These are the times of the WDM lattice: the energy centroid of
     the basis function $g_{mn}$ sits at exactly $n\\,\\Delta T$.
-
-    Parameters
-    ----------
-    Nf, Nt : int
-    dt : float
-
-    Returns
-    -------
-    ndarray, shape (Nt,)
-
-    Notes
-    -----
-    .. note::
-       Before 2026-07-27 this returned $(n + 1/2)\\,\\Delta T$, a half-pixel
-       too late. Measured against the energy centroid of a single-pixel
-       inverse transform, the offset was exactly $-0.5\\,\\Delta T$ at every
-       grid tested.
 
     Examples
     --------
@@ -388,14 +298,6 @@ def active_mask(Nf: int, Nt: int) -> BoolArray:
       ($N_t/2$ pixels).
 
     Total active count equals $N = N_f N_t$.
-
-    Parameters
-    ----------
-    Nf, Nt : int
-
-    Returns
-    -------
-    ndarray of bool, shape (Nf+1, Nt)
 
     Examples
     --------

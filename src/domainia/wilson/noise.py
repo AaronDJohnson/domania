@@ -23,10 +23,6 @@ about $S_n/2$ there, not 0; :func:`domainia.wdm_covariance` sets those cells to 
 Every kernel here that reaches the window takes ``window=`` (a
 :class:`domainia.wilson.windows.Window`; default :data:`domainia.wilson.MEYER`) and
 computes in the Wilson basis of that window.
-
-Argument order follows the package convention: the grid first
-(``Nf, Nt, dt``), then the PSD. It matches :mod:`domainia.wilson.matrix`, so the PSD is
-always the trailing argument.
 """
 
 from __future__ import annotations
@@ -71,29 +67,10 @@ def band_averaged_variance(
             {\\sum_j \\hat\\phi^2(f_j - f_m)}$$
 
     and returns $\\sigma_{mn}^2 = S_n^{\\text{eff}}(m)/2$ broadcast
-    over $n$.  This is exact: it reproduces the diagonal of the WDM
+    over $n$, shape ``(Nf+1, Nt)``.  This is exact: it reproduces the diagonal of the WDM
     covariance $W\\,C\\,W^T$ to machine precision, because the pixel
     variance is the $\\hat\\phi^2$-weighted average of the PSD across
     the band.
-
-    .. note::
-       Before 2026-07-27 this used the filter-weighted **harmonic**
-       mean $\\bigl(\\sum \\hat\\phi^2/S_n\\bigr)^{-1}\\sum\\hat\\phi^2$,
-       which is not the pixel variance and was measurably *less*
-       accurate than $S_n(f_m)/2$ at the band centre in every interior band.
-
-    Parameters
-    ----------
-    Nf, Nt : int
-    dt : float
-    Sn_func : callable
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
-
-    Returns
-    -------
-    ndarray, shape (Nf+1, Nt)
 
     Examples
     --------
@@ -121,10 +98,7 @@ def band_averaged_variance(
     # Fold every band's slab onto the physical band [0, f_Nyq] in one shot.
     # The DC band's slab runs below zero and folds about 0; the Nyquist band's
     # runs above f_Nyq and folds about f_Nyq -- that is where the discrete
-    # spectrum actually aliases. Folding the top band about 0 (plain ``abs``)
-    # samples the PSD at the wrong frequencies and biases band m=Nf by several
-    # percent. One vectorised call also means one user-PSD invocation instead
-    # of Nf+1, which matters for an expensive sensitivity curve.
+    # spectrum actually aliases.  One call of Sn_func covers every band.
     f_bins = np.arange(Nf + 1)[:, None] * dF + f_offsets[None, :]
     f_folded = np.abs(f_bins)
     f_folded = np.where(f_folded > f_nyq, 2.0 * f_nyq - f_folded, f_folded)
@@ -135,18 +109,10 @@ def band_averaged_variance(
             f"got {Sn_vals.shape}"
         )
 
-    # Weight by every bin the window touches. A bin where S_n vanishes still
-    # belongs in the denominator -- it contributes zero power, which is exactly
-    # what pulls the band average down. Dropping such bins from both sums (as
-    # an earlier ``Sn_vals > 0`` mask did) rescales the average by the surviving
-    # weight and overstates a band with a spectral cutoff in it by up to 3.2x.
-    # The Meyer window always has positive bins -- measured 3/4 of them at
-    # Nf=2, Nt=4 and 1535/2048 at Nf=1024, Nt=2048, across dt from 1e-6 to 1e6 --
-    # and so does every admissible window (its partition of unity makes phi(f) or
-    # phi(f - dF) nonzero at every bin), so ``in_band`` is never empty. An earlier
-    # revision carried an ``if not np.any(in_band): Sn_eff = inf`` fallback for
-    # that case. It was unreachable, and a silent infinite variance is the last
-    # thing this package should produce, so it is gone rather than merely untested.
+    # Weight by every bin the window touches.  A bin where S_n vanishes still
+    # belongs in the denominator: it contributes zero power, which is exactly
+    # what pulls the band average down.  ``in_band`` is never empty: an admissible
+    # window's partition of unity makes phi(f) or phi(f - dF) nonzero at every bin.
     in_band = phi2 > 0
     weights = phi2[in_band]
     Sn_eff = Sn_vals[:, in_band] @ weights / np.sum(weights)
@@ -155,7 +121,7 @@ def band_averaged_variance(
 
 
 # ---------------------------------------------------------------------------
-# Evolutionary PSDs S(f, t) -- moved from wdm_dev ``evolutionary.py`` (verbatim)
+# Evolutionary PSDs S(f, t)
 # ---------------------------------------------------------------------------
 
 
@@ -182,20 +148,7 @@ def evolutionary_band_variance(Nf: int, Nt: int, dt: float, Sn: PsdFtFunc, *,
     :func:`band_averaged_variance`).  ``Sn(f, t)`` is elementwise and broadcasting
     (argument order ``(f, t)``).  In the stationary limit this is
     :func:`band_averaged_variance`.  Returns ``(Nf + 1, Nt)``, or
-    ``(len(bands), Nt)`` for selected bands.  Was wdm_dev
-    ``evolutionary.band_averaged_evolutionary_variance``.
-
-    Parameters
-    ----------
-    Nf, Nt : int
-    dt : float
-    Sn : callable
-        ``(f, t) -> S(f, t)``, elementwise and broadcasting.
-    bands : array of int, optional
-        The bands to return (all by default).
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
+    ``(len(bands), Nt)`` for the bands ``bands`` (all by default).
     """
     validate_grid(Nf, Nt)
     N = Nf * Nt

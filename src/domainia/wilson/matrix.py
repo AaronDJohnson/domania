@@ -18,23 +18,18 @@ window (:mod:`domainia.wilson.windows`).
 
 This module exposes:
 
-* :func:`build_W` — full $(N_f+1)N_t \\times N$ matrix built by
-  time-domain impulse-response probing.
+* :func:`build_W` — full $(N_f+1)N_t \\times N$ matrix.
 * :func:`active_W` — the $N \\times N$ restriction ($W_a W_a^T = \\delta t\\,I$).
 * :func:`build_C_time` — Toeplitz time-domain noise covariance from
   a PSD (vectorized via ``irfft`` of the power spectrum).
 * :func:`build_C_wdm` — WDM-domain noise covariance via the similarity
   transform $C^{(\\text{WDM})} = W\\,C^{(\\text{time})}\\,W^T$.
+* :func:`rfft_to_real`, :func:`real_to_rfft` — the complex rfft as a real vector of
+  length $N$ (the real-DFT representation).
 
-These functions are $O(N^2)$ in memory and $O(N^3)$ in compute.
-They are intended for verification, teaching, and small-$N$ work
-(roughly $N \\lesssim 2048$); for production use the FFT-based
-transforms in :mod:`domainia.wilson.transform`.
-
-Two utilities (:func:`rfft_to_real`, :func:`real_to_rfft`) pack the
-complex rfft into a real vector of length $N$ for users who want to
-work with a single $N \\times N$ matrix in the real-DFT
-representation.
+These functions are $O(N^2)$ in memory and $O(N^3)$ in compute: references for
+small $N$ (roughly $N \\lesssim 2048$); the FFT-based transforms are in
+:mod:`domainia.wilson.transform`.
 """
 
 from __future__ import annotations
@@ -83,33 +78,19 @@ def build_W(
     Row $\\alpha = (m, n)$ is the basis function $g_{mn}$ sampled in time, so
     $W$ is *defined* by "column $k_0$ is the WDM transform of a delta at sample
     $k_0$".  It is *built* from the lattice's shift-covariance instead, which
-    is several times faster and agrees with the definition to ~4e-16 (pinned to
-    1e-13 for every test window by
-    ``tests/wilson/test_window_threading.py::test_build_W_is_the_impulse_response``,
-    and for Meyer by ``tests/wilson/vendored/test_matrix.py::test_W_matches_FFT_transform``).
-
-    Parameters
-    ----------
-    Nf, Nt : int
-    dt : float
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
+    agrees with the definition to rounding.
 
     Returns
     -------
     ndarray, shape ((Nf+1)*Nt, N)
         Real matrix.  Rows are indexed by the flattened ``(m, n)``
         pixel index $\\alpha = m\\,N_t + n$; columns by the time
-        sample $k_0 = 0, \\ldots, N - 1$.
+        sample $k_0 = 0, \\ldots, N - 1$.  Inactive edge-band rows are exactly zero.
 
     Notes
     -----
     Cost: $2(N_f+1)$ inverse transforms plus $O(N^2)$ of copying, and
-    $O(N^2)$ memory -- several times faster than the $N$-impulse definition,
-    the gap widening with $N$.  Run ``python tools/benchmark.py`` for the
-    figure on your machine.  Still only practical for small $N$.  Inactive
-    edge-band rows are exactly zero.
+    $O(N^2)$ memory.
 
     Examples
     --------
@@ -132,8 +113,6 @@ def build_W(
     # Only ACTIVE pixels are seeded: inactive edge pixels correspond to zero
     # rows of W, and those rows come out exactly zero here rather than carrying
     # the ~1e-17 of cancellation noise that impulse probing leaves.
-    #
-    # The identity holds for the unit-norm basis, which is the only one there is.
     mask = active_mask(Nf, Nt)
     seed = np.zeros((Nf + 1, Nt))
     for n0 in (0, 1):
@@ -166,14 +145,6 @@ def active_W(
     $x = W_a^T w / \\delta t$; the plain transpose is the inverse only
     at $\\delta t = 1$.
 
-    Parameters
-    ----------
-    Nf, Nt : int
-    dt : float
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
-
     Returns
     -------
     ndarray, shape (N, N)
@@ -192,21 +163,12 @@ def active_W(
 
 
 def build_C_time(N: int, dt: float, Sn_func: PsdFunc) -> Array:
-    """Toeplitz time-domain noise covariance from a one-sided PSD.
+    """Toeplitz time-domain noise covariance of ``N`` samples from a one-sided PSD.
 
-    For stationary noise with one-sided PSD $S_n(f)$, the autocovariance
+    For stationary noise with one-sided PSD ``Sn_func(f)`` $= S_n(f)$, the autocovariance
     is $R(\\tau) = E[n_k n_{k+\\tau}]$, and the covariance matrix is
     Toeplitz: $C[k, k'] = R(|k - k'|)$.  Built via the inverse rfft
     of the discrete two-sided power spectrum.
-
-    Parameters
-    ----------
-    N : int
-        Number of time samples.
-    dt : float
-        Sampling interval.
-    Sn_func : callable
-        ``f -> S_n(f)``.
 
     Returns
     -------
@@ -271,15 +233,6 @@ def build_C_wdm(
     (compact support inside one slab): only $|m - m'| \\le 1$ blocks are
     nonzero (up to numerical noise).
 
-    Parameters
-    ----------
-    Nf, Nt : int
-    dt : float
-    Sn_func : callable
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
-
     Returns
     -------
     ndarray, shape ((Nf+1)*Nt, (Nf+1)*Nt)
@@ -306,24 +259,8 @@ def build_C_wdm_active(
     *,
     window: Window = MEYER,
 ) -> Array:
-    """Active-pixel restriction of :func:`build_C_wdm`.
-
-    Returns the $N \\times N$ covariance of the active WDM coefficients
-    only.  Equivalent to ``build_C_wdm`` followed by selecting the
-    active rows and columns.
-
-    Parameters
-    ----------
-    Nf, Nt : int
-    dt : float
-    Sn_func : callable
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
-
-    Returns
-    -------
-    ndarray, shape (N, N)
+    """Active-pixel restriction of :func:`build_C_wdm`: the $N \\times N$ covariance of the
+    active WDM coefficients, i.e. ``build_C_wdm`` on the active rows and columns.
 
     Examples
     --------
@@ -348,17 +285,7 @@ def rfft_to_real(x_rfft: CArray, N: int) -> Array:
     \\,\\ldots,\\,\\text{Re}\\,X_{N/2-1},\\,\\text{Im}\\,X_{N/2-1},
     \\,\\text{Re}\\,X_{N/2})^T,$$
 
-    yielding $1 + 2(N/2 - 1) + 1 = N$ entries.
-
-    Parameters
-    ----------
-    x_rfft : ndarray, complex, shape (N//2+1,)
-    N : int
-        Total time-domain sample count.
-
-    Returns
-    -------
-    ndarray, float, shape (N,)
+    yielding $1 + 2(N/2 - 1) + 1 = N$ entries, from ``x_rfft`` of shape ``(N//2+1,)``.
 
     Examples
     --------
@@ -372,9 +299,9 @@ def rfft_to_real(x_rfft: CArray, N: int) -> Array:
     ValueError: N must be even, got 5
     """
     # Interleave Re/Im of bins j = 1..N/2-1 into slots (2j-1, 2j), i.e. the
-    # strided ranges 1:N-2:2 and 2:N-1:2.  Even N only (lisa/wdm b5973b7): for
-    # odd N the last stored bin is not Nyquist and its imaginary part would be
-    # silently dropped, yet N//2+1 is still the right bin count.
+    # strided ranges 1:N-2:2 and 2:N-1:2.  Even N only: for odd N the last stored bin
+    # is not Nyquist and its imaginary part would be silently dropped, yet N//2+1 is
+    # still the right bin count.
     N = _require_even_positive_int("N", N)
     x_rfft = np.asarray(x_rfft)
     if x_rfft.shape != (N // 2 + 1,):
@@ -391,16 +318,7 @@ def rfft_to_real(x_rfft: CArray, N: int) -> Array:
 
 
 def real_to_rfft(x_real: Array, N: int) -> CArray:
-    """Inverse of :func:`rfft_to_real`.
-
-    Parameters
-    ----------
-    x_real : ndarray, float, shape (N,)
-    N : int
-
-    Returns
-    -------
-    ndarray, complex, shape (N//2+1,)
+    """Inverse of :func:`rfft_to_real`: ``(N,)`` real to ``(N//2+1,)`` complex.
 
     Examples
     --------

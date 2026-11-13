@@ -39,25 +39,12 @@ $$X[\\ell_{m,k}] \\mathrel{+}= \\frac{1}{\\sqrt{2}\\,\\delta t}\\,
 
 with writes outside $[0, N/2]$ discarded.
 
-Both algorithms produce $w_{mn}$ identical to the FFT-natural
-implementation in earlier versions of this module to machine precision
-(the slab/carrier reordering is algebraically equivalent, see the note
-``wdm_transform_algorithms.tex`` \\S Differences).
-
 The DC and Nyquist edge-band coefficients are divided by $\\sqrt{2}$ so
 that all basis functions have unit norm.  This makes the WDM transform
 matrix orthogonal up to the sampling scale ($W_a W_a^T = \\delta t\\,I$,
 so invert with $x = W_a^T w/\\delta t$) and the Parseval identity exact:
-$\\sum_{m,n} w_{mn}^2 = \\delta t \\sum_k x_k^2$.
-
-This is the package's **only** coefficient convention -- there is no flag.
-The raw "code" alternative, in which the edge basis functions have
-$\\|g_{0n}\\|^2 = 2$, used to be selectable via ``normalize_edges=False``
-throughout the package.  It bought nothing but a way to get the edge bands
-silently wrong: the two conventions differ by a factor of two on the edge
-bands and nowhere else, no downstream function could detect a mismatch, and
-every non-trivial consumer (``matrix``, ``stationary``) either assumed or
-hard-coded the normalized one anyway.
+$\\sum_{m,n} w_{mn}^2 = \\delta t \\sum_k x_k^2$.  This is the package's only
+coefficient convention.
 
 Precision
 ---------
@@ -97,33 +84,14 @@ __all__ = [
 # ---------------------------------------------------------------------------
 # FFT backend: numpy, deliberately
 # ---------------------------------------------------------------------------
-# ``scipy.fft`` was tried and reverted. Recorded here so it is not retried on
-# the strength of a microbenchmark:
-#
-#   * Isolated, scipy IS faster: 1.64x single-threaded and 2.78x at
-#     ``workers=8`` on a bare (255, 512) complex ifft.
-#   * In this transform it is worth **0.93-1.14x** end to end, measured across
-#     four grids from Nf=64 to Nf=1024. The FFT is not the bottleneck -- the
-#     parity assembly (``np.where`` plus complex construction) and the scatter
-#     dominate -- so Amdahl eats the gain.
-#   * ``workers=8`` bought 1.00-1.23x for the same reason.
-#
-# The cost was real: scipy is not bit-identical to numpy (~3.7e-16 relative,
-# same algorithm family, different rounding), and the Meyer outputs have stayed
-# byte-for-byte stable across every change. Trading a verifiable property for
-# measurement noise is a bad deal.
-#
-# Worth revisiting only if the parity assembly is ever vectorised further, at
-# which point the FFT share of the runtime rises and the arithmetic changes.
+# ``scipy.fft`` is faster on a bare FFT but not end to end here (the parity assembly and
+# the scatter dominate), and its rounding differs from numpy's.
 
 
 def _parity(m: int | np.integer, n_arr: NDArray[np.integer]) -> tuple[BoolArray, Array]:
     """``((m+n) even, (-1)^{(m+1)n})`` for one band.
 
-    The Wilson parity/carrier convention is the most error-prone thing in the
-    package -- :func:`domainia.wilson.stationary._carriers` carries the 2-D form of the
-    same rule.  Both live in exactly one place each so that a sign fix cannot
-    land in one copy and miss another.
+    :func:`domainia.wilson.stationary._carriers` holds the 2-D form of the same rule.
     """
     even = (m + n_arr) % 2 == 0
     sign = 1.0 - 2.0 * (((m + 1) * n_arr) % 2)
@@ -131,27 +99,14 @@ def _parity(m: int | np.integer, n_arr: NDArray[np.integer]) -> tuple[BoolArray,
 
 
 def _build_slab(X_rfft: CArray, m: int, Nf: int, Nt: int) -> CArray:
-    """Linear-centred slab $u_m[k] = X[\\ell_{m,k}]$ for $k \\in [0, N_t-1]$.
+    """Linear-centred slab $u_m[k] = X[\\ell_{m,k}]$ for $k \\in [0, N_t-1]$:
+    ``(..., N//2+1)`` complex to ``(..., Nt)`` complex.
 
     Hermitian extension is applied inline: negative indices use the
     conjugate of the positive bin (only fires at $m = 0$, $k < N_t/2$);
     over-Nyquist indices use the conjugate of the mirror bin (only
     fires at $m = N_f$, $k > N_t/2$).  For interior bands every lookup
     is a direct rfft read.
-
-    **Shape-generic in the leading axes.** The slab indices depend only on
-    ``(m, Nf, Nt)``, never on the data, so a stack of spectra gathers with the
-    same index arrays under ``...`` indexing.
-
-    Parameters
-    ----------
-    X_rfft : ndarray, complex, shape (..., N//2+1)
-    m : int
-    Nf, Nt : int
-
-    Returns
-    -------
-    ndarray, complex, shape (..., Nt)
     """
     N = n_samples(Nf, Nt)
     ell = np.arange(Nt) + (m - 1) * (Nt // 2)
@@ -174,18 +129,9 @@ def _prepare_edges_for_inverse(wmn: Array, Nf: int, Nt: int) -> Array:
     Two things, both edge-only:
 
     1. **Zero the parity-killed entries.** They correspond to zero rows of $W$,
-       so the adjoint must ignore them. Without this, junk there leaks into the
-       reconstruction -- measured: a unit perturbation of one inactive DC pixel
-       moved the *active* pixels of ``forward(inverse(w))`` by 2.5 absolute.
-       Anything produced by :func:`forward` already carries ~1e-16 there, so
-       this is a no-op on well-formed input.
+       so the adjoint must ignore them; otherwise junk there leaks into the
+       active pixels of the reconstruction.
     2. **Undo the unit-norm $\\sqrt2$** that :func:`forward` applied.
-
-    ``active_mask`` is built once. It used to be called twice, once per edge
-    band, allocating the whole $(N_f+1)\\times N_t$ boolean array each time to
-    read a single row -- 5.1% of ``inverse`` at $N_f=64$, $N_t=128$.
-
-    Shape-generic in the leading axes.
     """
     work = wmn.astype(np.float64)      # always a fresh copy, so updating it in place is safe
     mask = active_mask(Nf, Nt)
@@ -210,12 +156,9 @@ def _scatter_interior_bands(
     is exact and much cheaper than ``np.add.at``; consecutive bands overlap by
     $N_t/2$, which the sequential loop handles correctly.
 
-    Shape-generic in the leading axes: ``X`` is ``(..., N//2+1)`` and ``wmn_work``
-    ``(..., Nf+1, Nt)``.
-
-    There is no ``Nf < 2`` guard because there is no such grid:
-    :func:`domainia.wilson.grid.validate_grid` requires ``Nf`` positive **and** even, so the
-    smallest legal value is 2 and every caller has at least one interior band.
+    ``X`` is ``(..., N//2+1)`` and ``wmn_work`` ``(..., Nf+1, Nt)``.  There is always an
+    interior band: :func:`domainia.wilson.grid.validate_grid` requires ``Nf`` even, so
+    ``Nf >= 2``.
     """
     n_arr = np.arange(Nt)
     m_int = np.arange(1, Nf)
@@ -227,7 +170,7 @@ def _scatter_interior_bands(
     # g = w' * C_mn * (-1)^{(m+1)n}: real where (m+n) even, imaginary otherwise.
     G = np.where(even_int, scaled_int, 0.0) + 1j * np.where(even_int, 0.0, scaled_int)
     W_int = np.fft.fft(G, axis=-1) * (lam * phi_c)
-    # Sequential slice-adds in band order, exactly the oracle's ``+=`` loop.
+    # Sequential slice-adds in band order.
     # Every rfft bin receives at most two addends (adjacent interior bands
     # overlap by Nt/2; the edge bands only touch bins also covered by band 1 or
     # band Nf-1, plus bin N/2 alone), and a + b == b + a in IEEE arithmetic, so
@@ -244,12 +187,8 @@ def _scatter_edge_bands(
     """Accumulate the DC and Nyquist bands into ``X``; returns it.
 
     These scatter partly outside $[0, N/2]$; those writes are redundant by
-    Hermitian symmetry of the real WDM wavelets and are discarded.
-
-    Shape-generic in the leading axes, as :func:`_scatter_interior_bands`.
-    ``ell`` is strictly increasing, so the surviving indices are
-    duplicate-free and a plain ``+=`` is exact -- ``np.add.at`` was only ever
-    guarding against duplicates that cannot occur here.
+    Hermitian symmetry of the real WDM wavelets and are discarded.  ``ell`` is strictly
+    increasing, so the surviving indices are duplicate-free and a plain ``+=`` is exact.
     """
     n_arr = np.arange(Nt)
     for m in (0, Nf):
@@ -259,7 +198,6 @@ def _scatter_edge_bands(
         Wm = np.fft.fft(g, axis=-1)
         ell = n_arr + (m - 1) * (Nt // 2)
         valid = np.flatnonzero((ell >= 0) & (ell <= N // 2))
-        # The indices are strictly increasing, so the fancy-index add is one addition per bin.
         X[..., ell[valid]] += lam * phi_c[valid] * Wm[..., valid]
     return X
 
@@ -268,19 +206,14 @@ def _gather_bands(x_rfft: CArray, Nf: int, Nt: int, dt: float, *,
                   window: Window = MEYER) -> Array:
     """Coefficient grid(s) from spectra: ``(..., N//2+1) -> (..., Nf+1, Nt)``.
 
-    The whole of the forward algorithm, shape-generic in the leading axes;
-    :func:`forward` is a thin validation wrapper over it.
+    The whole of the forward algorithm; :func:`forward` validates and calls it.
 
     Interior bands $m = 1 \\ldots N_f-1$: every slab index
     $\\ell_{m,k} = k + (m-1)N_t/2$ lies in $[0, N/2]$
     (max $= (N_f-1)N_t/2 - 1 < N/2$), so the slab is a pure gather from the
     rfft with no Hermitian branch, and all of them go through one batched
-    length-$N_t$ IFFT.  Unconditional: :func:`domainia.wilson.grid.validate_grid` requires $N_f$
-    positive **and** even, so $N_f \\ge 2$ and there is always at least one
-    interior band.
-
-    Edge bands $m \\in \\{0, N_f\\}$ take the Hermitian-symmetry slab path.
-    Two bands, so the Python loop over them is irrelevant to the cost.
+    length-$N_t$ IFFT.  Edge bands $m \\in \\{0, N_f\\}$ take the
+    Hermitian-symmetry slab path.
     """
     phi_c = sample_window(window, Nf, Nt, dt)
     kappa = np.sqrt(2.0) / Nf
@@ -307,7 +240,7 @@ def _gather_bands(x_rfft: CArray, Nf: int, Nt: int, dt: float, *,
         even, sign = _parity(m, n_arr)
         out[..., m, :] = kappa * sign * np.where(even, y_m.real, y_m.imag)
 
-    # Unit-norm edge basis functions. Not optional: see the module docstring.
+    # Unit-norm edge basis functions (module docstring).
     root2 = np.sqrt(2.0)
     out[..., 0, :] /= root2
     out[..., Nf, :] /= root2
@@ -322,13 +255,7 @@ def forward(
     *,
     window: Window = MEYER,
 ) -> Array:
-    """Forward WDM transform: $\\text{rfft}(x) \\to w_{mn}$.
-
-    RFFT-only implementation following Algorithm 1 of
-    ``wdm_transform_algorithms.tex``: the full-length two-sided spectrum is
-    never built, only the one-sided rfft is read.  Batching the interior bands
-    trades memory for speed -- the working set is $O(N_f N_t)$, several times
-    the input rfft, not the $O(N_t)$ of a per-band loop.  See the Notes below.
+    """Forward WDM transform (Algorithm 1): $\\text{rfft}(x) \\to w_{mn}$.
 
     Parameters
     ----------
@@ -336,24 +263,6 @@ def forward(
         One-sided DFT of the real time series, as returned by
         ``np.fft.rfft(x)`` (no $\\delta t$ scaling).  Any leading axes: each
         slice is transformed on its own, and a stack goes through one batched FFT.
-    Nf : int
-        Number of frequency bands; $N = N_f N_t$.
-    Nt : int
-        Number of time bins.
-    dt : float
-        Sampling interval.
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
-
-    Notes
-    -----
-    Cost: $O(N \\log N_t)$.  The $N_f-1$ interior bands are done in one
-    batched length-$N_t$ IFFT; only the two edge bands take the
-    Hermitian-symmetry path.  Working set is $O(N_f N_t)$ -- the batched
-    slab is materialised -- not the $O(N_t)$ of a per-band loop.
-    :func:`inverse` costs modestly more than :func:`forward` (it scatters
-    into an accumulator rather than gathering).
 
     Returns
     -------
@@ -370,8 +279,13 @@ def forward(
     ValueError
         If ``Nf`` or ``Nt`` is not positive and even, if the last axis of
         ``x_rfft`` does not have length ``N//2 + 1``, or if it holds a ``nan`` or
-        ``inf`` (see :func:`domainia.wilson.grid.validate_finite` -- one bad bin would
-        otherwise silently make every output coefficient ``nan``).
+        ``inf`` (:func:`domainia.wilson.grid.validate_finite`).
+
+    Notes
+    -----
+    Cost: $O(N \\log N_t)$.  The $N_f-1$ interior bands go through one batched
+    length-$N_t$ IFFT, so the working set is $O(N_f N_t)$, not the $O(N_t)$ of a
+    per-band loop.
 
     Examples
     --------
@@ -409,25 +323,15 @@ def inverse(
     *,
     window: Window = MEYER,
 ) -> CArray:
-    """Inverse WDM transform: $w_{mn} \\to \\text{rfft}(x)$.
+    """Inverse WDM transform (Algorithm 2): $w_{mn} \\to \\text{rfft}(x)$.
 
-    RFFT-only implementation following Algorithm 2 of
-    ``wdm_transform_algorithms.tex``.  Each band scatters into the
-    one-sided rfft accumulator at its linear-centred slab indices;
-    writes outside $[0, N/2]$ (only at the edge bands) are discarded
-    as redundant by Hermitian symmetry of the real WDM wavelets.
+    Each band scatters into the one-sided rfft accumulator at its linear-centred slab
+    indices.  The inactive edge cells of ``wmn`` are ignored.
 
     Parameters
     ----------
     wmn : ndarray, float, shape (..., Nf+1, Nt)
         WDM coefficient grid, with any leading axes.
-    Nf, Nt : int
-        Frequency and time bin counts.
-    dt : float
-        Sampling interval.
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
 
     Returns
     -------
@@ -484,23 +388,8 @@ def forward_time(
     *,
     window: Window = MEYER,
 ) -> Array:
-    """Convenience wrapper: time-domain $x_k \\to w_{mn}$.
-
-    Equivalent to ``forward(np.fft.rfft(x), ...)``.
-
-    Parameters
-    ----------
-    x : ndarray, float, shape (..., N)
-        Real time series with $N = N_f N_t$ samples, with any leading axes.
-    Nf, Nt : int
-    dt : float
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
-
-    Returns
-    -------
-    ndarray, float, shape (..., Nf+1, Nt)
+    """Time-domain forward transform, ``forward(np.fft.rfft(x), ...)``: a real ``x`` of shape
+    ``(..., N)``, $N = N_f N_t$, to ``(..., Nf+1, Nt)``.
 
     Raises
     ------
@@ -508,9 +397,8 @@ def forward_time(
         If ``Nf`` or ``Nt`` is not an integer, or ``dt`` is not a real number.
     ValueError
         If the grid is invalid, if the last axis of ``x`` does not have ``Nf*Nt``
-        samples, or if it holds a ``nan`` or ``inf``.  Gapped detector data often arrives
-        ``nan``-filled; see :func:`domainia.wilson.grid.validate_finite` for why that has to
-        be an error rather than something to propagate.
+        samples, or if it holds a ``nan`` or ``inf`` (gapped data often arrives
+        ``nan``-filled: fill the gaps first).
 
     Examples
     --------
@@ -549,22 +437,8 @@ def inverse_time(
     *,
     window: Window = MEYER,
 ) -> Array:
-    """Convenience wrapper: $w_{mn} \\to$ time-domain $x_k$.
-
-    Equivalent to ``np.fft.irfft(inverse(wmn, ...), n=N)``.
-
-    Parameters
-    ----------
-    wmn : ndarray, float, shape (..., Nf+1, Nt)
-    Nf, Nt : int
-    dt : float
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
-
-    Returns
-    -------
-    ndarray, float, shape (..., N)
+    """Time-domain inverse transform, ``np.fft.irfft(inverse(wmn, ...), n=N)``:
+    ``(..., Nf+1, Nt)`` to ``(..., N)``.
 
     Examples
     --------
@@ -596,17 +470,7 @@ def base_atom_spectra(Nf: int, Nt: int, dt: float, *,
 
     Every other atom of band ``m`` is a circular shift of one of these by an
     even number of columns (:func:`atom_spectrum`).  ``dt * inverse(e)``:
-    :func:`inverse` returns ``rfft(W_a^{-1} e) = rfft(atom) / dt``.  With the default
-    window (:data:`domainia.wilson.MEYER`) these spectra and the Eq. 45 constants built from
-    them are the Meyer baseline's (``tests/wilson/test_meyer_baseline.py``).
-
-    Parameters
-    ----------
-    Nf, Nt : int
-    dt : float
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
+    :func:`inverse` returns ``rfft(W_a^{-1} e) = rfft(atom) / dt``.
     """
     validate_grid(Nf, Nt)
     validate_dt(dt)
@@ -626,12 +490,11 @@ def _check_base_spectrum(base: dict[tuple[int, int], CArray], G: CArray, Nf: int
                          dt: float) -> None:
     """Reject a ``base`` that :func:`base_atom_spectra` did not build for ``(Nf, Nt, dt)``.
 
-    Host-side fingerprint, ``O(N)`` like the phase ramp it guards: ``2 Nf``
-    entries pins ``Nf``; the length ``N//2+1`` of ``G`` then pins ``Nt``; the
-    energy of the atom pins ``dt``, because every active atom has energy
-    exactly ``dt`` (``W_a W_a^T = dt I``; measured to <= 5e-16 relative).
-    ``N = Nf Nt`` is even, so the last bin is the Nyquist bin.  The window is
-    not pinned: the atoms of every admissible window have energy ``dt``.
+    An ``O(N)`` fingerprint: ``2 Nf`` entries pin ``Nf``; the length ``N//2+1`` of ``G``
+    then pins ``Nt``; the energy of the atom pins ``dt``, because every active atom has
+    energy ``dt`` to rounding (``W_a W_a^T = dt I``).  ``N = Nf Nt`` is even, so the last
+    bin is the Nyquist bin.  The window is not pinned: the atoms of every admissible window
+    have energy ``dt``.
     """
     N = n_samples(Nf, Nt)
     if len(base) != 2 * Nf or np.shape(G) != (N // 2 + 1,):
@@ -652,27 +515,13 @@ def _check_base_spectrum(base: dict[tuple[int, int], CArray], G: CArray, Nf: int
 def atom_spectrum(m: int, n: int, Nf: int, Nt: int, dt: float, *,
                   base: dict[tuple[int, int], CArray] | None = None,
                   window: Window = MEYER) -> CArray:
-    """rfft of the atom of the active cell ``(m, n)`` (length ``N//2+1``).
+    """rfft of the atom of the active cell ``(m, n)`` (length ``N//2+1``); ``n`` must lie in
+    ``0..Nt-1`` (no wrap-around).
 
-    Pass ``base`` (:func:`base_atom_spectra`) to avoid recomputing it.  ``n``
-    must lie in ``0..Nt-1`` (no wrap-around), and a ``base`` built for another
-    ``(Nf, Nt, dt)`` is rejected.
-
-    Parameters
-    ----------
-    m, n : int
-        The active cell: band ``m``, time bin ``n``.
-    Nf, Nt : int
-    dt : float
-    base : dict, optional
-        :func:`base_atom_spectra` of the grid; built here (with ``window``) when omitted.
-        When ``base`` is given, ``window`` is not used: ``base`` carries the window it was
-        built with (from ``base_atom_spectra(..., window=)``), and a base built with
-        another window is not detected.
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.  It must be a window even when ``base`` is
-        given (``TypeError`` otherwise).
+    Pass ``base`` (:func:`base_atom_spectra` of the grid) to avoid recomputing it.  A
+    ``base`` built for another ``(Nf, Nt, dt)`` is rejected; one built with another window
+    is not detected.  With ``base`` given, ``window`` is unused, but it must still be a
+    window (``TypeError`` otherwise).
     """
     require_window(window)
     validate_grid(Nf, Nt)
