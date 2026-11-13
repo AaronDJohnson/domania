@@ -10,6 +10,7 @@ from fractions import Fraction
 import numpy as np
 import pytest
 
+import domainia
 from domainia import wilson
 from domainia.wilson.filter import nu_d, phi_centered
 from domainia.wilson.grid import _require_int, n_samples, validate_dt, validate_grid
@@ -228,15 +229,42 @@ def test_real_arrays_take_integer_and_float_dtypes(slot):
 def test_float32_input_is_computed_in_double():
     """Every array input is promoted to double before the first FFT: a float32 or complex64
     input gives the double run's result on the same values, dtype included.  forward_time's
-    rfft would otherwise run in single precision."""
+    rfft would otherwise run in single precision.  A float32 ``dt`` is computed in double
+    too: ``N * dt`` or ``0.5 / dt`` on a float32 scalar rounds in float32 (6 x 10, N = 60)."""
     x = np.fft.irfft(_Z, 128)
+    psd = lambda f: 1.0 / (1.0 + (4.0 * f) ** 2) + 0.1
+    evo = lambda f, t: psd(f) * (1.0 + 0.3 * np.cos(t / 7.0))
+    M, St, E, No = wilson.matrix, wilson.stationary, wilson.evolutionary, wilson.noise
+    dts = {
+        "delta_F": lambda dt: wilson.delta_F(6, dt),
+        "delta_T": lambda dt: wilson.delta_T(6, dt),
+        "band_frequencies": lambda dt: wilson.band_frequencies(6, dt),
+        "time_pixel_centers": lambda dt: wilson.time_pixel_centers(6, 10, dt),
+        "phi_centered": lambda dt: phi_centered(6, 10, dt),
+        "band_averaged_variance": lambda dt: wilson.band_averaged_variance(6, 10, dt, psd),
+        "evolutionary_band_variance": lambda dt: No.evolutionary_band_variance(6, 10, dt, evo),
+        "colored_noise": lambda dt: No.colored_noise(60, dt, psd, np.random.default_rng(0)),
+        "empirical_variance": lambda dt: wilson.empirical_variance(6, 10, dt, psd, 2, seed=0),
+        "build_C_time": lambda dt: M.build_C_time(60, dt, psd),
+        "build_C_wdm": lambda dt: M.build_C_wdm(6, 10, dt, psd),
+        "build_C_wdm_active": lambda dt: M.build_C_wdm_active(6, 10, dt, psd),
+        "build_lambda_blocks_full_active": lambda dt: St.build_lambda_blocks_full_active(
+            6, 10, dt, psd)[0][1],
+        "build_K_full_active": lambda dt: St.build_K_full_active(6, 10, dt, psd)[0][1],
+        "time_domain_factor": lambda dt: E.time_domain_factor(60, dt, evo),
+        "time_domain_covariance": lambda dt: E.time_domain_covariance(60, dt, evo),
+        "draw_noise": lambda dt: E.draw_noise(60, dt, evo, np.random.default_rng(0)),
+        "exact_covariance": lambda dt: E.exact_covariance(6, 10, dt, evo),
+        "wdm_covariance": lambda dt: domainia.wdm_covariance(lambda f, t: psd(f)[None, None],
+                                                             Nf=6, Nt=10, dt=dt),
+    }
     calls = {slot: (call, good) for slot, (call, good, _) in _REAL_ARRAYS.items()} | {
         "forward": (lambda a: wilson.forward(a, 8, 16, 1.0), _Z),
         "forward_time": (lambda a: wilson.forward_time(a, 8, 16, 1.0), x),
-    }
+    } | {f"dt {name}": (call, np.float64(0.1)) for name, call in dts.items()}
     for slot, (call, good) in calls.items():
         low = good.astype(np.complex64 if good.dtype.kind == "c" else np.float32)
-        got, want = call(low), call(low.astype(good.dtype))
+        got, want = np.asarray(call(low)), np.asarray(call(low.astype(good.dtype)))
         assert got.dtype == want.dtype in (np.float64, np.complex128), slot
         assert np.array_equal(got, want), slot
 

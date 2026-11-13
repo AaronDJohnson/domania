@@ -6,23 +6,20 @@ approximately
 
 $$\\sigma_{mn}^2 \\approx S_n(f_m) / 2,$$
 
-uniformly across all pixels.  This
-module exposes three flavors of variance grid:
+uniformly across all pixels.  Both variance grids here are the filter-weighted
+band average of WDM Paper II, Eq. 36:
 
-* :func:`whittle_variance` — point-evaluate the PSD at band centers
-  (cheapest, exact when $S_n$ is constant within each band).
 * :func:`band_averaged_variance` — filter-weighted mean of $S_n$ over
   each band; exact, and the right choice for steep PSDs.
-* :func:`evolutionary_variance` — pixel-dependent variance for
-  locally-stationary noise with a time-varying PSD $S_n(f, t)$.
+* :func:`evolutionary_band_variance` — the same mean of a time-varying PSD
+  $S_n(f, t)$ at each time pixel, for locally-stationary noise.
 
 A Monte-Carlo estimator (:func:`empirical_variance`) is provided for
 verification.
 
-All variance grids return shape ``(Nf+1, Nt)`` so they slot directly
-into the inner-product functions.  The analytic grids fill the inactive edge pixels
+Both grids have shape ``(Nf+1, Nt)``.  They fill the inactive edge pixels
 ($m = 0$ and $m = N_f$ at odd $n$) by the same formula as the active ones, so they hold
-about $S_n/2$ there, not 0; nothing in domainia reads those pixels.
+about $S_n/2$ there, not 0; :func:`domainia.wdm_covariance` sets those cells to 0.
 
 Every kernel here that reaches the window takes ``window=`` (a
 :class:`domainia.wilson.windows.Window`; default :data:`domainia.wilson.MEYER`) and
@@ -47,7 +44,6 @@ from .grid import (
     delta_T,
     n_samples,
     sanitize_psd,
-    time_pixel_centers,
     validate_dt,
     validate_grid,
 )
@@ -63,121 +59,8 @@ __all__ = [
     "band_averaged_variance",
     "colored_noise",
     "empirical_variance",
-    "evaluate_psd_on_band_grid",
     "evolutionary_band_variance",
-    "evolutionary_variance",
-    "whittle_variance",
-    "whittle_variance_from_array",
 ]
-
-
-def evaluate_psd_on_band_grid(Nf: int, dt: float, Sn_func: PsdFunc) -> Array:
-    """Evaluate the PSD at all band centers.
-
-    Parameters
-    ----------
-    Nf : int
-    dt : float
-    Sn_func : callable
-        Function ``f -> S_n(f)`` that accepts an ndarray of frequencies.
-
-    Returns
-    -------
-    ndarray, shape (Nf+1,)
-        $S_n(f_m)$ for $m = 0, \\ldots, N_f$.
-
-    Examples
-    --------
-    >>> import numpy as np; from domainia import wilson
-    >>> Sn = wilson.evaluate_psd_on_band_grid(
-    ...     8, 1.0, lambda f: 1e-3 * np.ones_like(f)
-    ... )
-    >>> Sn.shape, float(Sn[0])
-    ((9,), 0.001)
-    """
-    freqs = band_frequencies(Nf, dt)
-    out = sanitize_psd(Sn_func(freqs), "evaluate_psd_on_band_grid")
-    if out.shape != freqs.shape:
-        raise ValueError(
-            f"Sn_func must be elementwise: expected shape {freqs.shape}, "
-            f"got {out.shape}"
-        )
-    return out
-
-
-def whittle_variance_from_array(Nt: int, Sn_band: Array) -> Array:
-    """Whittle variance grid from precomputed band-center PSD values.
-
-    Parameters
-    ----------
-    Nt : int
-        Number of time bins.  Grid arguments come first throughout the
-        package; $N_f$ is implied by ``Sn_band``'s length.
-    Sn_band : ndarray, shape (Nf+1,)
-        $S_n$ evaluated at band centers $f_m = m\\,\\Delta F$.
-        Number of time bins.
-
-    Returns
-    -------
-    ndarray, shape (Nf+1, Nt)
-        Variance grid $\\sigma_{mn}^2 = S_n(f_m)/2$, broadcast over $n$.
-
-    Examples
-    --------
-    >>> import numpy as np; from domainia import wilson
-    >>> var = wilson.whittle_variance_from_array(16, np.full(9, 1e-3))
-    >>> var.shape, float(var[0, 0])   # S_n / 2
-    ((9, 16), 0.0005)
-    """
-    sigma2_band = 0.5 * sanitize_psd(Sn_band, "whittle_variance_from_array")
-    if sigma2_band.ndim != 1:
-        raise ValueError(
-            f"Sn_band must be 1D of length Nf+1; got shape {sigma2_band.shape}"
-        )
-    # Nf is implied by the length; validate the (Nf, Nt) pair so this cannot
-    # produce a grid no valid transform could generate (e.g. an empty (9, 0)).
-    validate_grid(sigma2_band.size - 1, Nt)
-    return np.broadcast_to(sigma2_band[:, None], (sigma2_band.size, Nt)).copy()
-
-
-def whittle_variance(
-    Nf: int,
-    Nt: int,
-    dt: float,
-    Sn_func: PsdFunc,
-) -> Array:
-    """Whittle variance grid: $\\sigma_{mn}^2 = S_n(f_m)/2$.
-
-    Approximates the WDM coefficient variance by point-evaluating the
-    PSD at the band center.  Exact when $S_n$ is constant within each
-    band.  See :func:`band_averaged_variance` for a better approximation
-    when the PSD varies across a band.
-
-    Parameters
-    ----------
-    Nf, Nt : int
-    dt : float
-    Sn_func : callable
-        Function ``f -> S_n(f)``.
-
-    Returns
-    -------
-    ndarray, shape (Nf+1, Nt)
-        Per-pixel variance.  Independent of $n$ for stationary noise.
-
-    Examples
-    --------
-    >>> import numpy as np; from domainia import wilson
-    >>> var = wilson.whittle_variance(8, 16, 1.0, lambda f: 1e-3 * np.ones_like(f))
-    >>> var.shape
-    (9, 16)
-    >>> float(var[1, 0])  # S_n(f_m) / 2
-    0.0005
-    """
-    validate_grid(Nf, Nt)
-    validate_dt(dt)
-    Sn_band = evaluate_psd_on_band_grid(Nf, dt, Sn_func)
-    return whittle_variance_from_array(Nt, Sn_band)
 
 
 def band_averaged_variance(
@@ -200,14 +83,13 @@ def band_averaged_variance(
     over $n$.  This is exact: it reproduces the diagonal of the WDM
     covariance $W\\,C\\,W^T$ to machine precision, because the pixel
     variance is the $\\hat\\phi^2$-weighted average of the PSD across
-    the band.  Strictly more accurate than :func:`whittle_variance`,
-    which point-evaluates $S_n$ at the band center.
+    the band.
 
     .. note::
        Before 2026-07-27 this used the filter-weighted **harmonic**
        mean $\\bigl(\\sum \\hat\\phi^2/S_n\\bigr)^{-1}\\sum\\hat\\phi^2$,
        which is not the pixel variance and was measurably *less*
-       accurate than :func:`whittle_variance` in every interior band.
+       accurate than $S_n(f_m)/2$ at the band centre in every interior band.
 
     Parameters
     ----------
@@ -237,6 +119,7 @@ def band_averaged_variance(
     """
     validate_grid(Nf, Nt)
     validate_dt(dt)
+    dt = float(dt)
     phi = sample_window(window, Nf, Nt, dt)
     phi2 = phi**2
     f_offsets = (np.arange(Nt) - Nt // 2) / (n_samples(Nf, Nt) * dt)
@@ -277,56 +160,7 @@ def band_averaged_variance(
     weights = phi2[in_band]
     Sn_eff = Sn_vals[:, in_band] @ weights / np.sum(weights)
 
-    return whittle_variance_from_array(Nt, Sn_eff)
-
-
-def evolutionary_variance(
-    Nf: int,
-    Nt: int,
-    dt: float,
-    Sn_tn_func: PsdFtFunc,
-) -> Array:
-    """Evolutionary (locally stationary) variance grid.
-
-    For noise with a slowly-varying PSD $S_n(f, t)$, returns the
-    per-pixel variance $\\sigma_{mn}^2 = S_n(f_m, t_n)/2$ evaluated at
-    the band center frequencies and time-pixel centers.
-
-    Parameters
-    ----------
-    Nf, Nt : int
-    dt : float
-    Sn_tn_func : callable
-        Function ``(f, t) -> S_n(f, t)`` accepting 1D arrays of length
-        ``Nf+1`` and ``Nt`` respectively, returning a 2D array of shape
-        ``(Nf+1, Nt)``.
-
-    Returns
-    -------
-    ndarray, shape (Nf+1, Nt)
-
-    Examples
-    --------
-    >>> import numpy as np; from domainia import wilson
-    >>> Nf, Nt, dt = 8, 16, 1.0
-    >>> def Sn(f, t):
-    ...     return 1e-3 * (1 + 0.1 * t[None, :] / t[-1]) * np.ones(
-    ...         (f.size, t.size)
-    ...     )
-    >>> var = wilson.evolutionary_variance(Nf, Nt, dt, Sn)
-    >>> var.shape, bool(var[4, 0] != var[4, -1])   # varies in time
-    ((9, 16), True)
-    """
-    validate_grid(Nf, Nt)
-    validate_dt(dt)
-    f = band_frequencies(Nf, dt)
-    t = time_pixel_centers(Nf, Nt, dt)
-    Sn_grid = sanitize_psd(Sn_tn_func(f, t), "evolutionary_variance")
-    if Sn_grid.shape != (Nf + 1, Nt):
-        raise ValueError(
-            f"Sn_tn_func must return shape ({Nf + 1}, {Nt}); got {Sn_grid.shape}"
-        )
-    return 0.5 * Sn_grid
+    return np.broadcast_to(0.5 * Sn_eff[:, None], (Nf + 1, Nt)).copy()
 
 
 def colored_noise(
@@ -374,7 +208,7 @@ def colored_noise(
     if N % 2 != 0:
         raise ValueError(f"N must be even, got {N}")
     validate_dt(dt)
-    freqs = np.fft.rfftfreq(N, d=dt)
+    freqs = np.fft.rfftfreq(N, d=float(dt))
     Sn = sanitize_psd(Sn_func(freqs), "colored_noise")
     sigma_full = np.sqrt(N * Sn / (2.0 * dt))
 
@@ -409,7 +243,7 @@ def empirical_variance(
     Generates ``n_realizations`` independent noise realizations with the
     given PSD, transforms each to the WDM domain, and averages the
     squared coefficients.  Useful for verifying the analytical
-    :func:`whittle_variance` and :func:`band_averaged_variance`.
+    :func:`band_averaged_variance`.
 
     Parameters
     ----------
@@ -475,7 +309,7 @@ def evolutionary_band_variance(Nf: int, Nt: int, dt: float, Sn: PsdFtFunc, *,
 
     WDM Paper II, Eq. 36 (eq:wdm_variance_band_average; the edge-band factor is not
     applied -- inactive edge cells carry the same value, as in
-    :func:`evolutionary_variance`).  ``Sn(f, t)`` is elementwise and broadcasting
+    :func:`band_averaged_variance`).  ``Sn(f, t)`` is elementwise and broadcasting
     (argument order ``(f, t)``).  In the stationary limit this is
     :func:`band_averaged_variance`.  Returns ``(Nf + 1, Nt)``, or
     ``(len(bands), Nt)`` for selected bands.  Was wdm_dev
@@ -496,6 +330,7 @@ def evolutionary_band_variance(Nf: int, Nt: int, dt: float, Sn: PsdFtFunc, *,
     validate_grid(Nf, Nt)
     N = Nf * Nt
     phi2 = sample_window(window, Nf, Nt, dt) ** 2
+    dt = float(dt)
     # An admissible window has compact support: a slab weight of exactly 0 cannot
     # contribute, so dropping those bins is an exact restriction.
     sup = np.flatnonzero(phi2)

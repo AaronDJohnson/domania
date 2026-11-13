@@ -231,7 +231,7 @@ def build_C_time(N: int, dt: float, Sn_func: PsdFunc) -> Array:
     N = _require_int("N", N)
     if N <= 0 or N % 2 != 0:
         raise ValueError(f"N must be a positive even integer, got {N}")
-    freqs = np.fft.rfftfreq(N, d=dt)
+    freqs = np.fft.rfftfreq(N, d=float(dt))
     Sn = sanitize_psd(Sn_func(freqs), "build_C_time")
     sigma2 = N * Sn / (2.0 * dt)  # E[|X_j|^2]
 

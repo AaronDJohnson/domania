@@ -194,7 +194,7 @@ def _normalize_noise_to_sigma2(
     """
     context = "stationary noise input"
     if callable(noise):
-        freqs_full = np.fft.fftfreq(N, d=dt)
+        freqs_full = np.fft.fftfreq(N, d=float(dt))
         raw = np.asarray(noise(np.abs(freqs_full)))
         _reject_complex_psd(raw, context)
         Sn_full = np.asarray(raw, dtype=float)

@@ -37,11 +37,8 @@ Grid helpers:
 
 Noise variance grids:
 
-* :func:`whittle_variance`, :func:`whittle_variance_from_array`
 * :func:`band_averaged_variance`
-* :func:`evolutionary_variance`
 * :func:`empirical_variance`
-* :func:`evaluate_psd_on_band_grid`
 
 Explicit matrix construction (in :mod:`domainia.wilson.matrix`):
 
@@ -102,14 +99,7 @@ from .grid import (
     validate_finite,
     validate_grid,
 )
-from .noise import (
-    band_averaged_variance,
-    empirical_variance,
-    evaluate_psd_on_band_grid,
-    evolutionary_variance,
-    whittle_variance,
-    whittle_variance_from_array,
-)
+from .noise import band_averaged_variance, empirical_variance
 from .transform import forward, forward_time, inverse, inverse_time
 from .windows import (
     MEYER,
@@ -137,8 +127,6 @@ __all__ = [
     "delta_F",
     "delta_T",
     "empirical_variance",
-    "evaluate_psd_on_band_grid",
-    "evolutionary_variance",
     # Submodules
     "evolutionary",
     "filter",
@@ -164,8 +152,5 @@ __all__ = [
     "validate_dt",
     "validate_finite",
     "validate_grid",
-    # Noise
-    "whittle_variance",
-    "whittle_variance_from_array",
     "windows",
 ]

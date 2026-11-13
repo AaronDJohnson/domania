@@ -5,8 +5,7 @@ value 1/sqrt(Delta F), stationary prefactor 1/N, against the oracle's omega-norm
 1/sqrt(2 pi Delta F) and 2 pi/N) is the same product rounded differently, so every
 quantity that goes through the window is gated at rounding (``_gap``; the oracle's K
 arrays are scaled by 2 pi, a convention change).  Window-independent quantities
-(``whittle_variance``, ``evolutionary_variance``, the band-grid PSD, ``colored_noise``,
-the active-index lists) are still compared bit for bit.
+(``colored_noise``, the active-index lists) are still compared bit for bit.
 """
 
 from __future__ import annotations
@@ -40,10 +39,6 @@ def _psd(f):
     return 1.0 + 0.3 / (np.abs(f) + 0.05) ** 2 + 5.0 * f**2
 
 
-def _psd_ft(f, t):
-    return np.outer(_psd(f), 1.0 + 0.1 * np.asarray(t) / (1.0 + np.max(t)))
-
-
 def test_dropped_and_renamed_names():
     for gone in ("build_lambda_blocks", "build_lambda_blocks_packed", "unpack_diag_block",
                  "assemble_lambda", "lambda_to_psd", "lambda_to_psd_slab"):
@@ -54,23 +49,13 @@ def test_dropped_and_renamed_names():
 
 
 @pytest.mark.parametrize("grid", GRIDS)
-def test_variance_builders_are_the_oracle_to_rounding(grid):
-    """band_averaged_variance (a phi^2-weighted average) to rounding; the rest do not
-    touch the window and are still the oracle bit for bit."""
+def test_band_averaged_variance_is_the_oracle_to_rounding(grid):
+    """band_averaged_variance (a phi^2-weighted average) to rounding."""
     Nf, Nt, dt = grid
-    got = noise.whittle_variance(Nf, Nt, dt, _psd)
-    ref = onoise.whittle_variance(Nf, Nt, dt, _psd)
-    assert got.dtype == ref.dtype and np.array_equal(got, ref)
     got = noise.band_averaged_variance(Nf, Nt, dt, _psd)
     ref = onoise.band_averaged_variance(Nf, Nt, dt, _psd)
     assert got.dtype == ref.dtype
     assert _gap(got, ref) <= RTOL64          # Hz window (v0.12.0): measured 4.8e-16
-    assert np.array_equal(noise.evolutionary_variance(Nf, Nt, dt, _psd_ft),
-                          onoise.evolutionary_variance(Nf, Nt, dt, _psd_ft))
-    band = noise.evaluate_psd_on_band_grid(Nf, dt, _psd)
-    assert np.array_equal(band, onoise.evaluate_psd_on_band_grid(Nf, dt, _psd))
-    assert np.array_equal(noise.whittle_variance_from_array(Nt, band),
-                          onoise.whittle_variance_from_array(Nt, band))
 
 
 def test_colored_noise_and_empirical_variance_are_the_oracle_to_rounding():

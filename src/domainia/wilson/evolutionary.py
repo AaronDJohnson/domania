@@ -262,6 +262,8 @@ def time_domain_factor(N: int, dt: float, Sn: PsdFtFunc) -> Array:
     """
     if N % 2:
         raise ValueError("N must be even")
+    validate_dt(dt)
+    dt = float(dt)
     f = np.fft.rfftfreq(N, d=dt)
     t = np.arange(N) * dt
     df = 1.0 / (N * dt)

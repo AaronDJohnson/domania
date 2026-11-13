@@ -122,7 +122,7 @@ def phi_centered(Nf: int, Nt: int, dt: float, d: int = 4) -> Array:
     # unchanged; it raises when that width is 0 or inf (an unrepresentable dt*Nf),
     # where the inline form returned a window -- and a transform -- of exact zeros.
     dF = delta_F(Nf, dt)
-    T = Nf * Nt * dt
+    T = Nf * Nt * float(dt)
     f = (np.arange(Nt) - Nt // 2) / T
     A = dF / 4.0
     B = dF / 2.0

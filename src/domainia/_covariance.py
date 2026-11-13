@@ -116,6 +116,7 @@ def wdm_covariance(S: Callable[[np.ndarray, np.ndarray], Any], *, Nf: int, Nt: i
     require_callable("S", S)
     validate_grid(Nf, Nt)
     validate_dt(dt)
+    dt = float(dt)
     w = sample_window(window, Nf, Nt, dt) ** 2
     sup = np.flatnonzero(w)
     w, J, nyq = w[sup], sup.size, 0.5 / dt

@@ -296,7 +296,7 @@ def delta_F(Nf: int, dt: float) -> float:
     """
     _require_even_positive_int("Nf", Nf)
     validate_dt(dt)
-    width = 1.0 / (2.0 * dt * Nf)
+    width = 1.0 / (2.0 * float(dt) * Nf)
     if not np.isfinite(width) or width <= 0.0:
         raise ValueError(
             f"delta_F is not representable for Nf={Nf}, dt={dt!r}: "
@@ -326,7 +326,7 @@ def delta_T(Nf: int, dt: float) -> float:
     8.0
     """
     validate_dt(dt)
-    return float(Nf * dt)
+    return float(Nf) * float(dt)
 
 
 def band_frequencies(Nf: int, dt: float) -> Array:
@@ -375,9 +375,7 @@ def time_pixel_centers(Nf: int, Nt: int, dt: float) -> Array:
        Before 2026-07-27 this returned $(n + 1/2)\\,\\Delta T$, a half-pixel
        too late. Measured against the energy centroid of a single-pixel
        inverse transform, the offset was exactly $-0.5\\,\\Delta T$ at every
-       grid tested. The consumer inside the package is
-       :func:`domainia.wilson.noise.evolutionary_variance`, which sampled a time-varying
-       PSD half a pixel off.
+       grid tested.
 
     Examples
     --------
