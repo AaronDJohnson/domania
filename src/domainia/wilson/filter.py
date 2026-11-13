@@ -32,8 +32,6 @@ type Array = NDArray[np.floating]
 __all__ = [
     "nu_d",
     "phi_centered",
-    "phi_fft_order",
-    "phi_squared_normalization",
 ]
 
 
@@ -107,12 +105,12 @@ def phi_centered(Nf: int, Nt: int, dt: float, d: int = 4) -> Array:
         If ``Nf``, ``Nt`` or ``d`` is not an integer, or ``dt`` is not a real number.
     ValueError
         If the grid or ``dt`` is invalid, or if $\\Delta F = 1/(2\\,\\delta t N_f)$
-        is not a positive finite double (see :func:`domainia.wilson.delta_F`).
+        is not a positive finite double (see :func:`domainia.wilson.grid.delta_F`).
 
     Examples
     --------
     >>> import numpy as np; from domainia import wilson
-    >>> phi = wilson.phi_centered(8, 16, 1.0)
+    >>> phi = wilson.filter.phi_centered(8, 16, 1.0)
     >>> phi.shape, bool(phi[8] == phi.max())   # flat top includes index Nt/2
     ((16,), True)
     """
@@ -137,63 +135,3 @@ def phi_centered(Nf: int, Nt: int, dt: float, d: int = 4) -> Array:
         out,
     )
     return out
-
-
-def phi_fft_order(Nf: int, Nt: int, dt: float, d: int = 4) -> Array:
-    """Meyer filter in FFT-natural ordering (peak at index 0).
-
-    This is the same filter as :func:`phi_centered` but with
-    ``np.fft.ifftshift`` applied so it is ready for direct multiplication
-    with the output of ``np.fft.ifft`` (which expects FFT-natural order).
-    The reindexing absorbs the $(-1)^n$ factor that would otherwise
-    appear in the forward transform.
-
-    Parameters
-    ----------
-    Nf, Nt, dt, d
-        See :func:`phi_centered`.
-
-    Returns
-    -------
-    ndarray, shape (Nt,)
-        Filter samples in FFT-natural ordering.
-
-    Examples
-    --------
-    >>> import numpy as np; from domainia import wilson
-    >>> phi = wilson.phi_fft_order(8, 16, 1.0)
-    >>> int(np.argmax(phi))   # peak moved to index 0
-    0
-    """
-    return np.fft.ifftshift(phi_centered(Nf, Nt, dt, d))
-
-
-def phi_squared_normalization(Nf: int, Nt: int, dt: float, d: int = 4) -> float:
-    """Sum $\\sum_k \\hat\\phi_k^2$ for diagnostic checks.
-
-    Returned as-is, for diagnostics only.
-
-    .. warning::
-       This does **not** equal $1/\\Delta F$: on the discrete grid
-       $\\sum_k \\hat\\phi_k^2 \\cdot \\Delta F = N_t/2$, not 1.
-       The partition-of-unity property constrains overlapping shifted
-       copies of $\\hat\\phi^2$, not the raw sum of one copy.
-
-    Parameters
-    ----------
-    Nf, Nt, dt, d
-        See :func:`phi_centered`.
-
-    Returns
-    -------
-    float
-        Sum of $\\hat\\phi^2$ over the grid.
-
-    Examples
-    --------
-    >>> import numpy as np; from domainia import wilson
-    >>> total = wilson.filter.phi_squared_normalization(8, 16, 1.0)
-    >>> bool(np.isclose(total, np.sum(wilson.phi_centered(8, 16, 1.0) ** 2)))
-    True
-    """
-    return float(np.sum(phi_centered(Nf, Nt, dt, d) ** 2))

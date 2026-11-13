@@ -1,4 +1,4 @@
-"""domainia 2.0 identity: version, public names, no JAX on import, no release leftovers."""
+"""domainia 3.0 identity: version, public names, no JAX on import, no release leftovers."""
 
 from __future__ import annotations
 
@@ -15,13 +15,17 @@ from domainia import wilson
 REPO = Path(__file__).resolve().parents[1]
 SRC = REPO / "src"
 
-PUBLIC = {"Grid", "MEYER", "Meyer", "RampWindow", "SampledWindow", "Window", "WindowError",
-          "__version__", "frequency_covariance", "transform", "wdm_covariance", "wilson"}
+#: Spec 3.0, section 5.
+PUBLIC = {"__version__", "frequency_covariance", "transform", "wdm_covariance", "wilson"}
+WILSON_PUBLIC = {"Grid", "forward", "inverse", "forward_time", "inverse_time",
+                 "Window", "Meyer", "MEYER", "RampWindow", "SampledWindow",
+                 "band_averaged_variance", "evolutionary_band_variance",
+                 "evolutionary", "stationary", "matrix", "noise", "grid", "filter", "windows"}
 
 
-def test_the_version_is_2_0_0_everywhere():
-    assert domainia.__version__ == "2.0.0"
-    assert tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["version"] == "2.0.0"
+def test_the_version_is_3_0_0_everywhere():
+    assert domainia.__version__ == "3.0.0"
+    assert tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["version"] == "3.0.0"
 
 
 def test_the_sdist_lists_what_it_includes():
@@ -44,13 +48,14 @@ def test_the_project_metadata():
 
 
 def test_the_public_names():
+    """A name that left a top level stays in its submodule (``wilson.grid.active_mask``,
+    ``wilson.windows.WindowError``)."""
     assert set(domainia.__all__) == PUBLIC
+    assert set(wilson.__all__) == WILSON_PUBLIC
     assert all(hasattr(domainia, name) for name in domainia.__all__)
     assert all(hasattr(wilson, name) for name in wilson.__all__)
-    assert {"MEYER", "Meyer", "RampWindow", "SampledWindow", "Window", "WindowError", "windows",
-            "require_window", "sample_window", "pack", "unpack"} <= set(wilson.__all__)
-    assert wilson.pack is wilson.grid.pack and wilson.unpack is wilson.grid.unpack
-    assert domainia.MEYER is wilson.MEYER and domainia.Grid is wilson.Grid
+    assert not hasattr(domainia, "MEYER") and not hasattr(wilson, "active_mask")
+    assert wilson.MEYER is wilson.windows.MEYER and wilson.Grid is wilson.grid.Grid
 
 
 def test_no_release_leftovers():

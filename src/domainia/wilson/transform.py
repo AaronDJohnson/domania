@@ -214,7 +214,7 @@ def _scatter_interior_bands(
     ``(..., Nf+1, Nt)``.
 
     There is no ``Nf < 2`` guard because there is no such grid:
-    :func:`domainia.wilson.validate_grid` requires ``Nf`` positive **and** even, so the
+    :func:`domainia.wilson.grid.validate_grid` requires ``Nf`` positive **and** even, so the
     smallest legal value is 2 and every caller has at least one interior band.
     """
     n_arr = np.arange(Nt)
@@ -275,7 +275,7 @@ def _gather_bands(x_rfft: CArray, Nf: int, Nt: int, dt: float, *,
     $\\ell_{m,k} = k + (m-1)N_t/2$ lies in $[0, N/2]$
     (max $= (N_f-1)N_t/2 - 1 < N/2$), so the slab is a pure gather from the
     rfft with no Hermitian branch, and all of them go through one batched
-    length-$N_t$ IFFT.  Unconditional: :func:`domainia.wilson.validate_grid` requires $N_f$
+    length-$N_t$ IFFT.  Unconditional: :func:`domainia.wilson.grid.validate_grid` requires $N_f$
     positive **and** even, so $N_f \\ge 2$ and there is always at least one
     interior band.
 
@@ -370,7 +370,7 @@ def forward(
     ValueError
         If ``Nf`` or ``Nt`` is not positive and even, if the last axis of
         ``x_rfft`` does not have length ``N//2 + 1``, or if it holds a ``nan`` or
-        ``inf`` (see :func:`domainia.wilson.validate_finite` -- one bad bin would
+        ``inf`` (see :func:`domainia.wilson.grid.validate_finite` -- one bad bin would
         otherwise silently make every output coefficient ``nan``).
 
     Examples
@@ -442,7 +442,7 @@ def inverse(
         silently discarded, and a bool, str or object grid is refused too.
     ValueError
         If the grid is invalid, if ``wmn`` is wrongly shaped, or
-        if it holds a ``nan`` or ``inf`` (see :func:`domainia.wilson.validate_finite`).
+        if it holds a ``nan`` or ``inf`` (see :func:`domainia.wilson.grid.validate_finite`).
 
     Examples
     --------
@@ -509,7 +509,7 @@ def forward_time(
     ValueError
         If the grid is invalid, if the last axis of ``x`` does not have ``Nf*Nt``
         samples, or if it holds a ``nan`` or ``inf``.  Gapped detector data often arrives
-        ``nan``-filled; see :func:`domainia.wilson.validate_finite` for why that has to
+        ``nan``-filled; see :func:`domainia.wilson.grid.validate_finite` for why that has to
         be an error rather than something to propagate.
 
     Examples

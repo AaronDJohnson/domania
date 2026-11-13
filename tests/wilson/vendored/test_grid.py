@@ -8,21 +8,12 @@ import pytest
 from domainia.wilson.grid import (
     active_mask,
     band_frequencies,
-    band_indices,
-    carrier_phase,
-    count_active,
     delta_F,
     delta_T,
     n_samples,
     time_pixel_centers,
     validate_grid,
 )
-
-
-@pytest.mark.parametrize("Nf,Nt", [(4, 8), (8, 16), (16, 32), (32, 64)])
-def test_count_active_equals_N(Nf, Nt):
-    """Total active WDM pixels must equal N for any valid grid."""
-    assert count_active(Nf, Nt) == Nf * Nt
 
 
 def test_active_mask_shape_and_dtype(simple_grid):
@@ -55,15 +46,6 @@ def test_active_mask_nyquist_parity(simple_grid):
     assert np.all(mask[g.Nf] == ((g.Nf + np.arange(g.Nt)) % 2 == 0))
 
 
-def test_band_indices_unique_modN(simple_grid):
-    """For each band, the Nt indices are distinct."""
-    g = simple_grid
-    for m in range(g.Nf + 1):
-        idx = band_indices(m, g.Nf, g.Nt)
-        assert idx.shape == (g.Nt,)
-        assert len(set(idx.tolist())) == g.Nt
-
-
 def test_band_frequencies_endpoints(simple_grid):
     """freqs[0] == 0 and freqs[Nf] == Nyquist."""
     g = simple_grid
@@ -80,21 +62,6 @@ def test_time_pixel_centers_shape(simple_grid):
     assert t.shape == (g.Nt,)
     diffs = np.diff(t)
     assert np.allclose(diffs, g.dT)
-
-
-def test_carrier_phase_even_m(simple_grid):
-    """For even m, carrier_phase is all ones."""
-    g = simple_grid
-    assert np.all(carrier_phase(0, g.Nt) == 1.0)
-    assert np.all(carrier_phase(2, g.Nt) == 1.0)
-
-
-def test_carrier_phase_odd_m(simple_grid):
-    """For odd m, carrier_phase alternates [+1, -1, +1, -1, ...]."""
-    g = simple_grid
-    expected = np.array([1.0 if n % 2 == 0 else -1.0 for n in range(g.Nt)])
-    assert np.all(carrier_phase(1, g.Nt) == expected)
-    assert np.all(carrier_phase(3, g.Nt) == expected)
 
 
 def test_delta_relations(simple_grid):

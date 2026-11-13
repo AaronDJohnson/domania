@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 import domainia
-from domainia import wilson
+from domainia import testing, wilson
 from domainia.wilson.filter import nu_d, phi_centered
 from domainia.wilson.grid import _require_int, n_samples, validate_dt, validate_grid
 
@@ -49,7 +49,7 @@ def test_require_int_and_its_callers_raise_type_error():
     with pytest.raises(TypeError, match="N must be an integer, got float"):
         wilson.matrix.rfft_to_real(np.zeros(17, complex), 32.0)
     with pytest.raises(TypeError, match="Nf must be an integer, got float"):
-        wilson.delta_F(8.0, 1.0)
+        wilson.grid.delta_F(8.0, 1.0)
     with pytest.raises(ValueError, match="N must be even, got 5"):
         wilson.matrix.rfft_to_real(np.zeros(3, complex), 5)
     with pytest.raises(TypeError, match="Nf must be an integer, got float"):
@@ -138,11 +138,8 @@ def _exact(message):
 _INT_SLOTS = {
     "atom_spectrum m": (lambda v: _T.atom_spectrum(v, 3, 8, 16, 1.0), 2),
     "atom_spectrum n": (lambda v: _T.atom_spectrum(2, v, 8, 16, 1.0), 3),
-    "carrier_phase m": (lambda v: wilson.grid.carrier_phase(v, 4), 1),
-    "edge_columns lead": (lambda v: wilson.grid.edge_columns(16, v, 1), 2),
-    "edge_columns trail": (lambda v: wilson.grid.edge_columns(16, 2, v), 1),
-    "empirical_variance n_realizations": (lambda v: wilson.empirical_variance(8, 16, 1.0, np.ones_like, v,
-                                                                              seed=0), 2),
+    "empirical_variance n_realizations": (lambda v: testing.empirical_variance(8, 16, 1.0, np.ones_like,
+                                                                               v, seed=0), 2),
 }
 
 
@@ -152,8 +149,7 @@ _INT_SLOTS = {
 ], ids=["float", "np.float64", "bool", "np.bool_", "str", "None"])
 @pytest.mark.parametrize("slot", list(_INT_SLOTS))
 def test_integer_slots_of_the_wrong_kind_raise_type_error(slot, value, kind):
-    """``int()``, ``range()`` or a parity test took these silently (``carrier_phase(2.5, 4)``
-    ran), or ``True`` passed as 1."""
+    """``int()``, ``range()`` or a parity test took these silently, or ``True`` passed as 1."""
     call, _ = _INT_SLOTS[slot]
     with pytest.raises(TypeError, match=_exact(f"{slot.split()[-1]} must be an integer, got {kind}")):
         call(value)
@@ -167,7 +163,7 @@ def test_integer_slots_take_a_numpy_integer(slot):
 
 @pytest.mark.parametrize(("call", "match"), [
     (lambda: _T.atom_spectrum(2, 16, 8, 16, 1.0), r"^n must lie in 0\.\.15"),
-    (lambda: wilson.empirical_variance(8, 16, 1.0, np.ones_like, 0), "^n_realizations must be >= 1, got 0"),
+    (lambda: testing.empirical_variance(8, 16, 1.0, np.ones_like, 0), "^n_realizations must be >= 1, got 0"),
 ], ids=["atom_spectrum n", "empirical_variance"])
 def test_integer_slots_out_of_range_stay_value_errors(call, match):
     with pytest.raises(ValueError, match=match):
@@ -236,15 +232,15 @@ def test_float32_input_is_computed_in_double():
     evo = lambda f, t: psd(f) * (1.0 + 0.3 * np.cos(t / 7.0))
     M, St, E, No = wilson.matrix, wilson.stationary, wilson.evolutionary, wilson.noise
     dts = {
-        "delta_F": lambda dt: wilson.delta_F(6, dt),
-        "delta_T": lambda dt: wilson.delta_T(6, dt),
-        "band_frequencies": lambda dt: wilson.band_frequencies(6, dt),
-        "time_pixel_centers": lambda dt: wilson.time_pixel_centers(6, 10, dt),
+        "delta_F": lambda dt: wilson.grid.delta_F(6, dt),
+        "delta_T": lambda dt: wilson.grid.delta_T(6, dt),
+        "band_frequencies": lambda dt: wilson.grid.band_frequencies(6, dt),
+        "time_pixel_centers": lambda dt: wilson.grid.time_pixel_centers(6, 10, dt),
         "phi_centered": lambda dt: phi_centered(6, 10, dt),
         "band_averaged_variance": lambda dt: wilson.band_averaged_variance(6, 10, dt, psd),
         "evolutionary_band_variance": lambda dt: No.evolutionary_band_variance(6, 10, dt, evo),
-        "colored_noise": lambda dt: No.colored_noise(60, dt, psd, np.random.default_rng(0)),
-        "empirical_variance": lambda dt: wilson.empirical_variance(6, 10, dt, psd, 2, seed=0),
+        "colored_noise": lambda dt: testing.colored_noise(60, dt, psd, np.random.default_rng(0)),
+        "empirical_variance": lambda dt: testing.empirical_variance(6, 10, dt, psd, 2, seed=0),
         "build_C_time": lambda dt: M.build_C_time(60, dt, psd),
         "build_C_wdm": lambda dt: M.build_C_wdm(6, 10, dt, psd),
         "build_C_wdm_active": lambda dt: M.build_C_wdm_active(6, 10, dt, psd),

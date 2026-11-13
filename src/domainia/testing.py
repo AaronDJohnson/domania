@@ -1,17 +1,20 @@
-"""Dense oracles for tests and small grids (NumPy only, never on a
-likelihood path).  Every oracle here is ``O(N^2)`` memory or worse: keep ``N`` <~ 2048.
+"""Dense oracles and noise helpers for tests and small grids (NumPy only).  Every dense
+oracle here is ``O(N^2)`` memory or worse: keep ``N`` <~ 2048.
 
 * :func:`dense_W`, :func:`wdm_congruence`: the WDM rows of a set of cells
   (``wilson.matrix.active_W``) and ``W_K Sigma W_K^T``.
 * :func:`eq45_dense`: Eq. (45) on a set of cells by the direct sum over rfft bins
   (``wilson.evolutionary.eq45_direct``).
+* :func:`colored_noise`, :func:`empirical_variance`: one draw of stationary noise (its rfft)
+  and the Monte-Carlo WDM variance of such draws, which checks
+  ``wilson.band_averaged_variance``.
 
 The cells are a boolean ``mask`` of shape ``(Nf + 1, Nt)``, the WDM layout of
-``wilson.active_mask``, that selects active cells only.  Rows and columns follow
+``wilson.grid.active_mask``, that selects active cells only.  Rows and columns follow
 ``numpy.nonzero(mask)``: band by band, time within a band.
 
-:func:`dense_W`, :func:`wdm_congruence` and :func:`eq45_dense` take ``window=`` (default
-Meyer: the WDM transform) and compute in the Wilson basis of that window.
+:func:`dense_W`, :func:`wdm_congruence`, :func:`eq45_dense` and :func:`empirical_variance` take
+``window=`` (default Meyer: the WDM transform) and compute in the Wilson basis of that window.
 
 The oracles follow the package's rule: a wrong kind (a ``mask`` that is not boolean) raises
 ``TypeError``, a wrong value (a wrong shape, an inactive cell) ``ValueError``.
@@ -32,11 +35,14 @@ import numpy as np
 from numpy.typing import NDArray
 
 from domainia import wilson
-from domainia.wilson._checks import require_callable, require_dtype
+from domainia.wilson._checks import require_callable, require_dtype, require_int
 from domainia.wilson.evolutionary import eq45_direct, eq45_plan
+from domainia.wilson.grid import n_samples, sanitize_psd, validate_dt, validate_grid
+from domainia.wilson.transform import forward
 from domainia.wilson.windows import MEYER, SampledWindow, Window
 
-__all__ = ["ALT_WINDOW", "dense_W", "eq45_dense", "smoothstep", "wdm_congruence", "wide_profile"]
+__all__ = ["ALT_WINDOW", "colored_noise", "dense_W", "empirical_variance", "eq45_dense",
+           "smoothstep", "wdm_congruence", "wide_profile"]
 
 Array = NDArray[np.float64]
 
@@ -46,7 +52,7 @@ def _keep(Nf: int, Nt: int, mask: Any) -> NDArray[np.bool_]:
     ``keep``), after the checks of the module docstring."""
     require_dtype("mask", mask, "b", "a boolean cell mask")
     mask = np.asarray(mask)
-    active = wilson.active_mask(Nf, Nt)
+    active = wilson.grid.active_mask(Nf, Nt)
     if mask.shape != active.shape:
         raise ValueError(f"mask must have shape (Nf + 1, Nt) = {active.shape}, got {mask.shape}")
     bad = np.argwhere(mask & ~active)
@@ -79,6 +85,119 @@ def eq45_dense(Nf: int, Nt: int, dt: float, mask: Any, Sn: Callable[[Any, Any], 
     require_callable("Sn", Sn)
     plan = eq45_plan(Nf, Nt, dt, keep, P=P, t_max=t_max, window=window)
     return eq45_direct(plan, Sn)
+
+
+def colored_noise(
+    N: int,
+    dt: float,
+    Sn_func: Callable[[Any], Any],
+    rng: np.random.Generator,
+) -> NDArray[np.complex128]:
+    """Generate one realization of stationary noise with PSD $S_n(f)$.
+
+    Public (it was the vendored private
+    ``_generate_colored_noise``; same draws, same order: interior real parts,
+    interior imaginary parts, DC, Nyquist).  $O(N\\log N)$, NumPy only.
+
+    Returns the rfft of the time-domain noise, with the convention
+    $E[|X_j|^2] = N\\,S_n(f_j)/(2\\,\\delta t)$ at **every** bin.
+
+    The DC and Nyquist bins are real-valued (as they must be for a real
+    time series) but carry their full variance, not half: for real
+    Gaussian noise $E[|X_j|^2]$ is flat across the rfft grid.
+
+    .. note::
+       Before 2026-07-27 the DC and Nyquist draws were divided by
+       $\\sqrt 2$, giving them half the correct power.  That biased
+       :func:`empirical_variance` low at the two edge bands -- exactly
+       where an analytic cross-check is hardest.
+
+    Raises
+    ------
+    TypeError
+        If ``N`` is not an integer (``bool`` included), or ``dt`` is not a real
+        number.
+    ValueError
+        If ``N`` is not positive and even, or ``dt`` is not positive and
+        finite.  Both are checked before the PSD is evaluated or ``rng`` is
+        drawn from.  An odd ``N`` has no Nyquist bin, yet bin ``N//2`` would
+        be drawn real-only as if it were one, and the noise would not be
+        stationary (per-sample variance 0.79--1.22 of its mean at ``N = 9``).
+    """
+    # Public entry point: same checks as validate_grid/validate_dt, on N itself.
+    # They only raise, so valid input takes the oracle's path bit for bit.
+    require_int("N", N)
+    if N <= 0:
+        raise ValueError(f"N must be positive, got {N}")
+    if N % 2 != 0:
+        raise ValueError(f"N must be even, got {N}")
+    validate_dt(dt)
+    freqs = np.fft.rfftfreq(N, d=float(dt))
+    Sn = sanitize_psd(Sn_func(freqs), "colored_noise")
+    sigma_full = np.sqrt(N * Sn / (2.0 * dt))
+
+    n_rfft = N // 2 + 1
+    out = np.zeros(n_rfft, dtype=complex)
+    # Interior bins split their variance across the real and imaginary parts;
+    # the real-only DC and Nyquist bins carry theirs in one component.
+    interior = slice(1, N // 2)
+    n_interior = (N // 2) - 1
+    out[interior] = (
+        sigma_full[interior]
+        * (rng.standard_normal(n_interior) + 1j * rng.standard_normal(n_interior))
+        / np.sqrt(2.0)
+    )
+    out[0] = sigma_full[0] * rng.standard_normal()
+    out[N // 2] = sigma_full[N // 2] * rng.standard_normal()
+    return out
+
+
+def empirical_variance(
+    Nf: int,
+    Nt: int,
+    dt: float,
+    Sn_func: Callable[[Any], Any],
+    n_realizations: int = 1000,
+    seed: int | None = None,
+    *,
+    window: Window = MEYER,
+) -> Array:
+    """Monte-Carlo estimate of $\\langle w_{mn}^2 \\rangle$.
+
+    Generates ``n_realizations`` independent noise realizations with the
+    given PSD, transforms each to the WDM domain, and averages the
+    squared coefficients.  Useful for verifying the analytical
+    :func:`domainia.wilson.band_averaged_variance`.
+
+    Parameters
+    ----------
+    Nf, Nt : int
+    dt : float
+    Sn_func : callable
+    n_realizations : int, optional
+        Number of realizations to average (default 1000).
+    seed : int or None, optional
+        Seed for the RNG.
+    window : Window, optional
+        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
+        See :mod:`domainia.wilson.windows`.
+
+    Returns
+    -------
+    ndarray, shape (Nf+1, Nt)
+    """
+    validate_grid(Nf, Nt)
+    validate_dt(dt)
+    if require_int("n_realizations", n_realizations) < 1:
+        raise ValueError(f"n_realizations must be >= 1, got {n_realizations}")
+    N = n_samples(Nf, Nt)
+    rng = np.random.default_rng(seed)
+    accum = np.zeros((Nf + 1, Nt))
+    for _ in range(n_realizations):
+        x_rfft = colored_noise(N, dt, Sn_func, rng)
+        w = forward(x_rfft, Nf, Nt, dt, window=window)
+        accum += w * w
+    return accum / n_realizations
 
 
 def smoothstep(x: Any) -> Array:

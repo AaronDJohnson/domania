@@ -1,4 +1,4 @@
-"""Packing helpers, the Hz window and the atoms."""
+"""The grid, the Hz window and the atoms."""
 
 from __future__ import annotations
 
@@ -13,15 +13,7 @@ import pytest
 
 from domainia import wilson
 from domainia.wilson.filter import phi_centered
-from domainia.wilson.grid import (
-    Grid,
-    active_mask,
-    edge_columns,
-    endpoint_weights,
-    pack,
-    packed_cells,
-    unpack,
-)
+from domainia.wilson.grid import Grid, active_mask, endpoint_weights
 from domainia.wilson.matrix import active_W
 from domainia.wilson.transform import atom_spectrum, base_atom_spectra, forward_time
 
@@ -40,32 +32,7 @@ def test_grid_is_frozen_positional_and_unpacks():
         g.Nf = 4  # type: ignore[misc]
 
 
-@pytest.mark.parametrize("grid", [(2, 2), (4, 8), (8, 16), (64, 256)])
-def test_packed_cells_is_band_order(grid):
-    Nf, Nt = grid
-    m, n = packed_cells(Nf, Nt)
-    ref_m, ref_n = np.nonzero(active_mask(Nf, Nt))
-    assert np.array_equal(m, ref_m) and np.array_equal(n, ref_n)
-    assert m.size == Nf * Nt and np.all(np.diff(m) >= 0)
-
-
-def test_pack_unpack_round_trip_and_active_W_order(rng):
-    Nf, Nt, dt = 8, 16, 0.5
-    w = forward_time(rng.standard_normal(Nf * Nt), Nf, Nt, dt)
-    y = pack(w, Nf, Nt)
-    assert np.array_equal(y, w[active_mask(Nf, Nt)])
-    back = unpack(y, Nf, Nt)
-    assert np.array_equal(back[active_mask(Nf, Nt)], y) and np.all(back[~active_mask(Nf, Nt)] == 0)
-    x = rng.standard_normal(Nf * Nt)
-    assert np.allclose(active_W(Nf, Nt, dt) @ x, pack(forward_time(x, Nf, Nt, dt), Nf, Nt),
-                       rtol=0, atol=1e-12)
-    Y = rng.standard_normal((3, Nf * Nt))
-    assert np.array_equal(pack(unpack(Y, Nf, Nt), Nf, Nt), Y)
-
-
-def test_edge_columns_and_endpoint_weights():
-    assert edge_columns(256, 6, 5) == (0, 1, 2, 3, 4, 5, 251, 252, 253, 254, 255)
-    assert edge_columns(16, 0, 0) == ()
+def test_endpoint_weights():
     c = endpoint_weights(9)
     assert c[0] == c[-1] == 0.5 and np.all(c[1:-1] == 1.0)
 
@@ -83,7 +50,7 @@ def test_hz_identity(grid):
     nz = w != 0
     assert np.array_equal(nz, h != 0)
     assert np.max(np.abs(h[nz] / w[nz] - 1.0)) <= 1e-15
-    assert np.max(phi_centered(Nf, Nt, dt)) == 1.0 / np.sqrt(wilson.delta_F(Nf, dt))
+    assert np.max(phi_centered(Nf, Nt, dt)) == 1.0 / np.sqrt(wilson.grid.delta_F(Nf, dt))
 
 
 #: grids whose window arithmetic is not "nice": dt with long mantissas, odd Nf, the
@@ -164,7 +131,7 @@ def test_atoms_are_the_rows_of_the_transform():
     base = base_atom_spectra(Nf, Nt, dt)
     assert sorted(base) == [(m, a) for m in range(Nf + 1) for a in (0, 1)
                             if active_mask(Nf, Nt)[m, a]]
-    m, n = packed_cells(Nf, Nt)
+    m, n = np.nonzero(active_mask(Nf, Nt))
     for p in range(m.size):
         atom = np.fft.irfft(atom_spectrum(int(m[p]), int(n[p]), Nf, Nt, dt, base=base), n=Nf * Nt)
         assert np.allclose(atom, Wa[p], rtol=0, atol=1e-12)
@@ -226,4 +193,4 @@ def test_atom_spectrum_rejects_out_of_range_n_and_foreign_base():
 
 
 def test_time_pixel_centers_doctest_value():
-    assert wilson.time_pixel_centers(8, 4, 1.0).tolist() == [0.0, 8.0, 16.0, 24.0]
+    assert wilson.grid.time_pixel_centers(8, 4, 1.0).tolist() == [0.0, 8.0, 16.0, 24.0]

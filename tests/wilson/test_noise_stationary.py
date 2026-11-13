@@ -1,4 +1,5 @@
-"""domainia.wilson.noise and domainia.wilson.stationary against the frozen oracle.
+"""domainia.wilson.noise, domainia.wilson.stationary and the noise helpers of domainia.testing
+against the frozen oracle.
 
 Bit for bit up to v0.11.0.  The Hz window of v0.12.0 (Paper I eq:Meyer-def: phi flat
 value 1/sqrt(Delta F), stationary prefactor 1/N, against the oracle's omega-normalised
@@ -17,6 +18,7 @@ import vendored_2f7136c.stationary as ostat
 
 import domainia.wilson.noise as noise
 import domainia.wilson.stationary as stat
+from domainia import testing
 
 GRIDS = [(4, 8, 1.0), (8, 16, 0.5), (8, 32, 1.7), (16, 32, 2.0**-10)]
 #: max|got - ref| over max|ref| against the omega-era oracle.
@@ -45,7 +47,7 @@ def test_dropped_and_renamed_names():
         assert not hasattr(stat, gone), gone
     assert not hasattr(noise, "_generate_colored_noise")
     assert {"psd_from_K", "psd_from_lambda_blocks"} <= set(stat.__all__)
-    assert "colored_noise" in noise.__all__
+    assert "colored_noise" not in noise.__all__ and "colored_noise" in testing.__all__
 
 
 @pytest.mark.parametrize("grid", GRIDS)
@@ -61,10 +63,10 @@ def test_band_averaged_variance_is_the_oracle_to_rounding(grid):
 def test_colored_noise_and_empirical_variance_are_the_oracle_to_rounding():
     """colored_noise (no window) bit for bit; empirical_variance (forward transform) to rounding."""
     Nf, Nt, dt = 8, 16, 0.5
-    a = noise.colored_noise(Nf * Nt, dt, _psd, np.random.default_rng(7))
+    a = testing.colored_noise(Nf * Nt, dt, _psd, np.random.default_rng(7))
     b = onoise._generate_colored_noise(Nf * Nt, dt, _psd, np.random.default_rng(7))
     assert np.array_equal(a, b)
-    got = noise.empirical_variance(Nf, Nt, dt, _psd, 20, seed=3)
+    got = testing.empirical_variance(Nf, Nt, dt, _psd, 20, seed=3)
     ref = onoise.empirical_variance(Nf, Nt, dt, _psd, 20, seed=3)
     assert got.dtype == ref.dtype
     assert _gap(got, ref) <= RTOL64          # Hz window (v0.12.0): measured 2.1e-16
@@ -96,7 +98,7 @@ def test_colored_noise_rejects_bad_N_and_dt(N, dt, match):
     rng = np.random.default_rng(0)
     state = rng.bit_generator.state
     with pytest.raises(ValueError, match=match):
-        noise.colored_noise(N, dt, psd, rng)
+        testing.colored_noise(N, dt, psd, rng)
     assert rng.bit_generator.state == state
 
 
@@ -116,17 +118,17 @@ def test_colored_noise_rejects_wrong_kinds_with_type_error(N, dt, match):
     rng = np.random.default_rng(0)
     state = rng.bit_generator.state
     with pytest.raises(TypeError, match=match):
-        noise.colored_noise(N, dt, psd, rng)
+        testing.colored_noise(N, dt, psd, rng)
     assert rng.bit_generator.state == state
 
 
 def test_colored_noise_valid_edge_inputs_are_bitwise_the_oracle():
     """The checks only raise: N=2 (DC + Nyquist, no interior) and a NumPy-int N
     still give the oracle's draws bit for bit."""
-    a = noise.colored_noise(2, 1.0, _psd, np.random.default_rng(5))
+    a = testing.colored_noise(2, 1.0, _psd, np.random.default_rng(5))
     b = onoise._generate_colored_noise(2, 1.0, _psd, np.random.default_rng(5))
     assert a.shape == (2,) and np.array_equal(a, b)
-    c = noise.colored_noise(np.int64(16), 0.5, _psd, np.random.default_rng(5))
+    c = testing.colored_noise(np.int64(16), 0.5, _psd, np.random.default_rng(5))
     d = onoise._generate_colored_noise(16, 0.5, _psd, np.random.default_rng(5))
     assert np.array_equal(c, d)
 

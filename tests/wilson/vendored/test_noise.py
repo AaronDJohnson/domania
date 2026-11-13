@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from domainia.wilson.noise import band_averaged_variance, empirical_variance
+from domainia.testing import empirical_variance
+from domainia.wilson.noise import band_averaged_variance
 
 
 def test_empirical_variance_matches_the_band_average_for_a_flat_psd(simple_grid, flat_psd):

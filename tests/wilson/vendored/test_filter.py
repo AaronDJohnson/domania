@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from domainia.wilson.filter import nu_d, phi_centered, phi_fft_order
+from domainia.wilson.filter import nu_d, phi_centered
 
 
 def test_nu_d_endpoints():
@@ -48,21 +48,6 @@ def test_phi_compact_support(medium_grid):
     assert np.allclose(phi[outside], 0.0, atol=1e-15)
 
 
-def test_phi_fft_order_is_ifftshift_of_centered(simple_grid):
-    """phi_fft_order(...) == ifftshift(phi_centered(...))."""
-    g = simple_grid
-    centered = phi_centered(g.Nf, g.Nt, g.dt)
-    fft_ord = phi_fft_order(g.Nf, g.Nt, g.dt)
-    assert np.allclose(fft_ord, np.fft.ifftshift(centered))
-
-
-def test_phi_fft_order_peaked_at_zero(simple_grid):
-    """phi_fft_order has its peak at index 0."""
-    g = simple_grid
-    phi = phi_fft_order(g.Nf, g.Nt, g.dt)
-    assert np.argmax(phi) == 0
-
-
 def test_phi_amplitude_is_one_over_sqrt_dF(simple_grid):
     """In the flat region, phi == 1/sqrt(Delta F) (Paper I eq:Meyer-def, Hz)."""
     g = simple_grid
@@ -74,7 +59,7 @@ def test_phi_amplitude_is_one_over_sqrt_dF(simple_grid):
 
 @pytest.mark.parametrize("d", [1, 2, 4, 8])
 def test_smoothness_order_d_changes_the_window(simple_grid, d):
-    """``d`` is a public parameter on four functions and must be plumbed.
+    """``d`` is a public parameter on two functions and must be plumbed.
 
     Dropping ``d`` in the call chain used to pass the whole suite, because
     nothing ever varied it away from the default of 4.
@@ -90,14 +75,6 @@ def test_smoothness_order_d_changes_the_window(simple_grid, d):
     assert np.allclose(phi[np.abs(f) >= 0.75 * g.dF], 0.0, atol=1e-15)
     if d != 4:
         assert not np.allclose(phi, default)
-
-    # phi_fft_order and phi_squared_normalization must honour the same d.
-    assert np.allclose(phi_fft_order(g.Nf, g.Nt, g.dt, d), np.fft.ifftshift(phi))
-    from domainia.wilson.filter import phi_squared_normalization
-
-    assert np.isclose(
-        phi_squared_normalization(g.Nf, g.Nt, g.dt, d), float(np.sum(phi**2))
-    )
 
 
 @pytest.mark.parametrize("bad_d", [0, -1])

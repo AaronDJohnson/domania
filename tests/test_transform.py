@@ -50,7 +50,7 @@ def test_agrees_with_the_recorded_translate_transform():
                 assert not np.any(got[..., 0].imag), i
                 assert np.all(got[..., -1].imag) if n % 2 else not np.any(got[..., -1].imag), i
             if t == "wdm":
-                assert not np.any(got[..., ~wilson.active_mask(*tg)]), i
+                assert not np.any(got[..., ~wilson.grid.active_mask(*tg)]), i
 
 
 def test_round_trips_leading_axes_and_parseval():

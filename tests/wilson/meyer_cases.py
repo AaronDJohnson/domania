@@ -103,7 +103,10 @@ def _seed(Nf: int, Nt: int, dt: float) -> int:
 
 
 def wilson_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
-    """The kernel window consumers of ``wl`` (``domainia.wilson``)."""
+    """The kernel window consumers of ``wl`` (``domainia.wilson``), and
+    ``testing.empirical_variance`` under its recorded name."""
+    from domainia import testing
+
     N = Nf * Nt
     T = N * dt
     rng = np.random.default_rng(_seed(Nf, Nt, dt))
@@ -117,7 +120,7 @@ def wilson_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
     # Fixed WDM-domain inputs, computed once with the default (Meyer) window.
     w = wl.forward(xr, Nf, Nt, dt)
     Wm = wl.forward(Xr, Nf, Nt, dt)
-    mask = wl.active_mask(Nf, Nt)
+    mask = wl.grid.active_mask(Nf, Nt)
     Tr, M, St, No, E = wl.transform, wl.matrix, wl.stationary, wl.noise, wl.evolutionary
     K0 = St.build_K_full_active(Nf, Nt, dt, psd)[0]
     B0 = St.build_lambda_blocks_full_active(Nf, Nt, dt, psd)
@@ -144,7 +147,8 @@ def wilson_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
         ("noise.band_averaged_variance", lambda kw: No.band_averaged_variance(Nf, Nt, dt, psd, **kw)),
         ("noise.evolutionary_band_variance",
          lambda kw: No.evolutionary_band_variance(Nf, Nt, dt, Sn, **kw)),
-        ("noise.empirical_variance", lambda kw: No.empirical_variance(Nf, Nt, dt, psd, 3, seed=11, **kw)),
+        ("noise.empirical_variance",
+         lambda kw: testing.empirical_variance(Nf, Nt, dt, psd, 3, seed=11, **kw)),
         # w2 is a length-N time-domain weight (rho_p = sum_t w2(t) g_p(t)^2 / dt).
         ("evolutionary.energy_fraction", lambda kw: E.energy_fraction(x ** 2, Nf, Nt, dt, **kw)),
         ("evolutionary.apply_time_mask", lambda kw: E.apply_time_mask(Wm[:, mask], chi, Nf, Nt, dt, **kw)),
@@ -179,7 +183,7 @@ def domainia_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
     rng.standard_normal(5 * N + 2 * Nt)        # the recorded maps cases' inputs: Sigma unchanged
     Sn = psd_ft(N * dt, depth=0.4)
     E = wl.evolutionary
-    mask = wl.active_mask(Nf, Nt)
+    mask = wl.grid.active_mask(Nf, Nt)
     m, n = np.nonzero(mask)
 
     def interp(kw: dict) -> Any:

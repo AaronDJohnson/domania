@@ -31,10 +31,7 @@ is not carried: it drops the edge bands, an approximation the paper never
 uses.  :func:`build_lambda_blocks_full_active` covers **every** band pair,
 including the parity-restricted edge bands $m \\in \\{0, N_f\\}$, via
 half-slab Hermitian-extended IFFTs.  The full-active result matches
-the dense $W_a\\,C_{\\rm time}\\,W_a^T$ at machine precision and is
-preferred when bias-free inner products matter (matched filtering of
-broadband signals, parameter estimation, anything that consumes
-$\\Lambda^{-1}$).
+the dense $W_a\\,C_{\\rm time}\\,W_a^T$ at machine precision.
 
 Edge-band convention
 --------------------

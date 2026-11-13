@@ -17,7 +17,7 @@ B = np.random.default_rng(20261114).standard_normal((K, K, 2)) @ [1.0, 1.0j]
 #: The WDM grid of the stationary case, and its active cells in numpy.nonzero order (the rows
 #: of testing.dense_W).
 NF, NT = 16, 32
-MASK = wilson.active_mask(NF, NT)
+MASK = wilson.grid.active_mask(NF, NT)
 #: The routes from a stationary model S(f) to a covariance; the WDM route keeps the active cells.
 ROUTES = {"frequency": lambda S, N=128: frequency_covariance(S, N=N, dt=DT),
           "wdm": lambda S: wdm_covariance((lambda f, t: S(f)) if callable(S) else S, Nf=NF,
@@ -99,7 +99,7 @@ def same_cell(Nf, Nt, Tp):
     (K, K, N): (I_K x W) Sigma (I_K x W)^T with Sigma_ab[i, j] = [B(t_i) B(t_j)^T]_ab R(i - j),
     where R is the stationary reference of psd."""
     N = Nf * Nt
-    W = testing.dense_W(Nf, Nt, DT, wilson.active_mask(Nf, Nt))
+    W = testing.dense_W(Nf, Nt, DT, wilson.grid.active_mask(Nf, Nt))
     R = sigma(lambda f: psd(f)[None, None], N, DT)[0, 0]
     Bt = np.moveaxis(mixing(np.arange(N) * DT, Tp), 0, -1).copy()     # Bt[a, c, i] = B_ac(t_i)
     out = 0.0
@@ -161,7 +161,7 @@ def test_wdm_covariance_of_an_evolutionary_model(monkeypatch):
     for bit) and 0 at the inactive cells; smaller chunks, with partial last chunks, change no
     bit and keep every call within CHUNK points."""
     Nf, Nt = 16, 64
-    mask = wilson.active_mask(Nf, Nt)
+    mask = wilson.grid.active_mask(Nf, Nt)
     lead, trail = wilson.evolutionary.wrap_cut_columns(Nf, Nt, DT)
     n = np.nonzero(mask)[1]
     kept = (n >= lead) & (n < Nt - trail)

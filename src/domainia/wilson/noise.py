@@ -14,8 +14,7 @@ band average of WDM Paper II, Eq. 36:
 * :func:`evolutionary_band_variance` — the same mean of a time-varying PSD
   $S_n(f, t)$ at each time pixel, for locally-stationary noise.
 
-A Monte-Carlo estimator (:func:`empirical_variance`) is provided for
-verification.
+A Monte-Carlo estimator, :func:`domainia.testing.empirical_variance`, checks them.
 
 Both grids have shape ``(Nf+1, Nt)``.  They fill the inactive edge pixels
 ($m = 0$ and $m = N_f$ at odd $n$) by the same formula as the active ones, so they hold
@@ -37,7 +36,6 @@ from collections.abc import Callable
 import numpy as np
 from numpy.typing import NDArray
 
-from ._checks import require_int
 from .grid import (
     band_frequencies,
     delta_F,
@@ -47,20 +45,13 @@ from .grid import (
     validate_dt,
     validate_grid,
 )
-from .transform import forward
 from .windows import MEYER, Window, sample_window
 
 type Array = NDArray[np.floating]
-type CArray = NDArray[np.complexfloating]
 type PsdFunc = Callable[[Array], Array]
 type PsdFtFunc = Callable[[Array, Array], Array]
 
-__all__ = [
-    "band_averaged_variance",
-    "colored_noise",
-    "empirical_variance",
-    "evolutionary_band_variance",
-]
+__all__ = ["band_averaged_variance", "evolutionary_band_variance"]
 
 
 def band_averaged_variance(
@@ -161,127 +152,6 @@ def band_averaged_variance(
     Sn_eff = Sn_vals[:, in_band] @ weights / np.sum(weights)
 
     return np.broadcast_to(0.5 * Sn_eff[:, None], (Nf + 1, Nt)).copy()
-
-
-def colored_noise(
-    N: int,
-    dt: float,
-    Sn_func: PsdFunc,
-    rng: np.random.Generator,
-) -> CArray:
-    """Generate one realization of stationary noise with PSD $S_n(f)$.
-
-    Public (it was the vendored private
-    ``_generate_colored_noise``; same draws, same order: interior real parts,
-    interior imaginary parts, DC, Nyquist).  $O(N\\log N)$, NumPy only.
-
-    Returns the rfft of the time-domain noise, with the convention
-    $E[|X_j|^2] = N\\,S_n(f_j)/(2\\,\\delta t)$ at **every** bin.
-
-    The DC and Nyquist bins are real-valued (as they must be for a real
-    time series) but carry their full variance, not half: for real
-    Gaussian noise $E[|X_j|^2]$ is flat across the rfft grid.
-
-    .. note::
-       Before 2026-07-27 the DC and Nyquist draws were divided by
-       $\\sqrt 2$, giving them half the correct power.  That biased
-       :func:`empirical_variance` low at the two edge bands -- exactly
-       where an analytic cross-check is hardest.
-
-    Raises
-    ------
-    TypeError
-        If ``N`` is not an integer (``bool`` included), or ``dt`` is not a real
-        number.
-    ValueError
-        If ``N`` is not positive and even, or ``dt`` is not positive and
-        finite.  Both are checked before the PSD is evaluated or ``rng`` is
-        drawn from.  An odd ``N`` has no Nyquist bin, yet bin ``N//2`` would
-        be drawn real-only as if it were one, and the noise would not be
-        stationary (per-sample variance 0.79--1.22 of its mean at ``N = 9``).
-    """
-    # Public entry point: same checks as validate_grid/validate_dt, on N itself.
-    # They only raise, so valid input takes the oracle's path bit for bit.
-    require_int("N", N)
-    if N <= 0:
-        raise ValueError(f"N must be positive, got {N}")
-    if N % 2 != 0:
-        raise ValueError(f"N must be even, got {N}")
-    validate_dt(dt)
-    freqs = np.fft.rfftfreq(N, d=float(dt))
-    Sn = sanitize_psd(Sn_func(freqs), "colored_noise")
-    sigma_full = np.sqrt(N * Sn / (2.0 * dt))
-
-    n_rfft = N // 2 + 1
-    out = np.zeros(n_rfft, dtype=complex)
-    # Interior bins split their variance across the real and imaginary parts;
-    # the real-only DC and Nyquist bins carry theirs in one component.
-    interior = slice(1, N // 2)
-    n_interior = (N // 2) - 1
-    out[interior] = (
-        sigma_full[interior]
-        * (rng.standard_normal(n_interior) + 1j * rng.standard_normal(n_interior))
-        / np.sqrt(2.0)
-    )
-    out[0] = sigma_full[0] * rng.standard_normal()
-    out[N // 2] = sigma_full[N // 2] * rng.standard_normal()
-    return out
-
-
-def empirical_variance(
-    Nf: int,
-    Nt: int,
-    dt: float,
-    Sn_func: PsdFunc,
-    n_realizations: int = 1000,
-    seed: int | None = None,
-    *,
-    window: Window = MEYER,
-) -> Array:
-    """Monte-Carlo estimate of $\\langle w_{mn}^2 \\rangle$.
-
-    Generates ``n_realizations`` independent noise realizations with the
-    given PSD, transforms each to the WDM domain, and averages the
-    squared coefficients.  Useful for verifying the analytical
-    :func:`band_averaged_variance`.
-
-    Parameters
-    ----------
-    Nf, Nt : int
-    dt : float
-    Sn_func : callable
-    n_realizations : int, optional
-        Number of realizations to average (default 1000).
-    seed : int or None, optional
-        Seed for the RNG.
-    window : Window, optional
-        The Wilson window (default :data:`domainia.wilson.MEYER`: the WDM transform).
-        See :mod:`domainia.wilson.windows`.
-
-    Returns
-    -------
-    ndarray, shape (Nf+1, Nt)
-
-    Examples
-    --------
-    >>> import numpy as np; from domainia import wilson
-    >>> flat = lambda f: 1e-3 * np.ones_like(f)
-    >>> mc = wilson.empirical_variance(8, 16, 1.0, flat, 200, seed=0)
-    >>> mc.shape
-    (9, 16)
-    """
-    validate_grid(Nf, Nt)
-    validate_dt(dt)
-    if require_int("n_realizations", n_realizations) < 1:
-        raise ValueError(f"n_realizations must be >= 1, got {n_realizations}")
-    N = n_samples(Nf, Nt)
-    rng = np.random.default_rng(seed)
-    accum = np.zeros((Nf + 1, Nt))
-    for _ in range(n_realizations):
-        x_rfft = colored_noise(N, dt, Sn_func, rng)
-        w = forward(x_rfft, Nf, Nt, dt, window=window)
-        accum += w * w
-    return accum / n_realizations
 
 
 # ---------------------------------------------------------------------------

@@ -1,109 +1,9 @@
 # domainia
 
-Move data and covariance between the time, Fourier and time-frequency domains.
-
-* `domainia.wilson` holds the Wilson-basis kernels: forward and inverse transforms, the
-  stationary and evolutionary noise models, inner products and dense oracles. With the
-  default Meyer window (`MEYER`) the Wilson basis is the WDM transform. Every kernel that
-  samples the window takes `window=`, so the same code runs any *admissible* window: real,
-  even, zero for |f| ≥ ΔF, and a partition of unity on the lattice. Such a window gives an
-  orthonormal basis and block-tridiagonal stationary covariances.
-  The built-in windows are `Meyer(d)` (integer `d ≥ 1`), `RampWindow(ramp, name)` (Meyer's
-  geometry with a user ramp `nu` on [0, 1]) and `SampledWindow(fn, name)` (a dimensionless
-  profile `psi(u)`, `u = f / ΔF`, with `psi(0) = 1`). `RampWindow` and `SampledWindow` are
-  screened at construction, and every window is validated on each new grid when it is
-  sampled; an inadmissible one raises `WindowError`, at construction or when sampled.
-  `wilson.sample_window` is the kernels' validated entry point, also for a `Window` of your
-  own.
-* `domainia.translate` is the translation layer. `transform` moves `{channel: array}`
-  dicts between the full-record domains.
-* `domainia.domains`, `domainia.data`, `domainia.maps`, `domainia.variance` and
-  `domainia.spectra` cover partial domains (WDM cell sets, Fourier bands): maps between them
-  and cell variances.
-
-## Quick start
-
-```python
-import numpy as np
-from domainia import transform, wilson
-
-Nf, Nt, dt = 16, 64, 0.5
-N = Nf * Nt
-rec = {"N": N, "dt": dt}
-meyer8 = wilson.Meyer(8)
-
-x = np.random.default_rng(0).standard_normal((2, N))         # two channels: any leading axes
-w = transform(x, "time", "wdm", **rec, target_wdm=(Nf, Nt))       # (2, Nf + 1, Nt) float64, Meyer
-X = transform(w, "wdm", "frequency", **rec, source_wdm=(Nf, Nt))  # (2, N // 2 + 1): dt * rfft(x)
-w8 = transform(X, "frequency", "wdm", **rec, target_wdm=(Nf, Nt), window=meyer8)  # another window
-assert np.allclose(transform(w8, "wdm", "time", **rec, source_wdm=(Nf, Nt), window=meyer8), x)
-```
-
-The WDM layout holds the `N = Nf * Nt` active cells; the inactive edge cells are 0.
-`transform` uses this dense `(Nf + 1, Nt)` layout, while `domainia.data.WDMCells` and the
-maps and covariances on `WDMDomain.full(grid)` use the packed `(N,)` layout (the active cells
-in band order); convert with `domainia.wilson.pack(w, Nf, Nt)` and
-`domainia.wilson.unpack(y, Nf, Nt)`.
-
-`transform` is NumPy only: a JAX array is copied to host NumPy, and `transform` cannot be
-traced under `jax.jit` or `jax.grad` (JAX raises its `TracerArrayConversionError`, a
-`TypeError`).
-
-### Canonical inputs
-
-`transform`'s outputs are exactly canonical: inactive WDM cells are 0, and the Fourier DC
-bin (and the Nyquist bin for even `N`) is real. Its inputs may carry a residue there of up
-to 1e-10 of their peak, so raw `wilson.forward_time` output and a slice of a full FFT
-(`dt * numpy.fft.fft(x)[:N // 2 + 1]`), which carry ~1e-16 round-off there on many grids,
-are taken as they are. A larger residue is refused, and the error names the cell or bin:
-
-```python
-import numpy as np
-from domainia import transform, wilson
-
-Nf, Nt, dt = 6, 12, 0.3
-N = Nf * Nt
-x = np.random.default_rng(6).standard_normal(N)
-
-w = wilson.forward_time(x, Nf, Nt, dt)        # raw kernel output: ~1e-17 in the inactive cells
-assert np.allclose(transform(w, "wdm", "time", N=N, dt=dt, source_wdm=(Nf, Nt)), x)
-X = dt * np.fft.fft(x)[: N // 2 + 1]          # a full-FFT slice: ~1e-17 imaginary at Nyquist
-assert np.allclose(transform(X, "frequency", "time", N=N, dt=dt), x)
-```
-
-## Units
-
-A WDM value is always a Wilson coefficient `w = W x` of the time record (`W W^T = dt I`),
-whichever path produced it: `transform`, the maps `TimeToWDM` and `FourierToWDM` (both
-implementations, and `after()`) and the `domainia.wilson` band kernels; the WDM variances
-and covariances describe these coefficients. A Fourier value `z` carries the units its
-`FourierDomain` declares, and `FourierDomain.rfft_scale` is the `u` with
-`numpy.fft.rfft(x) = u * z`:
-
-| `units`     | `z`                 | `u`      |
-|-------------|---------------------|----------|
-| `"rfft"`    | `numpy.fft.rfft(x)` | 1        |
-| `"dt_rfft"` | `dt * rfft(x)`      | `1 / dt` |
-| `"sigma0"`  | `rfft(x) / sigma0`  | `sigma0` |
-
-`FourierDomain(N, dt, k0, n, "sigma0", sigma0=s)` stores the value `s` (positive and
-finite; it is part of the domain's equality and hash), and the other units take no
-`sigma0`. Every map honours the label: on a `WDMDomain` `dst` of interior bands (which
-`FourierToWDM` requires), `FourierToWDM(src, dst).apply(z)` equals
-`TimeToWDM(time, dst).apply(x)` for every `units` value, and
-`FourierZeroPad` and `FourierCrop` return the rfft of the zero-padded or cropped record in
-the source's units (`sigma0` included).
-
-## Errors
-
-Everything fails closed. `TypeError` means the wrong kind of argument: a type that can never
-be valid in that place (a float or a `bool` where an integer is taken, a string where a flag
-is, a `Grid` where a domain is), or an array whose dtype can never be (a complex or bool
-array where real numbers are taken). `ValueError` means the right kind with a wrong value:
-shape, range, finiteness, integrality, an unknown option string, inactive cells, endpoints,
-or a domain or window mismatch. `WindowError` (a `ValueError`) means an inadmissible window,
-complex window samples included. In `domainia.translate`, complex values on a time or WDM
-domain raise `ValueError`, because they are valid on a `FourierDomain`.
+domainia does two things, in float64 NumPy. `transform` translates data arrays between the
+time, frequency and WDM (Wilson-Daubechies-Meyer) domains. `frequency_covariance` and
+`wdm_covariance` evaluate a K × K noise model as its covariance at each frequency bin or WDM
+cell. It computes no likelihood: the caller does.
 
 ## Install and test
 
@@ -115,3 +15,69 @@ PYTHONDONTWRITEBYTECODE=1 python -P -m pytest -q
 Three oracle tests compare against source trees outside this repository; they skip unless
 `DOMAINIA_ORACLE_ROOT` names the directory that holds them (the skip message lists the
 subdirectories each one expects).
+
+## Data
+
+```python
+import numpy as np
+from domainia import transform, wilson
+
+Nf, Nt, dt = 6, 12, 0.3
+N = Nf * Nt
+x = np.random.default_rng(6).standard_normal((2, N))            # any leading axes
+
+w = transform(x, "time", "wdm", N=N, dt=dt, target_wdm=(Nf, Nt))       # (2, 7, 12) float64
+X = transform(w, "wdm", "frequency", N=N, dt=dt, source_wdm=(Nf, Nt))  # (2, 37): dt * rfft(x)
+v = transform(X, "frequency", "wdm", N=N, dt=dt, target_wdm=(12, 6))   # another WDM grid
+assert np.allclose(transform(v, "wdm", "time", N=N, dt=dt, source_wdm=(12, 6)), x)
+
+# Raw kernel output (~1e-17 in the inactive cells) and a full-FFT slice (~1e-16 imaginary
+# at Nyquist) are taken as they are; a residue above 1e-10 of the peak is refused.
+assert np.allclose(transform(wilson.forward_time(x, Nf, Nt, dt), "wdm", "time", N=N, dt=dt,
+                             source_wdm=(Nf, Nt)), x)
+assert np.allclose(transform(dt * np.fft.fft(x)[:, : N // 2 + 1], "frequency", "time",
+                             N=N, dt=dt), x)
+```
+
+## Covariance
+
+```python
+import numpy as np
+from domainia import frequency_covariance, wdm_covariance
+
+dt, N, Nf, Nt = 5.0, 1024, 16, 64
+
+def S(f):                                       # one-sided 2 x 2 cross-spectral density
+    p = 1e-2 / (1.0 + (f / 0.02) ** 2)
+    c = 0.8 * np.exp(-2j * np.pi * f * 36.5)    # coherence 0.8, a 36.5 s delay: complex
+    return p * np.array([[np.ones_like(c), c], [np.conj(c), np.ones_like(c)]])
+
+C = frequency_covariance(S, N=N, dt=dt)                                  # (2, 2, 513) complex
+D = wdm_covariance(lambda f, t: S(f), Nf=Nf, Nt=Nt, dt=dt)               # (2, 2, 17, 64) real
+E = wdm_covariance(lambda f, t: S(f) * (1.3 + 0.3 * np.cos(2 * np.pi * t / (N * dt))),
+                   Nf=Nf, Nt=Nt, dt=dt)                                  # evolutionary
+assert np.array_equal(C, C.conj().transpose(1, 0, 2))
+assert np.array_equal(D, D.transpose(1, 0, 2, 3)) and not D[:, :, 0, 1].any()
+```
+
+## Conventions
+
+- Trailing-axis layouts: time is real `(N,)`; frequency is complex `(N // 2 + 1,)`,
+  `dt * rfft(x)`; WDM is real `(Nf + 1, Nt)` with the edge bands, `Nf` and `Nt` even and
+  `Nf * Nt == N`. The atoms have unit norm (`sum(w**2) == dt * sum(x**2)`), and the inactive
+  WDM cells (bands 0 and `Nf` at odd `n`) are 0 in every output.
+- A model `S(f)` or `S(f, t)` (`t` in seconds from the first sample) returns `(K, K, ...)`
+  with `S[b, a] = conj(S[a, b])`, oriented so that `E[X_a conj(X_b)] = (N dt / 2) S_ab`.
+- With `H = (S + S^H) / 2`, `frequency_covariance` is `(N dt / 2) H(f_k)`, real at DC and
+  even-`N` Nyquist, and `wdm_covariance` is `½ BA_m[Re H(·, n Nf dt)]`, the band average of
+  WDM Paper II, Eq. 36. Both are linear in `S`, exactly Hermitian (or symmetric), and fp64.
+- For an evolutionary model Eq. 36 is a local-stationarity approximation. If the model is not
+  periodic over the record, drop the edge columns `wilson.evolutionary.wrap_cut_columns` names.
+- A wrong kind of argument raises `TypeError`, a wrong value `ValueError` (`WindowError` for
+  an inadmissible window).
+
+## Kernels
+
+`domainia.wilson` holds the kernels: `forward`, `inverse`, `forward_time` and `inverse_time`
+(any leading axes), the windows that `transform` and `wdm_covariance` take as `window=`
+(`MEYER`, the default, `Meyer(d)`, `RampWindow`, `SampledWindow`), and the dense references.

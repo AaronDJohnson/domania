@@ -13,22 +13,23 @@ import pytest
 
 import domainia
 from domainia import wilson
-from domainia.testing import ALT_WINDOW, smoothstep
-from domainia.wilson import MEYER, Meyer, RampWindow, SampledWindow, WindowError
+from domainia.testing import ALT_WINDOW, colored_noise, empirical_variance, smoothstep
+from domainia.wilson import MEYER, Meyer, RampWindow, SampledWindow
+from domainia.wilson.windows import WindowError
 
 from .meyer_cases import THREADED, domainia_cases, psd, psd_ft, wilson_cases
 
 #: Source files (relative to src/domainia) whose every consumer call must pass ``window=``:
 #: every module of the package but UNSCANNED.  ``wilson/filter.py`` and ``wilson/windows.py``
-#: must never be scanned: they are where the Meyer samples come from (``phi_centered``,
-#: ``phi_fft_order``) and where ``.sample`` is called, behind ``sample_window``'s validation.
+#: must never be scanned: they are where the Meyer samples come from (``phi_centered``) and
+#: where ``.sample`` is called, behind ``sample_window``'s validation.
 SCANNED = ("wilson/transform.py", "wilson/matrix.py", "wilson/stationary.py", "wilson/noise.py",
            "wilson/evolutionary.py", "wilson/grid.py", "wilson/__init__.py", "wilson/_checks.py",
            "testing.py", "__init__.py", "_transform.py", "_covariance.py")
 #: The two modules that legitimately sample the Meyer window directly.
 UNSCANNED = frozenset({"wilson/filter.py", "wilson/windows.py"})
 #: Meyer sampling helpers: only ``wilson/filter.py`` (and ``wilson/windows.py``) may call them.
-MEYER_HELPERS = frozenset({"phi_centered", "phi_fft_order"})
+MEYER_HELPERS = frozenset({"phi_centered"})
 
 #: Every function that samples the window, directly or through another consumer.
 CONSUMERS = frozenset({
@@ -158,7 +159,7 @@ def _window_violations(source: str) -> list[tuple[int, str, str]]:
       carries the window it was built with), or with a hard-coded ``window=``;
     * ``sample_window`` of a hard-coded window;
     * any ``.sample(...)`` (it bypasses ``sample_window``'s validation) and any
-      ``phi_centered`` or ``phi_fft_order`` (they sample Meyer directly);
+      ``phi_centered`` (it samples Meyer directly);
     * a hard-coded window anywhere in a function body (:func:`_body_hard_codes`): the call rules
       see only keywords, so ``window = MEYER`` followed by ``window=window`` would pass them.
 
@@ -234,8 +235,6 @@ def test_the_scan_covers_every_module_but_filter_and_windows():
     ("window.sample(Nf, Nt, dt)", True),
     ("phi_centered(Nf, Nt, dt)", True),
     ("filter.phi_centered(Nf, Nt, dt, 8)", True),
-    ("phi_fft_order(Nf, Nt, dt)", True),
-    ("wilson.filter.phi_fft_order(Nf, Nt, dt)", True),
 ])
 def test_the_window_scan_flags_exactly_the_calls_that_lose_the_window(source, flagged):
     assert bool(_window_violations(source)) is flagged
@@ -381,7 +380,7 @@ def test_build_W_is_the_impulse_response(window, Nf, Nt, dt):
     N = Nf * Nt
     W_def = np.stack([wilson.forward_time(e, Nf, Nt, dt, window=window).ravel() for e in np.eye(N)],
                      axis=1)
-    mask = wilson.active_mask(Nf, Nt).ravel()
+    mask = wilson.grid.active_mask(Nf, Nt).ravel()
     C_def = W_def @ M.build_C_time(N, dt, psd) @ W_def.T
     _close(M.build_W(Nf, Nt, dt, window=window), W_def, RTOL, "build_W")
     _close(M.active_W(Nf, Nt, dt, window=window), W_def[mask], RTOL, "active_W")
@@ -400,7 +399,7 @@ def test_atom_spectra_are_the_rfft_of_the_rows_of_W(window, Nf, Nt, dt):
     base = T.base_atom_spectra(Nf, Nt, dt, window=window)
     for (m, a), G in base.items():
         _close(G, np.fft.rfft(W[m * Nt + a]), RTOL, f"base_atom_spectra[{m}, {a}]")
-    for m, n in zip(*np.nonzero(wilson.active_mask(Nf, Nt)), strict=True):
+    for m, n in zip(*np.nonzero(wilson.grid.active_mask(Nf, Nt)), strict=True):
         _close(T.atom_spectrum(int(m), int(n), Nf, Nt, dt, base=base, window=window),
                np.fft.rfft(W[m * Nt + n]), RTOL_ATOM, f"atom_spectrum({m}, {n}, base=)")
     for m, n in ((1, 3), (0, 2), (Nf, 2)):
@@ -504,7 +503,7 @@ def test_apply_lambda_from_psd_is_the_dense_covariance(window, Nf, Nt, dt):
     """``apply_lambda_from_psd(x)`` is ``build_C_wdm_active @ x`` on the active cells (junk in
     the inactive cells of ``x`` is ignored)."""
     N = Nf * Nt
-    mask = wilson.active_mask(Nf, Nt)
+    mask = wilson.grid.active_mask(Nf, Nt)
     x = np.random.default_rng(N + Nf + 3).standard_normal((Nf + 1, Nt))
     S = psd(np.fft.rfftfreq(N, dt))
     want = np.zeros_like(x)
@@ -518,7 +517,7 @@ def test_apply_lambda_from_psd_is_the_dense_covariance(window, Nf, Nt, dt):
 def test_band_variances_are_the_diagonal_of_the_dense_covariance(window, Nf, Nt, dt):
     """``band_averaged_variance`` and the stationary limit of ``evolutionary_band_variance``
     (all bands, and selected ``bands=``) are ``diag(build_C_wdm_active)`` on the active cells."""
-    mask = wilson.active_mask(Nf, Nt)
+    mask = wilson.grid.active_mask(Nf, Nt)
     want = np.diag(_dense(window, Nf, Nt, dt)[3])
     _close(No.band_averaged_variance(Nf, Nt, dt, psd, window=window)[mask], want, RTOL_KERNEL,
            "band_averaged_variance")
@@ -539,9 +538,9 @@ def test_empirical_variance_is_the_mean_square_of_the_same_draws(window, Nf, Nt,
     N = Nf * Nt
     W = _dense(window, Nf, Nt, dt)[0]
     rng = np.random.default_rng(5)
-    draws = [W @ np.fft.irfft(No.colored_noise(N, dt, psd, rng), n=N) for _ in range(3)]
+    draws = [W @ np.fft.irfft(colored_noise(N, dt, psd, rng), n=N) for _ in range(3)]
     want = np.mean(np.square(draws), axis=0).reshape(Nf + 1, Nt)
-    _close(No.empirical_variance(Nf, Nt, dt, psd, 3, seed=5, window=window), want, RTOL_KERNEL,
+    _close(empirical_variance(Nf, Nt, dt, psd, 3, seed=5, window=window), want, RTOL_KERNEL,
            "empirical_variance")
 
 
@@ -570,7 +569,7 @@ def _wrap_reference(W, Nf, Nt):
     whose unwrapped position ``c + delta`` (``delta`` the signed offset from the centre, in
     ``[-N/2, N/2)``) lies outside ``[0, N)``; ``nan`` at inactive cells."""
     N = Nf * Nt
-    m, n = np.nonzero(wilson.active_mask(Nf, Nt))
+    m, n = np.nonzero(wilson.grid.active_mask(Nf, Nt))
     g2 = W.reshape(Nf + 1, Nt, N)[m, n] ** 2
     c = n[:, None] * Nf
     pos = c + (np.arange(N)[None, :] - c + N // 2) % N - N // 2
@@ -654,7 +653,7 @@ def test_eq45_plan_carries_the_window_to_every_eq45_builder(window, Nf, Nt, dt):
     on all cells and on a ``keep`` subset (the kept rows and columns)."""
     Ca = _dense(window, Nf, Nt, dt)[3]
     base = T.base_atom_spectra(Nf, Nt, dt, window=window)
-    keep = ~np.isin(np.nonzero(wilson.active_mask(Nf, Nt))[1], (0, 1, Nt - 1))
+    keep = ~np.isin(np.nonzero(wilson.grid.active_mask(Nf, Nt))[1], (0, 1, Nt - 1))
     for tag, plan, ref in (("", E.eq45_plan(Nf, Nt, dt, window=window), Ca),
                            ("(keep)", E.eq45_plan(Nf, Nt, dt, keep, window=window),
                             Ca[np.ix_(keep, keep)])):

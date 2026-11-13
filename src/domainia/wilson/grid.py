@@ -27,24 +27,16 @@ from ._checks import require_int as _require_int, validate_dt, validate_finite
 
 type Array = NDArray[np.floating]
 type BoolArray = NDArray[np.bool_]
-type IntArray = NDArray[np.integer]
 
 __all__ = [
     "Grid",
     "active_mask",
     "band_frequencies",
-    "band_indices",
-    "carrier_phase",
-    "count_active",
     "delta_F",
     "delta_T",
-    "edge_columns",
     "endpoint_weights",
     "n_samples",
-    "pack",
-    "packed_cells",
     "sanitize_psd",
-    "unpack",
     "time_pixel_centers",
     "validate_dt",
     "validate_finite",
@@ -137,11 +129,11 @@ def validate_grid(Nf: int, Nt: int) -> None:
     Examples
     --------
     >>> import numpy as np; from domainia import wilson
-    >>> wilson.validate_grid(8, 16)          # even and positive: fine
-    >>> wilson.validate_grid(9, 16)
+    >>> wilson.grid.validate_grid(8, 16)          # even and positive: fine
+    >>> wilson.grid.validate_grid(9, 16)
     Traceback (most recent call last):
     ValueError: Nf must be even, got 9
-    >>> wilson.validate_grid(8.0, 16)
+    >>> wilson.grid.validate_grid(8.0, 16)
     Traceback (most recent call last):
     TypeError: Nf must be an integer, got float
     """
@@ -247,7 +239,7 @@ def n_samples(Nf: int, Nt: int) -> int:
     Examples
     --------
     >>> import numpy as np; from domainia import wilson
-    >>> wilson.n_samples(8, 16)
+    >>> wilson.grid.n_samples(8, 16)
     128
     """
     for name, val in (("Nf", Nf), ("Nt", Nt)):
@@ -285,12 +277,12 @@ def delta_F(Nf: int, dt: float) -> float:
     Examples
     --------
     >>> import numpy as np; from domainia import wilson
-    >>> wilson.delta_F(8, 1.0)
+    >>> wilson.grid.delta_F(8, 1.0)
     0.0625
-    >>> wilson.delta_F(0, 1.0)
+    >>> wilson.grid.delta_F(0, 1.0)
     Traceback (most recent call last):
     ValueError: Nf must be positive, got 0
-    >>> wilson.delta_F(8, 5e-324)          # doctest: +ELLIPSIS
+    >>> wilson.grid.delta_F(8, 5e-324)          # doctest: +ELLIPSIS
     Traceback (most recent call last):
     ValueError: delta_F is not representable for Nf=8, dt=5e-324...
     """
@@ -322,7 +314,7 @@ def delta_T(Nf: int, dt: float) -> float:
     Examples
     --------
     >>> import numpy as np; from domainia import wilson
-    >>> wilson.delta_T(8, 1.0)
+    >>> wilson.grid.delta_T(8, 1.0)
     8.0
     """
     validate_dt(dt)
@@ -346,7 +338,7 @@ def band_frequencies(Nf: int, dt: float) -> Array:
     Examples
     --------
     >>> import numpy as np; from domainia import wilson
-    >>> f = wilson.band_frequencies(8, 1.0)
+    >>> f = wilson.grid.band_frequencies(8, 1.0)
     >>> f.shape, float(f[0]), float(f[-1])   # DC .. Nyquist
     ((9,), 0.0, 0.5)
     """
@@ -357,7 +349,7 @@ def band_frequencies(Nf: int, dt: float) -> Array:
 def time_pixel_centers(Nf: int, Nt: int, dt: float) -> Array:
     """Pixel-center times $t_n = n\\,\\Delta T$ for $n = 0,\\ldots,N_t-1$.
 
-    These are the time coordinates of the WDM lattice: the energy centroid of
+    These are the times of the WDM lattice: the energy centroid of
     the basis function $g_{mn}$ sits at exactly $n\\,\\Delta T$.
 
     Parameters
@@ -380,73 +372,11 @@ def time_pixel_centers(Nf: int, Nt: int, dt: float) -> Array:
     Examples
     --------
     >>> import numpy as np; from domainia import wilson
-    >>> wilson.time_pixel_centers(8, 4, 1.0)
+    >>> wilson.grid.time_pixel_centers(8, 4, 1.0)
     array([ 0.,  8., 16., 24.])
     """
     validate_grid(Nf, Nt)
     return np.arange(Nt) * delta_T(Nf, dt)
-
-
-def band_indices(m: int, Nf: int, Nt: int) -> IntArray:
-    """Circular DFT bin indices for band $m$ in FFT-natural ordering.
-
-    Returns the $N_t$ indices $j$ that the forward transform extracts
-    when computing band $m$ via ``np.fft.ifft``.  The offsets within
-    the band run as $[0, 1, \\ldots, N_t/2-1, -N_t/2, \\ldots, -1]$
-    relative to the band center $j_0 = m N_t/2$, with circular wrap
-    by $N = N_f N_t$.
-
-    Parameters
-    ----------
-    m : int
-        Band index, $0 \\le m \\le N_f$.
-    Nf, Nt : int
-
-    Returns
-    -------
-    ndarray of int, shape (Nt,)
-
-    Examples
-    --------
-    >>> import numpy as np; from domainia import wilson
-    >>> wilson.grid.band_indices(1, 8, 4)
-    array([2, 3, 0, 1])
-    """
-    N = n_samples(Nf, Nt)
-    center = m * (Nt // 2)
-    offsets = np.fft.ifftshift(np.arange(Nt) - Nt // 2)
-    return (center + offsets) % N
-
-
-def carrier_phase(m: int, Nt: int) -> Array:
-    """Carrier phase $(-1)^{mn}$ as a length-$N_t$ array.
-
-    Equals an array of ones when $m$ is even, and the alternating
-    sequence $[1, -1, 1, -1, \\ldots]$ when $m$ is odd.
-
-    Parameters
-    ----------
-    m : int
-    Nt : int
-
-    Returns
-    -------
-    ndarray, shape (Nt,)
-        Float array of $\\pm 1$ values.
-
-    Examples
-    --------
-    >>> import numpy as np; from domainia import wilson
-    >>> wilson.grid.carrier_phase(1, 4)
-    array([ 1., -1.,  1., -1.])
-    >>> wilson.grid.carrier_phase(1.0, 4)
-    Traceback (most recent call last):
-    TypeError: m must be an integer, got float
-    """
-    _require_int("m", m)
-    if m % 2 == 0:
-        return np.ones(Nt)
-    return 1.0 - 2.0 * (np.arange(Nt) % 2)
 
 
 def active_mask(Nf: int, Nt: int) -> BoolArray:
@@ -470,7 +400,7 @@ def active_mask(Nf: int, Nt: int) -> BoolArray:
     Examples
     --------
     >>> import numpy as np; from domainia import wilson
-    >>> mask = wilson.active_mask(8, 16)
+    >>> mask = wilson.grid.active_mask(8, 16)
     >>> mask.shape, int(mask.sum())   # total active == N
     ((9, 16), 128)
     """
@@ -480,93 +410,6 @@ def active_mask(Nf: int, Nt: int) -> BoolArray:
     mask[0] = n % 2 == 0
     mask[Nf] = (Nf + n) % 2 == 0
     return mask
-
-
-def count_active(Nf: int, Nt: int) -> int:
-    """Total active WDM pixels.
-
-    Always equals $N = N_f N_t$ for valid grids.
-
-    Parameters
-    ----------
-    Nf, Nt : int
-
-    Returns
-    -------
-    int
-
-    Examples
-    --------
-    >>> import numpy as np; from domainia import wilson
-    >>> wilson.count_active(8, 16)
-    128
-    """
-    return int(np.sum(active_mask(Nf, Nt)))
-
-
-# ---------------------------------------------------------------------------
-# Packed (band-order) cell vectors
-# ---------------------------------------------------------------------------
-#
-# The N active cells of an (Nf+1, Nt) grid, listed in BAND order: DC with even
-# n, then bands 1..Nf-1 with every n, then Nyquist with (Nf+n) even -- i.e.
-# ``np.nonzero(active_mask(Nf, Nt))``.  This is the order of
-# ``matrix.active_W`` and of every WDM Paper II covariance.  The Nyquist->DC fold of
-# lisa/wdm 0.2.0 (and the manuscript's L1373 interleave) is not offered.
-
-
-def packed_cells(Nf: int, Nt: int) -> tuple[IntArray, IntArray]:
-    """``(m, n)`` of every active cell in band order (length ``N`` each).
-
-    Examples
-    --------
-    >>> import numpy as np; from domainia import wilson
-    >>> m, n = wilson.grid.packed_cells(4, 4)
-    >>> m.tolist()
-    [0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4]
-    >>> n.tolist()
-    [0, 2, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 2]
-    """
-    validate_grid(Nf, Nt)
-    m, n = np.nonzero(active_mask(Nf, Nt))
-    return m, n
-
-
-def pack(w: Array, Nf: int, Nt: int) -> Array:
-    """``(..., Nf+1, Nt) -> (..., N)``: the active cells in band order."""
-    m, n = packed_cells(Nf, Nt)
-    w = np.asarray(w)
-    if w.shape[-2:] != (Nf + 1, Nt):
-        raise ValueError(f"w must end in ({Nf + 1}, {Nt}); got {w.shape}")
-    return w[..., m, n]
-
-
-def unpack(y: Array, Nf: int, Nt: int) -> Array:
-    """``(..., N) -> (..., Nf+1, Nt)``, inactive edge pixels exactly 0."""
-    m, n = packed_cells(Nf, Nt)
-    y = np.asarray(y)
-    if y.shape[-1] != m.size:
-        raise ValueError(f"y must end in N = {m.size}; got {y.shape}")
-    out = np.zeros((*y.shape[:-1], Nf + 1, Nt), dtype=y.dtype)
-    out[..., m, n] = y
-    return out
-
-
-def edge_columns(Nt: int, lead: int, trail: int) -> tuple[int, ...]:
-    """The first ``lead`` and last ``trail`` time columns of an ``Nt``-column grid.
-
-    Examples
-    --------
-    >>> from domainia import wilson
-    >>> wilson.grid.edge_columns(256, 8, 7)
-    (0, 1, 2, 3, 4, 5, 6, 7, 249, 250, 251, 252, 253, 254, 255)
-    >>> wilson.grid.edge_columns(256, True, 7)
-    Traceback (most recent call last):
-    TypeError: lead must be an integer, got bool
-    """
-    _require_int("lead", lead)
-    _require_int("trail", trail)
-    return tuple(range(lead)) + tuple(range(Nt - trail, Nt))
 
 
 def endpoint_weights(n_rfft: int) -> Array:

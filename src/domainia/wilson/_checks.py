@@ -66,39 +66,6 @@ def require_real(name: str, value: object) -> float:
         raise ValueError(f"{name} is too large for a float") from None
 
 
-def require_bool(name: str, value: object) -> bool:
-    """Return ``value`` as a ``bool``; ``TypeError`` unless it is a ``bool`` or ``np.bool_``.
-
-    A truthy ``"no"``, ``1`` or ``0.5`` is refused rather than read as a flag.
-
-    >>> from domainia.wilson._checks import require_bool
-    >>> require_bool("restrict", True)
-    True
-    >>> require_bool("restrict", "no")
-    Traceback (most recent call last):
-    TypeError: restrict must be a bool, got str
-    """
-    if not isinstance(value, (bool, np.bool_)):
-        raise TypeError(f"{name} must be a bool, got {type(value).__name__}")
-    return bool(value)
-
-
-def require_str(name: str, value: object) -> str:
-    """Return ``value``; ``TypeError`` unless it is a ``str``.
-
-    Only the kind: whether the string is one of the choices stays the caller's
-    ``ValueError``, with its own message listing them.
-
-    >>> from domainia.wilson._checks import require_str
-    >>> require_str("impl", 3)
-    Traceback (most recent call last):
-    TypeError: impl must be a string, got int
-    """
-    if not isinstance(value, str):
-        raise TypeError(f"{name} must be a string, got {type(value).__name__}")
-    return value
-
-
 def require_instance(name: str, value: object, cls: type | tuple[type, ...], expected: str) -> Any:
     """Return ``value``; ``TypeError`` unless ``isinstance(value, cls)``.
 
@@ -148,37 +115,6 @@ def require_dtype(name: str, a: object, kinds: str, expected: str) -> None:
         raise TypeError(f"{name} must be {expected}, got dtype {dtype}")
 
 
-def index_array(name: str, value: object) -> np.ndarray:
-    """Return ``value`` as an ``int64`` ndarray of indices.
-
-    Integer dtypes pass. A float array whose entries are all finite integers (``[2.0]``) is
-    accepted and converted. A float entry that is not integral or not finite raises
-    ``ValueError``; a bool, str, bytes, object or complex array raises ``TypeError``.
-    Range and shape are the caller's checks.
-
-    >>> import numpy as np; from domainia.wilson._checks import index_array
-    >>> index_array("m", [1, 2.0])
-    array([1, 2])
-    >>> index_array("m", [1.5])
-    Traceback (most recent call last):
-    ValueError: m must hold integer indices, got 1.5
-    >>> index_array("m", [True])
-    Traceback (most recent call last):
-    TypeError: m must be an integer index array, got dtype bool
-    """
-    raw = np.asarray(value)
-    kind = raw.dtype.kind
-    if kind in "iu":
-        return raw.astype(np.int64, copy=False)
-    if kind != "f":
-        raise TypeError(f"{name} must be an integer index array, got dtype {raw.dtype}")
-    bad = ~np.isfinite(raw) | (raw != np.trunc(raw))
-    if bad.any():
-        first = raw.ravel()[int(np.flatnonzero(bad.ravel())[0])]
-        raise ValueError(f"{name} must hold integer indices, got {float(first)!r}")
-    return raw.astype(np.int64)
-
-
 def validate_dt(dt: object) -> None:
     """Raise unless ``dt`` is a positive finite real number.
 
@@ -204,11 +140,11 @@ def validate_dt(dt: object) -> None:
     Examples
     --------
     >>> import numpy as np; from domainia import wilson
-    >>> wilson.validate_dt(0.5)
-    >>> wilson.validate_dt(0.0)
+    >>> wilson.grid.validate_dt(0.5)
+    >>> wilson.grid.validate_dt(0.0)
     Traceback (most recent call last):
     ValueError: dt must be a positive finite number, got 0.0
-    >>> wilson.validate_dt(True)
+    >>> wilson.grid.validate_dt(True)
     Traceback (most recent call last):
     TypeError: dt must be a real number, got bool
     """
@@ -255,8 +191,8 @@ def validate_finite(values: object, context: str) -> None:
     Examples
     --------
     >>> import numpy as np; from domainia import wilson
-    >>> wilson.validate_finite([1.0, 2.0], 'x')      # all finite: fine
-    >>> wilson.validate_finite([1.0, np.nan], 'x')   # doctest: +ELLIPSIS
+    >>> wilson.grid.validate_finite([1.0, 2.0], 'x')      # all finite: fine
+    >>> wilson.grid.validate_finite([1.0, np.nan], 'x')   # doctest: +ELLIPSIS
     Traceback (most recent call last):
     ValueError: x: 1 of 2 entries are not finite (1 nan, 0 inf); first at index 1...
     """

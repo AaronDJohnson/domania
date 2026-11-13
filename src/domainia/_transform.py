@@ -40,7 +40,7 @@ def _grid(role: str, kind: Any, wdm: Any, N: int) -> tuple[int, int] | None:
     if wdm is None:
         raise ValueError(f"a 'wdm' {role} needs {role}_wdm=(Nf, Nt)")
     Nf, Nt = wdm
-    wilson.validate_grid(Nf, Nt)
+    wilson.grid.validate_grid(Nf, Nt)
     if Nf * Nt != N:
         raise ValueError(f"{role}_wdm=({Nf}, {Nt}) holds {Nf * Nt} samples, not N={N}")
     return int(Nf), int(Nt)
@@ -58,7 +58,7 @@ def _checked(x: Any, kind: str, N: int, grid: tuple[int, int] | None) -> np.ndar
     nd = len(shape)
     if a.shape[a.ndim - nd:] != shape:
         raise ValueError(f"x has shape {a.shape}, but {kind} data end in shape {shape}")
-    wilson.validate_finite(a, "x")
+    wilson.grid.validate_finite(a, "x")
     a = a.astype(np.complex128 if kind == "frequency" else np.float64)
     if kind == "time":
         return a
@@ -68,7 +68,7 @@ def _checked(x: Any, kind: str, N: int, grid: tuple[int, int] | None) -> np.ndar
         ends[0] = True
         off = np.where(ends, np.abs(a.imag), 0.0)
     else:
-        off = np.where(wilson.active_mask(*grid), 0.0, np.abs(a))
+        off = np.where(wilson.grid.active_mask(*grid), 0.0, np.abs(a))
     peak = np.max(np.abs(a), axis=tuple(range(-nd, 0)), keepdims=True)
     rel = np.divide(off, peak, out=np.zeros_like(off), where=peak > 0)
     bad = np.argwhere(rel > RESIDUE)
@@ -108,7 +108,7 @@ def transform(x: Any, source: str, target: str, *, N: int, dt: float,
     N = require_int("N", N)
     if N < 1:
         raise ValueError(f"N must be positive, got {N}")
-    wilson.validate_dt(dt)
+    wilson.grid.validate_dt(dt)
     dt = float(dt)
     sg, tg = _grid("source", source, source_wdm, N), _grid("target", target, target_wdm, N)
     y = _checked(x, source, N, sg)
@@ -130,5 +130,5 @@ def transform(x: Any, source: str, target: str, *, N: int, dt: float,
         if N % 2 == 0:
             y[..., -1] = y[..., -1].real
     elif target == "wdm":
-        y[..., ~wilson.active_mask(*tg)] = 0.0
+        y[..., ~wilson.grid.active_mask(*tg)] = 0.0
     return y

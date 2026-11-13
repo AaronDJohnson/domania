@@ -17,7 +17,7 @@ NF, NT, DT = 8, 16, 1.0 / 16
 N = NF * NT
 F_MIN, F_REF = 0.5, 1.0
 #: Every active cell.
-MASK = wilson.active_mask(NF, NT)
+MASK = wilson.grid.active_mask(NF, NT)
 
 
 def L_of(f):
@@ -62,7 +62,7 @@ def test_eq45_differs_from_exact_at_second_order_with_drift():
     leading and 1 trailing column)."""
     C = T.eq45_dense(NF, NT, DT, MASK, drift(-2.0, 1.2))
     exact = exact_covariance(NF, NT, DT, drift(-2.0, 1.2))
-    interior = ~np.isin(np.nonzero(MASK)[1], wilson.grid.edge_columns(NT, 3, 1))
+    interior = ~np.isin(np.nonzero(MASK)[1], np.r_[0:3, NT - 1])
     d = np.diag(exact)[interior]
     assert np.max(np.abs(np.diag(C)[interior] / d - 1)) < 0.05
 

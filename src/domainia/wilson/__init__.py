@@ -22,23 +22,21 @@ package cannot otherwise detect (swapping the two same-typed ints):
 
 * :class:`Grid` -- unpacks as ``(Nf, Nt, dt)``, so ``f(x, *grid)`` works
 
-Input validation (all applied automatically by the entry points):
+Input validation (in :mod:`domainia.wilson.grid`; all applied automatically by the entry
+points):
 
-* :func:`validate_grid`, :func:`validate_dt`, :func:`validate_finite`,
+* :func:`grid.validate_grid`, :func:`grid.validate_dt`, :func:`grid.validate_finite`,
   :func:`grid.sanitize_psd`
 
-Grid helpers:
+Grid helpers (in :mod:`domainia.wilson.grid`):
 
-* :func:`n_samples`, :func:`band_frequencies`, :func:`time_pixel_centers`
-* :func:`delta_F`, :func:`delta_T`
-* :func:`active_mask`, :func:`count_active`
-* :func:`pack`, :func:`unpack` -- dense ``(Nf+1, Nt)`` <-> packed ``(N,)`` active cells
-  in band order
+* :func:`grid.n_samples`, :func:`grid.band_frequencies`, :func:`grid.time_pixel_centers`
+* :func:`grid.delta_F`, :func:`grid.delta_T`
+* :func:`grid.active_mask`
 
-Noise variance grids:
+Noise variance grids (WDM Paper II, Eq. 36):
 
-* :func:`band_averaged_variance`
-* :func:`empirical_variance`
+* :func:`band_averaged_variance`, :func:`evolutionary_band_variance`
 
 Explicit matrix construction (in :mod:`domainia.wilson.matrix`):
 
@@ -62,55 +60,25 @@ Fast stationary noise covariance (in :mod:`domainia.wilson.stationary`):
 
 Filter (in :mod:`domainia.wilson.filter`):
 
-* :func:`filter.phi_centered`, :func:`filter.phi_fft_order`
+* :func:`filter.phi_centered`
 
 Windows (in :mod:`domainia.wilson.windows`):
 
 * :class:`Window` (the protocol), :class:`Meyer`, :class:`RampWindow`,
   :class:`SampledWindow`, :data:`MEYER` (the WDM transform's window, ``Meyer(4)``),
-  :class:`WindowError`
-* :func:`sample_window` (the kernels' single entry point: validated, read-only samples of
-  any :class:`Window`, a window of your own included), :func:`require_window`
+  :class:`windows.WindowError`
+* :func:`windows.sample_window` (the kernels' single entry point: validated, read-only
+  samples of any :class:`Window`, a window of your own included),
+  :func:`windows.require_window`
 """
 
 from __future__ import annotations
 
-from . import (
-    evolutionary,
-    filter,
-    matrix,
-    noise,
-    stationary,
-    windows,
-)
-from .filter import phi_centered, phi_fft_order
-from .grid import (
-    Grid,
-    active_mask,
-    band_frequencies,
-    count_active,
-    delta_F,
-    delta_T,
-    n_samples,
-    pack,
-    time_pixel_centers,
-    unpack,
-    validate_dt,
-    validate_finite,
-    validate_grid,
-)
-from .noise import band_averaged_variance, empirical_variance
+from . import evolutionary, filter, grid, matrix, noise, stationary, windows
+from .grid import Grid
+from .noise import band_averaged_variance, evolutionary_band_variance
 from .transform import forward, forward_time, inverse, inverse_time
-from .windows import (
-    MEYER,
-    Meyer,
-    RampWindow,
-    SampledWindow,
-    Window,
-    WindowError,
-    require_window,
-    sample_window,
-)
+from .windows import MEYER, Meyer, RampWindow, SampledWindow, Window
 
 __all__ = [
     "MEYER",
@@ -119,38 +87,17 @@ __all__ = [
     "RampWindow",
     "SampledWindow",
     "Window",
-    "WindowError",
-    "active_mask",
     "band_averaged_variance",
-    "band_frequencies",
-    "count_active",
-    "delta_F",
-    "delta_T",
-    "empirical_variance",
-    # Submodules
     "evolutionary",
+    "evolutionary_band_variance",
     "filter",
-    # Transform
     "forward",
     "forward_time",
+    "grid",
     "inverse",
     "inverse_time",
     "matrix",
-    # Grid
-    "n_samples",
     "noise",
-    "pack",
-    # Filter
-    "phi_centered",
-    "phi_fft_order",
-    # Windows
-    "require_window",
-    "sample_window",
     "stationary",
-    "time_pixel_centers",
-    "unpack",
-    "validate_dt",
-    "validate_finite",
-    "validate_grid",
     "windows",
 ]

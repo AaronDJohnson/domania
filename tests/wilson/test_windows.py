@@ -12,9 +12,9 @@ import pytest
 
 from domainia import wilson
 from domainia.testing import ALT_WINDOW, smoothstep, wide_profile
-from domainia.wilson import MEYER, Meyer, RampWindow, SampledWindow, Window, WindowError
+from domainia.wilson import MEYER, Meyer, RampWindow, SampledWindow, Window
 from domainia.wilson.filter import nu_d, phi_centered
-from domainia.wilson.windows import require_window, sample_window
+from domainia.wilson.windows import WindowError, require_window, sample_window
 
 GRIDS = [(8, 16, 1.0), (16, 32, 0.25), (32, 8, 2.0), (64, 256, 2.0**-10)]
 
@@ -58,7 +58,7 @@ def test_a_ramp_window_with_the_meyer_ramp_is_meyer_bit_for_bit():
 def test_admissible_windows_are_even_supported_and_a_partition_of_unity(window, Nf, Nt, dt):
     phi = window.sample(Nf, Nt, dt)
     h = Nt // 2
-    inv_dF = 1.0 / wilson.delta_F(Nf, dt)
+    inv_dF = 1.0 / wilson.grid.delta_F(Nf, dt)
     assert phi.shape == (Nt,) and phi.dtype == np.float64 and phi[0] == 0.0
     assert np.array_equal(phi[h + 1:], phi[h - 1:0:-1])
     np.testing.assert_allclose(phi[h:] ** 2 + phi[:h] ** 2, inv_dF, rtol=1e-12, atol=0)
