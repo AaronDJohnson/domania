@@ -14,8 +14,7 @@ LEVELS = np.array([[1.0, 0.6, 0.3], [0.6, 1.2, -0.4], [0.3, -0.4, 0.9]])
 DELAYS, PHASES = np.array([0.0, 7.3, -11.9]) * DT, np.array([0.0, 0.4, -1.1])
 #: A complex mixing matrix for the loop-built model.
 B = np.random.default_rng(20261114).standard_normal((K, K, 2)) @ [1.0, 1.0j]
-#: The WDM grid of the stationary case, and its active cells in numpy.nonzero order (the rows
-#: of testing.dense_W).
+#: The WDM grid of the stationary case, and its active cells.
 NF, NT = 16, 32
 MASK = wilson.grid.active_mask(NF, NT)
 #: The routes from a stationary model S(f) to a covariance; the WDM route keeps the active cells.
@@ -95,11 +94,11 @@ def sigma(S, N, dt):
 
 
 def same_cell(Nf, Nt, Tp):
-    """The same-cell blocks of spec 6.2's dense evolutionary reference on the active cells,
-    (K, K, N): (I_K x W) Sigma (I_K x W)^T with Sigma_ab[i, j] = [B(t_i) B(t_j)^T]_ab R(i - j),
+    """The same-cell blocks of spec 6.2's dense evolutionary reference, (K, K, N) in folded flat
+    order: (I_K x W) Sigma (I_K x W)^T with Sigma_ab[i, j] = [B(t_i) B(t_j)^T]_ab R(i - j),
     where R is the stationary reference of psd."""
     N = Nf * Nt
-    W = testing.dense_W(Nf, Nt, DT, wilson.grid.active_mask(Nf, Nt))
+    W = testing.dense_W(Nf, Nt, DT, np.ones((Nf, Nt), bool))
     R = sigma(lambda f: psd(f)[None, None], N, DT)[0, 0]
     Bt = np.moveaxis(mixing(np.arange(N) * DT, Tp), 0, -1).copy()     # Bt[a, c, i] = B_ac(t_i)
     out = 0.0
@@ -144,11 +143,11 @@ def test_wdm_covariance_of_a_stationary_model_is_the_dense_reference():
     size-1 time axis gives the explicitly broadcast output, bit for bit."""
     Sigma = sigma(delayed, NF * NT, DT)
     for window in (wilson.MEYER, testing.ALT_WINDOW):
-        W = testing.dense_W(NF, NT, DT, MASK, window=window)
+        W = testing.dense_W(NF, NT, DT, np.ones((NF, NT), bool), window=window)
         want = np.einsum("pi,abij,pj->abp", W, Sigma, W, optimize=True)
         got = wdm_covariance(lambda f, t: delayed(f), Nf=NF, Nt=NT, dt=DT, window=window)
         assert got.shape == (K, K, NF + 1, NT) and got.dtype == np.float64
-        assert error(got[..., MASK], want) < 1e-12
+        assert error(wilson.grid.fold(got, NF, NT).reshape(K, K, -1), want) < 1e-12
         assert not np.any(got[..., ~MASK])
     full = wdm_covariance(lambda f, t: delayed(f + 0 * t), Nf=NF, Nt=NT, dt=DT, window=window)
     assert np.array_equal(got, full)
@@ -163,12 +162,13 @@ def test_wdm_covariance_of_an_evolutionary_model(monkeypatch):
     Nf, Nt = 16, 64
     mask = wilson.grid.active_mask(Nf, Nt)
     lead, trail = wilson.evolutionary.wrap_cut_columns(Nf, Nt, DT)
-    n = np.nonzero(mask)[1]
+    n = wilson.grid.cells(Nf, Nt)[1].ravel()
     kept = (n >= lead) & (n < Nt - trail)
     for Tp, bound in ((32, 5e-2), (64, 1.5e-2)):
         S = modulated(Tp * Nf * DT)
         got = wdm_covariance(S, Nf=Nf, Nt=Nt, dt=DT)
-        assert error(got[..., mask][..., kept], same_cell(Nf, Nt, Tp * Nf * DT)[..., kept]) < bound
+        assert error(wilson.grid.fold(got, Nf, Nt).reshape(K, K, -1)[..., kept],
+                     same_cell(Nf, Nt, Tp * Nf * DT)[..., kept]) < bound
         for a in range(K):
             want = wilson.noise.evolutionary_band_variance(
                 Nf, Nt, DT, lambda f, t, S=S, a=a: S(f, t)[a, a])

@@ -16,10 +16,8 @@ from domainia import testing as T
 NF, NT, DT = 8, 16, 1.0 / 16
 N = NF * NT
 F_MIN, F_REF = 0.5, 1.0
-#: Every active cell.
-MASK = wilson.grid.active_mask(NF, NT)
-#: ``wilson.matrix.build_W``'s folded rows in ``MASK``'s band order.
-BAND = np.argsort(np.ravel_multi_index(wilson.grid.cells(NF, NT), (NF + 1, NT)), axis=None)
+#: Every cell.
+MASK = np.ones((NF, NT), bool)
 
 
 def L_of(f):
@@ -39,8 +37,7 @@ def rel(a, b):
 def test_dense_W_rows_are_the_atoms(rng):
     W = T.dense_W(NF, NT, DT, MASK)
     x = rng.standard_normal(N)
-    w = wilson.grid.unfold(wilson.forward_time(x, NF, NT, DT), NF, NT)
-    assert np.max(np.abs(W @ x - w[MASK])) < 1e-12
+    assert np.max(np.abs(W @ x - wilson.forward_time(x, NF, NT, DT)[MASK])) < 1e-12
     assert np.max(np.abs(W @ W.T - DT * np.eye(N))) < 1e-14
     sub = MASK.copy()
     sub[:, :3] = sub[:, -1:] = False
@@ -65,7 +62,7 @@ def test_eq45_differs_from_exact_at_second_order_with_drift():
     leading and 1 trailing column)."""
     C = T.eq45_dense(NF, NT, DT, MASK, drift(-2.0, 1.2))
     exact = exact_covariance(NF, NT, DT, drift(-2.0, 1.2))
-    interior = ~np.isin(np.nonzero(MASK)[1], np.r_[0:3, NT - 1])
+    interior = ~np.isin(wilson.grid.cells(NF, NT)[1].ravel(), np.r_[0:3, NT - 1])
     d = np.diag(exact)[interior]
     assert np.max(np.abs(np.diag(C)[interior] / d - 1)) < 0.05
 
@@ -74,26 +71,26 @@ def test_the_oracles_compute_in_the_window_they_are_given():
     """With ALT_WINDOW: ``dense_W`` is ``build_W``, the congruence is ``W S W^T``, and Eq. 45
     of a stationary spectrum is the exact covariance; each differs from Meyer's."""
     W = T.dense_W(NF, NT, DT, MASK, window=T.ALT_WINDOW)
-    np.testing.assert_array_equal(W, wilson.matrix.build_W(NF, NT, DT, window=T.ALT_WINDOW)[BAND])
+    np.testing.assert_array_equal(W, wilson.matrix.build_W(NF, NT, DT, window=T.ALT_WINDOW))
     S = np.diag(1.0 + np.arange(N) / N)                  # not the identity: W I W^T = dt I for any window
     alt = T.wdm_congruence(S, NF, NT, DT, MASK, window=T.ALT_WINDOW)
     np.testing.assert_allclose(alt, W @ S @ W.T, rtol=0, atol=1e-12)
     assert not np.allclose(alt, T.wdm_congruence(S, NF, NT, DT, MASK))
     got = T.eq45_dense(NF, NT, DT, MASK, drift(-1.2, 0.0), window=T.ALT_WINDOW)
     exact = wilson.matrix.build_C_wdm(NF, NT, DT, lambda f: drift(-1.2, 0.0)(f, 0.0),
-                                      window=T.ALT_WINDOW)[np.ix_(BAND, BAND)]
+                                      window=T.ALT_WINDOW)
     assert rel(got, exact) < 1e-10
     assert not np.allclose(got, T.eq45_dense(NF, NT, DT, MASK, drift(-1.2, 0.0)))
 
 
 def test_the_oracles_refuse_a_mask_of_the_wrong_kind_or_value():
-    """A mask that is not boolean is a wrong kind; a wrong shape or an inactive cell is a wrong
-    value.  ``eq45_dense`` also needs a callable spectrum."""
+    """A mask that is not boolean is a wrong kind; a wrong shape (flat, or padded
+    ``(Nf + 1, Nt)``) is a wrong value.  ``eq45_dense`` also needs a callable spectrum."""
     for mask, err, message in (
         (MASK.astype(int), TypeError, "mask must be a boolean cell mask, got dtype int64"),
         (None, TypeError, "mask must be a boolean cell mask, got dtype object"),
-        (MASK.reshape(-1), ValueError, "mask must have shape (Nf + 1, Nt) = (9, 16), got (144,)"),
-        (np.ones((NF + 1, NT), bool), ValueError, "mask selects the inactive cell (m=0, n=1)"),
+        (MASK.reshape(-1), ValueError, "mask must have shape (Nf, Nt) = (8, 16), got (128,)"),
+        (np.ones((NF + 1, NT), bool), ValueError, "mask must have shape (Nf, Nt) = (8, 16), got (9, 16)"),
     ):
         match = f"^{re.escape(message)}$"
         with pytest.raises(err, match=match):

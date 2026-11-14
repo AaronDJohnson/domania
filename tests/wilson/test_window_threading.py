@@ -34,7 +34,7 @@ MEYER_HELPERS = frozenset({"phi_centered"})
 #: Every function that samples the window, directly or through another consumer.
 CONSUMERS = frozenset({
     "_gather_bands", "forward", "forward_time", "inverse", "inverse_time", "_forward",
-    "_forward_time", "_inverse", "_inverse_time", "base_atom_spectra", "atom_spectrum",
+    "_inverse", "_inverse_time", "base_atom_spectra", "atom_spectrum",
     "build_W", "build_C_wdm",
     "_slab_K", "build_lambda_blocks_full_active", "build_K_full_active", "psd_from_K",
     "apply_lambda_from_psd", "psd_from_lambda_blocks",
@@ -428,12 +428,9 @@ def _read_only(a):
 
 @lru_cache(maxsize=None)
 def _dense(window, Nf, Nt, dt):
-    """``(W, C, W_a, C_a)``: ``build_W`` and ``build_C_wdm`` of ``psd`` with ``window``, and the
-    same with their rows (and columns) in band order, ``numpy.nonzero`` of the padded mask
-    (read-only)."""
-    W, C = M.build_W(Nf, Nt, dt, window=window), M.build_C_wdm(Nf, Nt, dt, psd, window=window)
-    a = np.argsort(np.ravel_multi_index(wilson.grid.cells(Nf, Nt), (Nf + 1, Nt)), axis=None)
-    return tuple(_read_only(x) for x in (W, C, W[a], C[np.ix_(a, a)]))
+    """``(W, C)``: ``build_W`` and ``build_C_wdm`` of ``psd`` with ``window`` (read-only)."""
+    return (_read_only(M.build_W(Nf, Nt, dt, window=window)),
+            _read_only(M.build_C_wdm(Nf, Nt, dt, psd, window=window)))
 
 
 def _blocks_of(C, Nf, Nt):
@@ -525,8 +522,7 @@ def test_empirical_variance_is_the_mean_square_of_the_same_draws(window, Nf, Nt,
     rng = np.random.default_rng(5)
     draws = [W @ np.fft.irfft(colored_noise(N, dt, psd, rng), n=N) for _ in range(3)]
     want = np.mean(np.square(draws), axis=0).reshape(Nf, Nt)
-    m, n = wilson.grid.cells(Nf, Nt)
-    _close(empirical_variance(Nf, Nt, dt, psd, 3, seed=5, window=window)[m, n], want, RTOL_KERNEL,
+    _close(empirical_variance(Nf, Nt, dt, psd, 3, seed=5, window=window), want, RTOL_KERNEL,
            "empirical_variance")
 
 
@@ -534,29 +530,30 @@ def test_empirical_variance_is_the_mean_square_of_the_same_draws(window, Nf, Nt,
 @pytest.mark.parametrize("Nf, Nt, dt", GRIDS)
 def test_time_masks_are_the_dense_mask(window, Nf, Nt, dt):
     """``energy_fraction`` is ``diag(M)`` and ``apply_time_mask`` applies ``M`` (to a stack of
-    rows and to one 1-D row), ``M = W_a diag(w2) W_a^T / dt``."""
+    grids and to one grid), ``M = W diag(w2) W^T / dt``."""
     N = Nf * Nt
     rng = np.random.default_rng(N + Nf + 4)
-    Wa = _dense(window, Nf, Nt, dt)[2]
+    W = _dense(window, Nf, Nt, dt)[0]
     w2 = rng.uniform(0.0, 1.0, N)
-    Mm = Wa @ (w2[:, None] * Wa.T) / dt
-    Y = rng.standard_normal((2, N))
-    _close(E.energy_fraction(w2, Nf, Nt, dt, window=window), np.diag(Mm), RTOL_KERNEL,
-           "energy_fraction")
-    _close(E.apply_time_mask(Y, w2, Nf, Nt, dt, window=window), Y @ Mm.T, RTOL_KERNEL,
-           "apply_time_mask")
-    _close(E.apply_time_mask(Y[0], w2, Nf, Nt, dt, window=window), (Mm @ Y[0])[None, :],
-           RTOL_KERNEL, "apply_time_mask(1-D)")
+    Mm = W @ (w2[:, None] * W.T) / dt
+    Y = rng.standard_normal((2, Nf, Nt))
+    _close(E.energy_fraction(w2, Nf, Nt, dt, window=window), np.diag(Mm).reshape(Nf, Nt),
+           RTOL_KERNEL, "energy_fraction")
+    _close(E.apply_time_mask(Y, w2, Nf, Nt, dt, window=window),
+           (Y.reshape(2, N) @ Mm.T).reshape(Y.shape), RTOL_KERNEL, "apply_time_mask")
+    _close(E.apply_time_mask(Y[0], w2, Nf, Nt, dt, window=window),
+           (Mm @ Y[0].ravel()).reshape(Nf, Nt), RTOL_KERNEL, "apply_time_mask(one grid)")
 
 
-def _wrap_reference(W_a, Nf, Nt):
-    """The definition of ``wrap_fractions`` on the band-order rows ``W_a``: for the active cell
-    ``(m, n)``, centred on sample ``c = n Nf``, the share of ``sum_t g_mn(t)^2`` at samples
-    whose unwrapped position ``c + delta`` (``delta`` the signed offset from the centre, in
-    ``[-N/2, N/2)``) lies outside ``[0, N)``; ``nan`` at inactive cells."""
+def _wrap_reference(W, Nf, Nt):
+    """The definition of ``wrap_fractions`` on the folded rows ``W``, as band rows ``(Nf + 1,
+    Nt)``: for the cell ``(m, n)``, centred on sample ``c = n Nf``, the share of
+    ``sum_t g_mn(t)^2`` at samples whose unwrapped position ``c + delta`` (``delta`` the signed
+    offset from the centre, in ``[-N/2, N/2)``) lies outside ``[0, N)``; ``nan`` at inactive
+    cells."""
     N = Nf * Nt
-    m, n = np.nonzero(wilson.grid.active_mask(Nf, Nt))
-    g2 = W_a ** 2
+    m, n = (a.ravel() for a in wilson.grid.cells(Nf, Nt))
+    g2 = W ** 2
     c = n[:, None] * Nf
     pos = c + (np.arange(N)[None, :] - c + N // 2) % N - N // 2
     out = np.full((Nf + 1, Nt), np.nan)
@@ -577,12 +574,11 @@ def _cut_reference(frac, tol):
 @pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
 @pytest.mark.parametrize("Nf, Nt, dt", GRIDS)
 def test_wrap_rule_is_its_definition_on_the_rows_of_W(window, Nf, Nt, dt):
-    """``wrap_fractions`` (all bands and a subset) is its definition on the rows of
-    ``build_W``, and ``wrap_cut_columns`` is the cut rule on those fractions."""
-    want = _wrap_reference(_dense(window, Nf, Nt, dt)[2], Nf, Nt)
-    got = E.wrap_fractions(Nf, Nt, dt, window=window)
-    assert np.array_equal(np.isnan(got), np.isnan(want))
-    _close(np.nan_to_num(got, nan=-1.0), np.nan_to_num(want, nan=-1.0), RTOL_KERNEL, "wrap_fractions")
+    """``wrap_fractions`` (folded, and band rows for a subset) is its definition on the rows of
+    ``build_W``, and ``wrap_cut_columns`` is the cut rule on the band rows."""
+    want = _wrap_reference(_dense(window, Nf, Nt, dt)[0], Nf, Nt)
+    _close(E.wrap_fractions(Nf, Nt, dt, window=window), want[wilson.grid.cells(Nf, Nt)], RTOL_KERNEL,
+           "wrap_fractions")
     bands = np.array([0, Nf // 2, Nf])
     _close(np.nan_to_num(E.wrap_fractions(Nf, Nt, dt, bands=bands, window=window), nan=-1.0),
            np.nan_to_num(want[bands], nan=-1.0), RTOL_KERNEL, "wrap_fractions(bands)")
@@ -593,15 +589,15 @@ def test_wrap_rule_is_its_definition_on_the_rows_of_W(window, Nf, Nt, dt):
 @pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
 @pytest.mark.parametrize("Nf, Nt, dt", GRIDS)
 def test_exact_covariance_is_the_dense_congruence(window, Nf, Nt, dt):
-    """``exact_covariance`` is ``W_a Sigma W_a^T`` (``Sigma = time_domain_covariance``), and
+    """``exact_covariance`` is ``W Sigma W^T`` (``Sigma = time_domain_covariance``), and
     ``build_C_wdm`` in the stationary limit."""
     N = Nf * Nt
-    Wa, Ca = _dense(window, Nf, Nt, dt)[2:]
-    _close(E.exact_covariance(Nf, Nt, dt, _stationary, window=window), Ca, RTOL_KERNEL,
+    W, C = _dense(window, Nf, Nt, dt)
+    _close(E.exact_covariance(Nf, Nt, dt, _stationary, window=window), C, RTOL_KERNEL,
            "exact_covariance(stationary)")
     Sn = psd_ft(N * dt)
     _close(E.exact_covariance(Nf, Nt, dt, Sn, window=window),
-           Wa @ E.time_domain_covariance(N, dt, Sn) @ Wa.T, RTOL_KERNEL, "exact_covariance")
+           W @ E.time_domain_covariance(N, dt, Sn) @ W.T, RTOL_KERNEL, "exact_covariance")
 
 
 def _assemble_cheb(plan, diag, up):
@@ -637,12 +633,13 @@ def test_eq45_plan_carries_the_window_to_every_eq45_builder(window, Nf, Nt, dt):
     """``plan.base`` is ``base_atom_spectra(window=)``, and in the stationary limit the plan's
     ``eq45_direct``, ``eq45_blocks_cheb`` and ``eq45_blocks_gram`` are ``build_C_wdm``,
     on all cells and on a ``keep`` subset (the kept rows and columns)."""
-    Ca = _dense(window, Nf, Nt, dt)[3]
+    C = _dense(window, Nf, Nt, dt)[1]
     base = T.base_atom_spectra(Nf, Nt, dt, window=window)
-    keep = ~np.isin(np.nonzero(wilson.grid.active_mask(Nf, Nt))[1], (0, 1, Nt - 1))
-    for tag, plan, ref in (("", E.eq45_plan(Nf, Nt, dt, window=window), Ca),
+    keep = ~np.isin(wilson.grid.cells(Nf, Nt)[1], (0, 1, Nt - 1))
+    k = keep.ravel()
+    for tag, plan, ref in (("", E.eq45_plan(Nf, Nt, dt, window=window), C),
                            ("(keep)", E.eq45_plan(Nf, Nt, dt, keep, window=window),
-                            Ca[np.ix_(keep, keep)])):
+                            C[np.ix_(k, k)])):
         assert sorted(plan.base) == sorted(base)
         assert all(np.array_equal(plan.base[key], G) for key, G in base.items())
         _close(E.eq45_direct(plan, _stationary), ref, RTOL_KERNEL, f"eq45_direct{tag}")

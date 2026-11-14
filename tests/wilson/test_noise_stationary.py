@@ -68,7 +68,7 @@ def test_colored_noise_and_empirical_variance_are_the_oracle_to_rounding():
     b = onoise._generate_colored_noise(Nf * Nt, dt, _psd, np.random.default_rng(7))
     assert np.array_equal(a, b)
     got = testing.empirical_variance(Nf, Nt, dt, _psd, 20, seed=3)
-    ref = onoise.empirical_variance(Nf, Nt, dt, _psd, 20, seed=3)
+    ref = onoise.empirical_variance(Nf, Nt, dt, _psd, 20, seed=3)[cells(Nf, Nt)]
     assert got.dtype == ref.dtype
     assert _gap(got, ref) <= RTOL64          # Hz window (v0.12.0): measured 2.1e-16
 

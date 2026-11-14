@@ -31,6 +31,9 @@ the plan's atoms (``plan.base``) carry the window to every builder downstream.
 PSDs are callables ``Sn(f, t)``: elementwise, broadcasting, argument order
 ``(f, t)`` (WDM Paper II writes :math:`S(t, f)`), samples through
 :func:`domainia.wilson.grid.sanitize_psd`.  Cell times are :math:`t_n = n\Delta T`.
+
+WDM arrays are folded ``(..., Nf, Nt)`` and dense matrices index the cells in folded flat order
+(:func:`domainia.wilson.grid.cells`); the Eq. (45) blocks are per band, time ascending.
 """
 
 from __future__ import annotations
@@ -47,6 +50,7 @@ from ._checks import require_dtype, require_real
 from .grid import (
     _require_int,
     active_mask,
+    cells,
     delta_T,
     endpoint_weights,
     validate_dt,
@@ -54,10 +58,11 @@ from .grid import (
 )
 from .noise import _psd_at
 from .transform import (
-    _forward_time,
     _inverse_time,
     atom_spectrum,
     base_atom_spectra,
+    forward_time,
+    inverse_time,
 )
 from .windows import MEYER, Window
 
@@ -98,20 +103,20 @@ __all__ = [
 
 
 def energy_fraction(w2: Array, Nf: int, Nt: int, dt: float, *, window: Window = MEYER) -> Array:
-    """``rho_p = sum_t w2(t) g_p(t)^2 / dt`` for every active cell ``p`` (band order), from the
+    """``rho_p = sum_t w2(t) g_p(t)^2 / dt`` for every cell ``p``, folded ``(Nf, Nt)``, from the
     time-domain weight ``w2`` of shape ``(N,)``: one FFT correlation per base atom.
     """
     validate_grid(Nf, Nt)
     validate_dt(dt)
     N = Nf * Nt
-    m_arr, n_arr = np.nonzero(active_mask(Nf, Nt))
+    m_arr, n_arr = cells(Nf, Nt)
     base = base_atom_spectra(Nf, Nt, dt, window=window)
-    rho = np.empty(m_arr.size)
+    rho = np.empty((Nf, Nt))
     W2 = np.fft.rfft(w2)
     for (m, a), G in base.items():
         g2 = np.fft.irfft(G, n=N) ** 2
         corr = np.fft.irfft(W2 * np.conj(np.fft.rfft(g2)), n=N)  # sum_t w2[t+s] g2[t]
-        sel = np.flatnonzero((m_arr == m) & (n_arr % 2 == a))
+        sel = (m_arr == m) & (n_arr % 2 == a)
         shifts = (n_arr[sel] - a) * Nf
         rho[sel] = corr[shifts % N] / dt
     return rho
@@ -119,19 +124,11 @@ def energy_fraction(w2: Array, Nf: int, Nt: int, dt: float, *, window: Window = 
 
 def apply_time_mask(Y: Array, chi: Array, Nf: int, Nt: int, dt: float, *,
                     window: Window = MEYER) -> Array:
-    """``M y`` for each packed row ``y`` of ``Y``, ``M = W chi W^T / dt``: back to time,
-    mask, forward again.
-
-    ``Y`` is ``(N,)`` or ``(B, N)``: packed rows (active cells, band order).  ``chi`` is the
-    time-domain mask, ``(N,)``.
+    """``M y`` for each folded grid ``y`` of ``Y`` (``(..., Nf, Nt)``), ``M = W chi W^T / dt``:
+    back to time, mask, forward again.  ``chi`` is the time-domain mask, ``(N,)``.
     """
-    validate_grid(Nf, Nt)
-    mask = active_mask(Nf, Nt)
-    Y = np.atleast_2d(Y)
-    full = np.zeros((Y.shape[0], Nf + 1, Nt))
-    full[:, mask] = Y
-    X = _inverse_time(full, Nf, Nt, dt, window=window) * chi
-    return _forward_time(X, Nf, Nt, dt, window=window)[:, mask]
+    X = inverse_time(Y, Nf, Nt, dt, window=window) * chi
+    return forward_time(X, Nf, Nt, dt, window=window)
 
 
 # ---------------------------------------------------------------------------
@@ -146,8 +143,8 @@ def wrap_fractions(Nf: int, Nt: int, dt: float, *, bands: Array | None = None,
     For the cell :math:`(m, n)`, centred on sample :math:`n N_f`, the fraction of
     :math:`\sum_j g_{mn}(t_j)^2` at samples whose unwrapped position (measured from
     the centre along the shorter way round) lies outside :math:`[0, N)`.
-    Returns ``(Nf + 1, Nt)`` (or ``(len(bands), Nt)`` for the bands ``bands``), ``nan`` at
-    inactive cells.
+    Returns the folded ``(Nf, Nt)``, or for the bands ``bands`` their rows ``(len(bands), Nt)``,
+    ``nan`` at an edge band's inactive (odd) columns.
     """
     validate_grid(Nf, Nt)
     N = Nf * Nt
@@ -171,7 +168,7 @@ def wrap_fractions(Nf: int, Nt: int, dt: float, *, bands: Array | None = None,
             left = cum[np.searchsorted(ds, -c, side="left")]            # delta < -c
             right = total - cum[np.searchsorted(ds, N - c, side="left")]  # delta >= N - c
             out[row, cols] = (left + right) / total
-    return out
+    return out[cells(Nf, Nt)] if bands is None else out
 
 
 def wrap_cut_columns(Nf: int, Nt: int, dt: float, tol: float = 1e-3, *,
@@ -189,8 +186,9 @@ def wrap_cut_columns(Nf: int, Nt: int, dt: float, tol: float = 1e-3, *,
     >>> wilson.evolutionary.wrap_cut_columns(64, 256, 2**-10)
     (6, 5)
     """
-    # worst band per column
-    frac = np.nanmax(wrap_fractions(Nf, Nt, dt, bands=bands, window=window), axis=0)
+    # worst band per column, on band rows (a folded column mixes times n and n - 1)
+    rows = np.arange(Nf + 1) if bands is None else bands
+    frac = np.nanmax(wrap_fractions(Nf, Nt, dt, bands=rows, window=window), axis=0)
     bad = np.flatnonzero(frac > tol)
     half = Nt // 2
     lead = int(bad[bad < half].max()) + 1 if np.any(bad < half) else 0
@@ -243,15 +241,14 @@ def draw_noise(N: int, dt: float, Sn: PsdFtFunc, rng: np.random.Generator) -> Ar
 
 def exact_covariance(Nf: int, Nt: int, dt: float, Sn: PsdFtFunc, *,
                      window: Window = MEYER) -> Array:
-    r"""Exact :math:`\Lambda = W_a \Sigma W_a^{\mathsf T}` on the active cells (band order),
-    built in Gram form :math:`(W_a G)(W_a G)^{\mathsf T}`, so PSD by construction.
+    r"""Exact :math:`\Lambda = W \Sigma W^{\mathsf T}`, ``(N, N)`` in folded flat order,
+    built in Gram form :math:`(W G)(W G)^{\mathsf T}`, so PSD by construction.
     ``Sn(f, t)`` is elementwise and broadcasting.
     """
     validate_grid(Nf, Nt)
     N = Nf * Nt
     G = time_domain_factor(N, dt, Sn)
-    A = _forward_time(np.ascontiguousarray(G.T), Nf, Nt, dt,
-                      window=window)[:, active_mask(Nf, Nt)].T
+    A = forward_time(np.ascontiguousarray(G.T), Nf, Nt, dt, window=window).reshape(-1, N).T
     Lam = A @ A.T
     return 0.5 * (Lam + Lam.T)
 
@@ -265,7 +262,7 @@ def exact_covariance(Nf: int, Nt: int, dt: float, Sn: PsdFtFunc, *,
 class Eq45BlockSpec:
     """One band block ``(m, m2)``, ``m2 in {m, m+1}``, of an :class:`Eq45Plan`.
 
-    ``R``/``C`` (row/column packed cells), ``combo = 2a + b`` (base-atom parities),
+    ``R``/``C`` (row/column cells, folded flat indices), ``combo = 2a + b`` (base-atom parities),
     ``d`` (circular column lag), ``s = n + n'`` (mid-time index; ``t_bar = s dT/2``)
     and ``B = {combo: (k, eta_k G_ma(k) G*_m2b(k) / T)}`` over the support bins.
     """
@@ -284,8 +281,9 @@ class Eq45BlockSpec:
 class Eq45Plan:
     """Constants of Eq. (45) on the kept cells of one grid.
 
-    ``specs`` holds one :class:`Eq45BlockSpec` per band block ``(m, m2)``,
-    ``m2 in {m, m+1}``.
+    The per-cell arrays ``m``, ``n``, ``t`` and ``pos`` (row in the kept-cell matrix, ``-1`` if
+    not kept) are in folded flat order, and ``cells`` lists the kept ones.  ``specs`` holds one
+    :class:`Eq45BlockSpec` per band block ``(m, m2)``, ``m2 in {m, m+1}``.
     """
 
     Nf: int
@@ -335,9 +333,9 @@ def _block_spec(Nf: int, Nt: int, T: float, n: IntArray, eta: Array,
 def eq45_plan(Nf: int, Nt: int, dt: float, keep: BoolArray | None = None, *,
               P: int = 24, t_max: float | None = None,
               window: Window = MEYER) -> Eq45Plan:
-    """Static plan of Eq. (45) on the cells ``keep`` (a boolean mask over the ``N`` packed
-    cells, band order; all by default), Chebyshev order ``P`` in time on
-    ``t_bar in [0, t_max]`` (default: this grid's ``T = N dt``).
+    """Static plan of Eq. (45) on the cells ``keep`` (a boolean folded ``(Nf, Nt)`` mask; all
+    by default), Chebyshev order ``P`` in time on ``t_bar in [0, t_max]`` (default: this grid's
+    ``T = N dt``).  The kept cells are in folded flat order.
 
     Pair mid-times of the kept cells must lie in ``[0, t_max]``.  A padded grid
     passes its extended ``t_max``; the spectrum's time dependence is then
@@ -364,28 +362,27 @@ def eq45_plan(Nf: int, Nt: int, dt: float, keep: BoolArray | None = None, *,
     Nf, Nt, dt = int(Nf), int(Nt), float(dt)
     N = Nf * Nt
     T = N * dt
-    mask = active_mask(Nf, Nt)
-    m, n = np.nonzero(mask)                                       # band-major
+    m, n = (a.ravel() for a in cells(Nf, Nt))                     # folded flat order
     t = n * delta_T(Nf, dt)                                       # cell times
     K = N // 2 + 1
     f = np.fft.rfftfreq(N, d=dt)
     eta = np.ones(K)
     eta[[0, -1]] = 0.5
     base = base_atom_spectra(Nf, Nt, dt, window=window)
-    keep = np.ones(m.size, bool) if keep is None else np.asarray(keep)
+    keep = np.ones((Nf, Nt), bool) if keep is None else np.asarray(keep)
     # An index array (e.g. np.arange(N)) would silently drop cell 0.
     require_dtype("keep", keep, "b", "a boolean mask over the packed cells")
-    if keep.shape != (m.size,):
-        raise ValueError(f"keep must be a mask over the {m.size} packed cells; got {keep.shape}")
+    if keep.shape != (Nf, Nt):
+        raise ValueError(f"keep must have shape (Nf, Nt) = {(Nf, Nt)}, got {keep.shape}")
     t_max = T if t_max is None else require_real("t_max", t_max)
-    cells = np.flatnonzero(keep)
+    kept = np.flatnonzero(keep)
     pos = -np.ones(m.size, int)
-    pos[cells] = np.arange(cells.size)
-    band_cells = [cells[m[cells] == mm] for mm in range(Nf + 1)]
+    pos[kept] = np.arange(kept.size)
+    band_cells = [kept[m[kept] == mm] for mm in range(Nf + 1)]
     # Chebyshev basis on the pair mid-times t_bar = s dT / 2, s = n + n'
     s_grid = np.arange(2 * Nt - 1)
     u = 2.0 * (s_grid * 0.5 * delta_T(Nf, dt) / t_max - 0.5)
-    used = s_grid <= 2 * int(n[cells].max())
+    used = s_grid <= 2 * int(n[kept].max())
     if np.any(np.abs(u[used]) > 1 + 1e-12):
         raise ValueError("pair mid-times must lie inside [0, t_max]")
     Tp = np.empty((P, s_grid.size))
@@ -398,7 +395,7 @@ def eq45_plan(Nf: int, Nt: int, dt: float, keep: BoolArray | None = None, *,
              for mm in range(Nf + 1) for m2 in (mm, mm + 1) if m2 <= Nf]
     k_all = [k for spec in specs for (k, _) in spec.B.values()]
     k_used = np.unique(np.concatenate(k_all)) if k_all else np.zeros(0, int)
-    return Eq45Plan(Nf, Nt, dt, N, T, K, P, t_max, f, eta, m, n, t, base, keep, cells, pos,
+    return Eq45Plan(Nf, Nt, dt, N, T, K, P, t_max, f, eta, m, n, t, base, keep, kept, pos,
                     band_cells, Tp, specs, k_used)
 
 

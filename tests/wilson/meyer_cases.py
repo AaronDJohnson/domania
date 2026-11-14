@@ -47,14 +47,23 @@ DROPPED = ("domainia::TimeToWDM.", "domainia::WDMToTime.", "domainia::FourierToW
            "wilson::matrix.active_W::", "wilson::matrix.build_C_wdm_active::")
 #: The comparison: ``max |got - want| <= RTOL * s`` (see :func:`mismatches`).
 RTOL = 1e-12
-#: Families recorded padded ``(..., Nf+1, Nt)`` whose kernels now return the folded layout.
+#: Families recorded padded ``(..., Nf+1, Nt)`` whose kernels now return the folded layout
+#: (``wrap_fractions`` recorded -1 at the inactive cells).
 FOLDED = ("wilson::transform.forward", "wilson::transform.forward_many",
           "wilson::transform.forward_time", "wilson::transform.forward_time_many",
           "wilson::stationary.apply_lambda_from_psd", "wilson::noise.band_averaged_variance",
-          "wilson::noise.evolutionary_band_variance")
-#: Dense families recorded with padded ``(Nf+1) Nt`` rows (and columns, ``build_C_wdm``), now
-#: in folded flat order.
-FOLDED_ROWS = ("wilson::matrix.build_W", "wilson::matrix.build_C_wdm")
+          "wilson::noise.evolutionary_band_variance", "wilson::noise.empirical_variance",
+          "wilson::evolutionary.wrap_fractions")
+#: Families recorded over the active cells in band order (``numpy.nonzero`` of the padded mask),
+#: now ``(..., Nf, Nt)`` folded.
+BAND_ORDER = ("wilson::evolutionary.energy_fraction", "wilson::evolutionary.apply_time_mask",
+              "domainia::BandAveragedVariance")
+#: Dense families, now in folded flat order: rows (the ``_W`` ones) or rows and columns, recorded
+#: padded (``wilson::matrix.``) or in band order.  Every recorded case selects every cell.
+DENSE = ("wilson::matrix.build_W", "wilson::matrix.build_C_wdm", "domainia::testing.dense_W",
+         "domainia::testing.wdm_congruence", "domainia::testing.eq45_dense",
+         "domainia::EvolutionaryCovariance.direct", "wilson::evolutionary.exact_covariance",
+         "wilson::evolutionary.eq45_direct")
 
 Case = tuple[str, Callable[[dict], Any]]
 
@@ -67,21 +76,27 @@ def _family(key: str) -> str:
 def load_baseline() -> dict[str, np.ndarray]:
     """The recorded baseline as ``{key: array}``.  The families whose kernels now return the
     folded WDM layout are converted here, never in :func:`mismatches` (folded WDM spec,
-    section 5): the :data:`FOLDED` ones are gathered into the folded slots, and the
-    :data:`FOLDED_ROWS` rows (and the covariance's columns) into folded flat order, without
-    ``wilson.grid.fold``'s check of the inactive cells."""
+    section 5): :data:`FOLDED` is gathered into the folded slots, without ``wilson.grid.fold``'s
+    check of the inactive cells, and :data:`BAND_ORDER` and :data:`DENSE` are permuted into
+    folded (flat) order."""
     from domainia.wilson.grid import cells
 
     with np.load(BASELINE) as z:
         out = {k: z[k] for k in z.files}
     for k, v in out.items():
         fam = _family(k)
-        if fam in FOLDED + FOLDED_ROWS:
+        if fam in FOLDED + BAND_ORDER + DENSE:
             Nf, Nt = map(int, k.split("::")[2].split("x"))
             m, n = cells(Nf, Nt)
             p = (m * Nt + n).ravel()                # each folded slot's padded flat index
-            out[k] = (v[..., m, n] if fam in FOLDED else v[p] if fam == "wilson::matrix.build_W"
-                      else v[np.ix_(p, p)])
+            b = p.argsort().argsort()               # ... and its band-order index
+            if fam in FOLDED:
+                out[k] = v[..., m, n]
+            elif fam in BAND_ORDER:
+                out[k] = v[..., b].reshape(v.shape[:-1] + (Nf, Nt))
+            else:
+                i = p if fam.startswith("wilson::matrix.") else b
+                out[k] = v[i] if fam.endswith("_W") else v[np.ix_(i, i)]
     return out
 
 
@@ -151,7 +166,6 @@ def wilson_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
     # Fixed WDM-domain inputs, computed once with the default (Meyer) window.
     w = wl.forward(xr, Nf, Nt, dt)
     Wm = wl.forward(Xr, Nf, Nt, dt)
-    mask = wl.grid.active_mask(Nf, Nt)
     Tr, M, St, No, E = wl.transform, wl.matrix, wl.stationary, wl.noise, wl.evolutionary
     K0 = St.build_K_full_active(Nf, Nt, dt, psd)[0]
     B0 = St.build_lambda_blocks_full_active(Nf, Nt, dt, psd)
@@ -182,11 +196,8 @@ def wilson_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
          lambda kw: testing.empirical_variance(Nf, Nt, dt, psd, 3, seed=11, **kw)),
         # w2 is a length-N time-domain weight (rho_p = sum_t w2(t) g_p(t)^2 / dt).
         ("evolutionary.energy_fraction", lambda kw: E.energy_fraction(x ** 2, Nf, Nt, dt, **kw)),
-        ("evolutionary.apply_time_mask",
-         lambda kw: E.apply_time_mask(wl.grid.unfold(Wm, Nf, Nt)[:, mask], chi, Nf, Nt, dt, **kw)),
-        # nan (inactive cells) -> -1, as recorded; the fractions lie in [0, 1].
-        ("evolutionary.wrap_fractions",
-         lambda kw: np.nan_to_num(E.wrap_fractions(Nf, Nt, dt, **kw), nan=-1.0)),
+        ("evolutionary.apply_time_mask", lambda kw: E.apply_time_mask(Wm, chi, Nf, Nt, dt, **kw)),
+        ("evolutionary.wrap_fractions", lambda kw: E.wrap_fractions(Nf, Nt, dt, **kw)),
         ("evolutionary.wrap_cut_columns", lambda kw: np.asarray(E.wrap_cut_columns(Nf, Nt, dt, **kw))),
         ("evolutionary.eq45_plan", lambda kw: E.eq45_plan(Nf, Nt, dt, **kw).base),
     ]
@@ -204,8 +215,8 @@ def domainia_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
     """The cases recorded on the domainia layer, under their recorded names.  The classes
     that recorded them are computed by the kernels they wrapped: ``EvolutionaryCovariance``
     by ``eq45_plan`` (``P = 24``) + ``eq45_coeffs_interp`` + ``eq45_blocks_cheb`` and by
-    ``eq45_direct``, ``BandAveragedVariance`` by ``noise.evolutionary_band_variance`` on the
-    active cells.  ``kw`` goes to every window-taking call."""
+    ``eq45_direct``, ``BandAveragedVariance`` by ``noise.evolutionary_band_variance``.  ``kw``
+    goes to every window-taking call."""
     from domainia import testing
 
     N = Nf * Nt
@@ -213,8 +224,7 @@ def domainia_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
     rng.standard_normal(5 * N + 2 * Nt)        # the recorded maps cases' inputs: Sigma unchanged
     Sn = psd_ft(N * dt, depth=0.4)
     E = wl.evolutionary
-    mask = wl.grid.active_mask(Nf, Nt)
-    m, n = np.nonzero(mask)
+    mask = np.ones((Nf, Nt), bool)             # every cell
 
     def interp(kw: dict) -> Any:
         plan = E.eq45_plan(Nf, Nt, dt, **kw)
@@ -222,8 +232,7 @@ def domainia_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
                                                              k=plan.k_used))
 
     cases: list[Case] = [
-        ("BandAveragedVariance", lambda kw: wl.grid.unfold(
-            wl.noise.evolutionary_band_variance(Nf, Nt, dt, Sn, **kw), Nf, Nt)[m, n]),
+        ("BandAveragedVariance", lambda kw: wl.noise.evolutionary_band_variance(Nf, Nt, dt, Sn, **kw)),
         ("EvolutionaryCovariance.interp", interp),
     ]
     if (Nf, Nt) == DENSE_GRID:

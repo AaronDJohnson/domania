@@ -389,25 +389,6 @@ def inverse(
     return _inverse(unfold(wmn, Nf, Nt), Nf, Nt, dt, window=window)
 
 
-def _forward_time(x: Array, Nf: int, Nt: int, dt: float, *, window: Window = MEYER) -> Array:
-    """:func:`forward_time` on the padded grid: ``(..., N)`` to ``(..., Nf+1, Nt)``."""
-    validate_grid(Nf, Nt)
-    x = np.asarray(x)
-    expected = n_samples(Nf, Nt)
-    if x.shape[-1:] != (expected,):
-        raise ValueError(
-            f"x must have shape (..., {expected}) = (..., Nf*Nt) for Nf={Nf}, Nt={Nt}; "
-            f"got {x.shape}"
-        )
-    # Check here rather than only on the rfft: reporting "index 5 of x" beats
-    # reporting that every bin of the transformed spectrum went non-finite.
-    validate_finite(x, "forward_time: x")
-    # At least double before the rfft, which keeps a lower-precision float's precision.
-    # A complex x stays complex, and the rfft refuses it.
-    x_rfft = np.fft.rfft(x.astype(np.result_type(x, np.float64), copy=False))
-    return _forward(x_rfft, Nf, Nt, dt, window=window)
-
-
 def forward_time(
     x: Array,
     Nf: int,
@@ -440,8 +421,21 @@ def forward_time(
     Traceback (most recent call last):
     ValueError: forward_time: x: 1 of 128 entries are not finite...
     """
-    m, n = cells(Nf, Nt)
-    return _forward_time(x, Nf, Nt, dt, window=window)[..., m, n]
+    validate_grid(Nf, Nt)
+    x = np.asarray(x)
+    expected = n_samples(Nf, Nt)
+    if x.shape[-1:] != (expected,):
+        raise ValueError(
+            f"x must have shape (..., {expected}) = (..., Nf*Nt) for Nf={Nf}, Nt={Nt}; "
+            f"got {x.shape}"
+        )
+    # Check here rather than only on the rfft: reporting "index 5 of x" beats
+    # reporting that every bin of the transformed spectrum went non-finite.
+    validate_finite(x, "forward_time: x")
+    # At least double before the rfft, which keeps a lower-precision float's precision.
+    # A complex x stays complex, and the rfft refuses it.
+    x_rfft = np.fft.rfft(x.astype(np.result_type(x, np.float64), copy=False))
+    return forward(x_rfft, Nf, Nt, dt, window=window)
 
 
 def _inverse_time(wmn: Array, Nf: int, Nt: int, dt: float, *, window: Window = MEYER) -> Array:

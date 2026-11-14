@@ -9,15 +9,15 @@
   and the Monte-Carlo WDM variance of such draws, which checks
   ``wilson.band_averaged_variance``.
 
-The cells are a boolean ``mask`` of shape ``(Nf + 1, Nt)``, the WDM layout of
-``wilson.grid.active_mask``, that selects active cells only.  Rows and columns follow
-``numpy.nonzero(mask)``: band by band, time within a band.
+The cells are a boolean ``mask`` of shape ``(Nf, Nt)``, the folded WDM layout
+(``wilson.grid.cells``).  Rows and columns follow ``numpy.nonzero(mask)``: the folded flat order
+of the selected cells.
 
 :func:`dense_W`, :func:`wdm_congruence`, :func:`eq45_dense` and :func:`empirical_variance` take
 ``window=`` (default Meyer: the WDM transform) and compute in the Wilson basis of that window.
 
 The oracles follow the package's rule: a wrong kind (a ``mask`` that is not boolean) raises
-``TypeError``, a wrong value (a wrong shape, an inactive cell) ``ValueError``.
+``TypeError``, a wrong value (a wrong shape) ``ValueError``.
 
 Test windows (``domainia.wilson.windows``):
 
@@ -47,27 +47,21 @@ __all__ = ["ALT_WINDOW", "colored_noise", "dense_W", "empirical_variance", "eq45
 Array = NDArray[np.float64]
 
 
-def _keep(Nf: int, Nt: int, mask: Any) -> NDArray[np.bool_]:
-    """The cells of ``mask`` as a mask over the ``N`` packed active cells (``eq45_plan``'s
-    ``keep``), after the checks of the module docstring."""
+def _mask(Nf: int, Nt: int, mask: Any) -> NDArray[np.bool_]:
+    """``mask`` (``eq45_plan``'s ``keep``) after the checks of the module docstring."""
     require_dtype("mask", mask, "b", "a boolean cell mask")
+    validate_grid(Nf, Nt)
     mask = np.asarray(mask)
-    active = wilson.grid.active_mask(Nf, Nt)
-    if mask.shape != active.shape:
-        raise ValueError(f"mask must have shape (Nf + 1, Nt) = {active.shape}, got {mask.shape}")
-    bad = np.argwhere(mask & ~active)
-    if bad.size:
-        raise ValueError(f"mask selects the inactive cell (m={bad[0, 0]}, n={bad[0, 1]})")
-    return mask[active]
+    if mask.shape != (Nf, Nt):
+        raise ValueError(f"mask must have shape (Nf, Nt) = {(Nf, Nt)}, got {mask.shape}")
+    return mask
 
 
 def dense_W(Nf: int, Nt: int, dt: float, mask: Any, *, window: Window = MEYER) -> Array:
     """``(cells, N)``: row ``p`` is the atom of the ``p``-th cell of ``mask`` sampled in
     time, so ``W x`` are those cells of ``x`` (``wilson.matrix.build_W`` rows,
     ``W W^T = dt I``) in the Wilson basis of ``window``."""
-    keep = _keep(Nf, Nt, mask)
-    band = np.argsort(np.ravel_multi_index(wilson.grid.cells(Nf, Nt), (Nf + 1, Nt)), axis=None)
-    return wilson.matrix.build_W(Nf, Nt, dt, window=window)[band[keep]]
+    return wilson.matrix.build_W(Nf, Nt, dt, window=window)[_mask(Nf, Nt, mask).ravel()]
 
 
 def wdm_congruence(Sigma: Array, Nf: int, Nt: int, dt: float, mask: Any, *,
@@ -82,7 +76,7 @@ def eq45_dense(Nf: int, Nt: int, dt: float, mask: Any, Sn: Callable[[Any, Any], 
                P: int = 24, t_max: float | None = None, window: Window = MEYER) -> Array:
     """Eq. (45) on the cells of ``mask`` by the direct sum, ``Sn(f, t)`` elementwise (``A_n``
     inside), with the atoms of ``window``."""
-    keep = _keep(Nf, Nt, mask)
+    keep = _mask(Nf, Nt, mask)
     require_callable("Sn", Sn)
     plan = eq45_plan(Nf, Nt, dt, keep, P=P, t_max=t_max, window=window)
     return eq45_direct(plan, Sn)
@@ -147,7 +141,7 @@ def empirical_variance(
     *,
     window: Window = MEYER,
 ) -> Array:
-    """Monte-Carlo estimate of $\\langle w_{mn}^2 \\rangle$, shape ``(Nf + 1, Nt)``: the mean
+    """Monte-Carlo estimate of $\\langle w_{mn}^2 \\rangle$, folded ``(Nf, Nt)``: the mean
     squared WDM coefficients of ``n_realizations`` draws of :func:`colored_noise` from
     ``numpy.random.default_rng(seed)``.  It checks
     :func:`domainia.wilson.band_averaged_variance`."""
@@ -162,7 +156,7 @@ def empirical_variance(
         x_rfft = colored_noise(N, dt, Sn_func, rng)
         w = _forward(x_rfft, Nf, Nt, dt, window=window)
         accum += w * w
-    return accum / n_realizations
+    return accum[wilson.grid.cells(Nf, Nt)] / n_realizations
 
 
 def smoothstep(x: Any) -> Array:

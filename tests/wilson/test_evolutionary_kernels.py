@@ -35,7 +35,7 @@ F_NYQ = 0.5 / DT
 LINEAGE_A = ("toy_models/vendor/wdm/src", "wdm_paper_2/toy_models/src")
 #: max|got - ref| over max|ref| against the omega-era sources (float64).
 ORACLE_RTOL = 1e-14
-#: ``build_W``'s folded rows in band order (``numpy.nonzero`` of the padded mask).
+#: The folded flat indices in the oracle's band order (``numpy.nonzero`` of the padded mask).
 BAND = np.argsort(np.ravel_multi_index(cells(NF, NT), (NF + 1, NT)), axis=None)
 
 
@@ -81,21 +81,22 @@ def test_moved_functions_are_the_oracle_to_rounding(rng):
     time-domain kernels (no window) bit for bit."""
     g = ev.PackedGrid(NF, NT, DT)
     w2 = rng.uniform(0.0, 1.0, N)
-    Y = rng.standard_normal((2, N))
-    # Hz window (v0.12.0): measured 5.1e-16 (energy_fraction), 2.2e-16 (apply_time_mask)
-    assert _gap(E.energy_fraction(w2, NF, NT, DT), g.energy_fraction(w2)) <= ORACLE_RTOL
-    assert _gap(E.apply_time_mask(Y, w2, NF, NT, DT), g.apply_mask(Y, w2)) <= ORACLE_RTOL
-    got, ref = E.wrap_fractions(NF, NT, DT), ev.wrap_fractions(NF, NT, DT)
-    assert np.array_equal(np.isnan(got), np.isnan(ref))
-    # Hz window (v0.12.0): measured 4.2e-16
-    assert _gap(np.nan_to_num(got), np.nan_to_num(ref)) <= ORACLE_RTOL
+    Y = rng.standard_normal((2, NF, NT))
+    # Hz window (v0.12.0): measured 5.1e-16 (energy_fraction), 2.2e-16 (apply_time_mask).  The
+    # oracle packs the cells in band order (BAND).
+    assert _gap(E.energy_fraction(w2, NF, NT, DT).ravel()[BAND], g.energy_fraction(w2)) <= ORACLE_RTOL
+    assert _gap(E.apply_time_mask(Y, w2, NF, NT, DT).reshape(2, N)[:, BAND],
+                g.apply_mask(Y.reshape(2, N)[:, BAND], w2)) <= ORACLE_RTOL
+    # Hz window (v0.12.0): measured 4.2e-16; the oracle's padded grid is gathered
+    assert _gap(E.wrap_fractions(NF, NT, DT), ev.wrap_fractions(NF, NT, DT)[cells(NF, NT)]
+                ) <= ORACLE_RTOL
     for tol in (1e-2, 1e-3, 1e-4):
         assert E.wrap_cut_columns(NF, NT, DT, tol) == ev.wrap_cut_columns(NF, NT, DT, tol)
     assert np.array_equal(E.time_domain_factor(N, DT, _S_evo), ev.time_domain_factor(N, DT, _S_evo))
     assert np.array_equal(E.time_domain_covariance(N, DT, _S_evo),
                           ev.time_domain_covariance(N, DT, _S_evo))
     # Hz window (v0.12.0): measured 2.8e-16
-    assert _gap(E.exact_covariance(NF, NT, DT, _S_evo),
+    assert _gap(E.exact_covariance(NF, NT, DT, _S_evo)[np.ix_(BAND, BAND)],
                 ev.exact_covariance(NF, NT, DT, _S_evo)) <= ORACLE_RTOL
     assert np.array_equal(E.draw_noise(N, DT, _S_evo, np.random.default_rng(5)),
                           ev.draw_noise(N, DT, _S_evo, np.random.default_rng(5)))
@@ -106,18 +107,19 @@ def test_moved_functions_are_the_oracle_to_rounding(rng):
 
 
 def test_energy_fraction_and_time_mask_match_the_dense_mask(rng):
-    Wa = build_W(NF, NT, DT)[BAND]
+    W = build_W(NF, NT, DT)
     w2 = rng.uniform(0.0, 1.0, N)
-    Mm = Wa @ np.diag(w2) @ Wa.T / DT
-    Y = rng.standard_normal((2, N))
-    assert np.allclose(E.apply_time_mask(Y, w2, NF, NT, DT), Y @ Mm.T, rtol=0, atol=1e-12)
-    assert np.allclose(E.energy_fraction(w2, NF, NT, DT), np.diag(Mm), rtol=0, atol=1e-12)
+    Mm = W @ np.diag(w2) @ W.T / DT
+    Y = rng.standard_normal((2, NF, NT))
+    assert np.allclose(E.apply_time_mask(Y, w2, NF, NT, DT), (Y.reshape(2, N) @ Mm.T).reshape(Y.shape),
+                       rtol=0, atol=1e-12)
+    assert np.allclose(E.energy_fraction(w2, NF, NT, DT), np.diag(Mm).reshape(NF, NT), rtol=0, atol=1e-12)
 
 
 def test_wrap_rule_on_the_sinusoid_grid():
     """The cut is (6, 5) at (64, 256, 2**-10).  The last cut columns wrap 0.11200% (col 5)
     and 0.11708% (col 251); the first kept ones 0.0631% (cols 6 and 250)."""
-    frac = np.nanmax(E.wrap_fractions(64, 256, 2.0**-10), axis=0)
+    frac = np.nanmax(E.wrap_fractions(64, 256, 2.0**-10, bands=np.arange(65)), axis=0)
     assert E.wrap_cut_columns(64, 256, 2.0**-10) == (6, 5)
     assert frac[5] == pytest.approx(1.1200e-3, abs=5e-8)
     assert frac[251] == pytest.approx(1.1708e-3, abs=5e-8)
@@ -153,7 +155,8 @@ def test_interp_blocks_and_direct_sum_are_the_oracle_to_rounding(keep):
     g = ev.PackedGrid(NF, NT, DT)
     mask = None if keep is None else ~np.isin(g.n, (0, 1, NT - 1))
     tri = ev.TriCovariance(g, mask)
-    plan = E.eq45_plan(NF, NT, DT, mask)
+    keep = None if keep is None else ~np.isin(cells(NF, NT)[1], (0, 1, NT - 1))   # the same, folded
+    plan = E.eq45_plan(NF, NT, DT, keep)
     coeffs = E.eq45_coeffs_interp(_S_evo, plan.f, plan.t_max, plan.P, k=plan.k_used)
     assert np.array_equal(coeffs, tri.chebyshev_coefficients(_S_evo))
     diag, up = E.eq45_blocks_cheb(plan, coeffs)
@@ -161,27 +164,30 @@ def test_interp_blocks_and_direct_sum_are_the_oracle_to_rounding(keep):
     # Hz window (v0.12.0): measured 4.6e-17 over every block (4.2e-16 of a diagonal block's own
     # max; the upper blocks 2.1e-18, up to 1.2e-14 of their own max, block m = 4)
     assert _block_gap((diag, up), (d0, u0)) <= ORACLE_RTOL
+    o = plan.pos[BAND]
+    o = o[o >= 0]                                      # the kept cells' rows, in band order
     # Hz window (v0.12.0): measured 9.1e-17
-    assert _gap(E.eq45_direct(plan, _S_evo), tri.dense(_S_evo)) <= ORACLE_RTOL
+    assert _gap(E.eq45_direct(plan, _S_evo)[np.ix_(o, o)], tri.dense(_S_evo)) <= ORACLE_RTOL
 
 
 def test_eq45_is_exact_for_stationary_noise():
     plan = E.eq45_plan(NF, NT, DT)
     Sst = lambda f, t: _S_stat(f) + 0 * t  # noqa: E731
-    ref = build_C_wdm(NF, NT, DT, _S_stat)[np.ix_(BAND, BAND)]
+    ref = build_C_wdm(NF, NT, DT, _S_stat)
     assert np.max(np.abs(E.eq45_direct(plan, Sst) - ref)) <= 1e-12 * np.abs(ref).max()
     coeffs = E.eq45_coeffs_interp(Sst, plan.f, plan.t_max, plan.P, k=plan.k_used)
     C = _assemble(plan, *E.eq45_blocks_cheb(plan, coeffs))
     assert np.max(np.abs(C - ref)) <= 1e-11 * np.abs(ref).max()
 
 
-def test_eq45_plan_rejects_a_non_boolean_keep():
-    # np.arange(N) has the mask's shape: cast to bool it would silently drop cell 0
-    N = NF * NT
-    for keep in (np.arange(N), np.ones(N, int), list(range(N))):
+def test_eq45_plan_rejects_a_non_boolean_keep_or_a_band_order_one():
+    # np.arange(N) in the mask's shape: cast to bool it would silently drop cell 0
+    for keep in (np.arange(N).reshape(NF, NT), np.ones((NF, NT), int), [list(range(NT))] * NF):
         with pytest.raises(TypeError, match="boolean mask"):
             E.eq45_plan(NF, NT, DT, keep)
-    assert E.eq45_plan(NF, NT, DT, [True] * N).cells.size == N
+    with pytest.raises(ValueError, match=r"^keep must have shape \(Nf, Nt\) = \(8, 16\), got \(128,\)$"):
+        E.eq45_plan(NF, NT, DT, np.ones(N, bool))
+    assert E.eq45_plan(NF, NT, DT, [[True] * NT] * NF).cells.size == N
 
 
 @pytest.mark.parametrize("Nt_grid, keep_cols, r", [(NT, None, 1.0), (NT + 4, None, (NT + 4) / NT)])
