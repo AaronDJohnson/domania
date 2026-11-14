@@ -177,7 +177,7 @@ def wrap_cut_columns(Nf: int, Nt: int, dt: float, tol: float = 1e-3, *,
                      window: Window = MEYER) -> tuple[int, int]:
     """``(leading, trailing)`` time columns to cut so that no kept atom of ``bands``
     (all by default) wraps more than ``tol`` of its energy (WDM Paper II: ``tol = 1e-3``).
-    The counts are cell times ``n``: on a folded array keep ``lead <= n < Nt - trail`` with
+    They count cell times ``n``: on a folded array keep ``leading <= n < Nt - trailing`` with
     ``n = wilson.grid.cells(Nf, Nt)[1]``, which is not a column slice.
 
     The rule is geometric (it ignores the noise).  Another window has other atoms, so other

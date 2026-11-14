@@ -73,10 +73,10 @@ assert D.shape == E.shape == (2, 2, Nf, Nt) and np.array_equal(D, D.transpose(1,
   even-`N` Nyquist, and `wdm_covariance` is `½ BA_m[Re H(·, n Nf dt)]`, the band average of
   WDM Paper II, Eq. 36. Both are linear in `S`, exactly Hermitian (or symmetric), and fp64.
 - For an evolutionary model Eq. 36 is a local-stationarity approximation. If the model is not
-  periodic over the record, drop the cells whose time `n` (`wilson.grid.cells(Nf, Nt)[1]`) is
-  among the `(lead, trail)` edge times `wilson.evolutionary.wrap_cut_columns` returns: keep
-  `(n >= lead) & (n < Nt - trail)`. A column slice is not that cut, since row 0's odd slot `j`
-  holds time `j - 1`.
+  periodic over the record, take `lead, trail = wilson.evolutionary.wrap_cut_columns(...)` and
+  keep only the cells whose time `n` (`wilson.grid.cells(Nf, Nt)[1]`) has
+  `lead <= n < Nt - trail`. A column slice is not that cut, since row 0's odd slot `j` holds
+  time `j - 1`.
 - `transform`, `frequency_covariance` and `wdm_covariance` raise `TypeError` for a wrong kind
   of argument and `ValueError` for a wrong value (`WindowError` for an inadmissible window).
 

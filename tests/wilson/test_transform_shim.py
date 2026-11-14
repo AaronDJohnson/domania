@@ -55,11 +55,13 @@ def test_inverse_family_is_the_oracle_to_rounding(grid, rng):
     w = rng.standard_normal((Nf, Nt))
     W = rng.standard_normal((3, Nf, Nt))
     p, P = unfold(w, Nf, Nt), unfold(W, Nf, Nt)
+    J = P + 7.0 * ~unfold(np.ones((Nf, Nt), bool), Nf, Nt)    # junk in the inactive cells
     pairs = [
         (T.inverse(w, Nf, Nt, dt), oracle.inverse(p, Nf, Nt, dt)),
         (T.inverse_time(w, Nf, Nt, dt), oracle.inverse_time(p, Nf, Nt, dt)),
         (T.inverse(W, Nf, Nt, dt), np.stack([oracle.inverse(r, Nf, Nt, dt) for r in P])),
         (T.inverse_time(W, Nf, Nt, dt), np.stack([oracle.inverse_time(r, Nf, Nt, dt) for r in P])),
+        (T._inverse(J, Nf, Nt, dt), np.stack([oracle.inverse(r, Nf, Nt, dt) for r in P])),
     ]
     for got, ref in pairs:
         _assert_is_the_oracle_to_rounding(got, ref)

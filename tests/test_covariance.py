@@ -152,7 +152,7 @@ def test_wdm_covariance_of_a_stationary_model_is_the_dense_reference():
 
 
 def test_wdm_covariance_of_an_evolutionary_model(monkeypatch):
-    """x = B(t) y on 16 x 64, outside the columns wrap_cut_columns names: the error is below 5e-2
+    """x = B(t) y on 16 x 64, outside the times wrap_cut_columns cuts: the error is below 5e-2
     at T_p = 32 dT and below 1.5e-2 at 64 dT (measured: 3.5e-2 and 9.3e-3); each diagonal
     entry, also as a K = 1 model, is noise.evolutionary_band_variance to 1e-14 (measured: bit
     for bit); smaller chunks, with partial last chunks, change no bit and keep every call
