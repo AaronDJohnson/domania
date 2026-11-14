@@ -65,8 +65,9 @@ channel, with any leading axes. Slot `(i, j)` holds the padded cell `(m, n)`:
     unit norm, Σw² = dt·Σx², edge bands ÷√2). Its `build_W` and folded `Covariance` use
     the same flat order.
   - **pywavelet** `(Nf, Nt)` and Digman's `WDMWaveletTransforms` `(Nt, Nf)`: the same slots,
-    but different values. They differ by √dt (√(dt/2) for pywavelet) and by a sign on the
-    interior cells where m+n is odd. domainia does not try to match those values.
+    but different values. Read from their code but not measured, they differ by √dt
+    (√(dt/2) for pywavelet) and by a sign on the interior cells where m+n is odd. domainia
+    does not try to match those values.
 - **Nothing in the folded layout is structurally zero.** Every inactive-cell rule goes: the
   residue checks, the zeroing, the NaN fills and the mask refusals.
 - **Band structure in this order:** row 0 couples to row 1 through its DC slots, and to row
@@ -293,6 +294,12 @@ The npz is never re-recorded and never edited.
   - `testing.dense_W`, `testing.wdm_congruence` and `testing.eq45_dense`;
   - `domainia::BandAveragedVariance`;
   - `domainia::EvolutionaryCovariance.direct`.
+
+  `eq45_direct`, the three `testing.*` cases and `EvolutionaryCovariance.direct` cover a
+  subset of cells (kept × kept, or selected rows). Their permutation depends on each case's
+  cell selection, which only the generator knows. `load_baseline()` therefore rebuilds each
+  dense case's selection from `meyer_cases` and derives the band-order → folded permutation
+  of the selected cells from it.
 - **Key families:**
   - The 4 keys of the removed `active_W` and `build_C_wdm_active` join `DROPPED`, which goes
     from 96 to 100. 1,404 arrays stay under the gate.
@@ -344,7 +351,8 @@ These exist only because of the padded layout:
   - `transform.py` (three shapes);
   - `stationary.py` (`(144, 144)` → `(128, 128)`, and the padded input);
   - `matrix.py` (`(40, 32)` → `(32, 32)`, `(40, 40)` → `(32, 32)`);
-  - `noise.py` (`(9, 16)` → `(8, 16)`, and the `var[1, 0]` comparison).
+  - `noise.py`: `(9, 16)` → `(8, 16)`. In the comparison of `var[1, 0]` with the diagonal of
+    the WDM covariance, the band-order index `Nt // 2` becomes the folded index `Nt`.
 
 ### New tests (small)
 
@@ -426,8 +434,10 @@ at a203721.
 The replay gate must pass at the end of every task. `load_baseline()` therefore converts a key
 family in the same task that changes that family's kernel.
 
-1. **`wilson.grid`:** `cells`, `fold`, `unfold`, `RESIDUE`, `active_mask` made private, and
-   their tests. The replay loader is added with no families converted yet.
+1. **`wilson.grid`:** `cells`, `fold`, `unfold`, `RESIDUE` and their tests. The replay loader
+   is added with no families converted yet. `active_mask` stays public for now, because about
+   20 internal sites, the replay generators and `vendored/test_grid` still use it until the
+   later tasks.
 2. **`wilson.transform`:** the padded twins and the public folded kernels, their callers inside
    the package, `transform`, the README Data example, and the replay families for the
    transforms and `translate_reference.npz`.
@@ -437,7 +447,8 @@ family in the same task that changes that family's kernel.
 5. **`wilson.evolutionary` and `domainia.testing`** (`eq45_plan`'s mask and the oracles'
    masks).
 6. **`wdm_covariance`**, the README Covariance example and Conventions.
-7. **Docstrings and doctests swept, and the final gates** in all four lanes.
+7. **The final sweep:** `active_mask` made private (`_active_mask`), the docstrings and
+   doctests swept, and the final gates in all four lanes.
 
 ## 9. What this supersedes
 
@@ -458,4 +469,9 @@ family in the same task that changes that family's kernel.
   two packages disagree on the WDM layout. Enchilada does not import domainia today.
 - **Digman and pywavelet:** value compatibility is out of scope (§1). A future
   converter would need the √dt scale (√(dt/2) for pywavelet), the sign on the interior cells
-  where m+n is odd, and Digman's transpose.
+  where m+n is odd, and Digman's transpose. All three were read from their code and have not
+  been measured.
+- **Two defaults that were not the user's explicit decisions:**
+  - `fold` refuses a padded array whose inactive cells hold more than 1e-10 of the slice's
+    peak (§2). This is `transform`'s rule today, carried over.
+  - `evolutionary_band_variance(bands=)` is removed (§3).
