@@ -1,5 +1,5 @@
-"""Time-frequency grid: the grid and input checks, pixel widths and centres, the
-active-pixel mask and the folded layout.
+"""Time-frequency grid: the grid and input checks, pixel widths and centres, and the folded
+layout.
 
 The WDM transform partitions the time-frequency plane into a grid of
 $N_f+1$ frequency bands (indexed by $m = 0,\\ldots,N_f$) and $N_t$
@@ -35,7 +35,6 @@ type BoolArray = NDArray[np.bool_]
 
 __all__ = [
     "Grid",
-    "active_mask",
     "band_frequencies",
     "cells",
     "delta_F",
@@ -300,28 +299,11 @@ def time_pixel_centers(Nf: int, Nt: int, dt: float) -> Array:
     return np.arange(Nt) * delta_T(Nf, dt)
 
 
-def active_mask(Nf: int, Nt: int) -> BoolArray:
-    """Boolean mask of shape ``(Nf+1, Nt)`` marking active (nonzero) pixels.
-
-    - Interior bands ($1 \\le m \\le N_f - 1$): all $N_t$ time bins active.
-    - DC band ($m=0$): only even $n$ are active ($N_t/2$ pixels).
-    - Nyquist band ($m=N_f$): only $n$ with $(N_f + n)$ even are active
-      ($N_t/2$ pixels).
-
-    Total active count equals $N = N_f N_t$.
-
-    Examples
-    --------
-    >>> import numpy as np; from domainia import wilson
-    >>> mask = wilson.grid.active_mask(8, 16)
-    >>> mask.shape, int(mask.sum())   # total active == N
-    ((9, 16), 128)
-    """
-    validate_grid(Nf, Nt)
+def _active_mask(Nf: int, Nt: int) -> BoolArray:
+    """The active cells of the padded ``(Nf+1, Nt)`` grid: every interior cell, and the even
+    times of the DC and Nyquist bands (``Nf`` is even).  The caller validates the grid."""
     mask = np.ones((Nf + 1, Nt), dtype=bool)
-    n = np.arange(Nt)
-    mask[0] = n % 2 == 0
-    mask[Nf] = (Nf + n) % 2 == 0
+    mask[[0, Nf], 1::2] = False
     return mask
 
 
@@ -399,7 +381,7 @@ def fold(P: object, Nf: int, Nt: int) -> np.ndarray:
     a = _wdm_array("P", P, (Nf + 1, Nt))
     v = np.abs(a.astype(np.result_type(a, 1.0), copy=False))
     peak = np.max(v, axis=(-2, -1), keepdims=True)
-    bad = np.argwhere(~active_mask(Nf, Nt) & (~np.isfinite(v) | (v > RESIDUE * peak)))
+    bad = np.argwhere(~_active_mask(Nf, Nt) & (~np.isfinite(v) | (v > RESIDUE * peak)))
     if bad.size:
         *lead, i, j = (int(k) for k in bad[0])
         raise ValueError(f"P{lead if lead else ''}: the inactive cell (m={i}, n={j}) holds "

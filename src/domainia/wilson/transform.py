@@ -46,8 +46,8 @@ with writes outside $[0, N/2]$ discarded.
 
 The DC and Nyquist edge-band coefficients are divided by $\\sqrt{2}$ so
 that all basis functions have unit norm.  This makes the WDM transform
-matrix orthogonal up to the sampling scale ($W_a W_a^T = \\delta t\\,I$,
-so invert with $x = W_a^T w/\\delta t$) and the Parseval identity exact:
+matrix orthogonal up to the sampling scale ($W W^T = \\delta t\\,I$,
+so invert with $x = W^T w/\\delta t$) and the Parseval identity exact:
 $\\sum_{m,n} w_{mn}^2 = \\delta t \\sum_k x_k^2$.  This is the package's only
 coefficient convention.
 
@@ -66,7 +66,6 @@ from numpy.typing import NDArray
 from ._checks import REAL_KINDS, require_dtype, require_int
 from .grid import (
     _fold_fix,
-    active_mask,
     cells,
     n_samples,
     unfold,
@@ -310,17 +309,10 @@ def forward(
 
 def _inverse(wmn: Array, Nf: int, Nt: int, dt: float, *, window: Window = MEYER) -> CArray:
     """:func:`inverse` on the padded grid ``(..., Nf+1, Nt)``, whose inactive cells must be 0."""
-    validate_grid(Nf, Nt)
-    validate_dt(dt)
     N = n_samples(Nf, Nt)
-    wmn = np.asarray(wmn)
-    # A complex grid would have its imaginary part silently discarded.
-    require_dtype("wmn", wmn, REAL_KINDS, "a real numeric array")
-    if wmn.shape[-2:] != (Nf + 1, Nt):
-        raise ValueError(f"wmn must have shape (..., {Nf + 1}, {Nt}); got {wmn.shape}")
     validate_finite(wmn, "inverse: wmn")
 
-    phi_c = sample_window(window, Nf, Nt, dt)
+    phi_c = sample_window(window, Nf, Nt, dt)   # checks the grid and dt
     wmn_work = wmn.astype(np.float64)              # a fresh copy, so scaling it in place is safe
     wmn_work[..., [0, Nf], :] *= np.sqrt(2.0)      # undo forward's unit-norm edge scaling
 
@@ -481,15 +473,14 @@ def base_atom_spectra(Nf: int, Nt: int, dt: float, *,
 
     Every other atom of band ``m`` is a circular shift of one of these by an
     even number of columns (:func:`atom_spectrum`).  ``dt * inverse(e)``:
-    :func:`inverse` returns ``rfft(W_a^{-1} e) = rfft(atom) / dt``.
+    :func:`inverse` returns ``rfft(W^{-1} e) = rfft(atom) / dt``.
     """
     validate_grid(Nf, Nt)
     validate_dt(dt)
-    mask = active_mask(Nf, Nt)
     out: dict[tuple[int, int], CArray] = {}
     for m in range(Nf + 1):
         for a in (0, 1):
-            if not mask[m, a]:
+            if a and m in (0, Nf):
                 continue
             e = np.zeros((Nf + 1, Nt))
             e[m, a] = 1.0
@@ -503,7 +494,7 @@ def _check_base_spectrum(base: dict[tuple[int, int], CArray], G: CArray, Nf: int
 
     An ``O(N)`` fingerprint: ``2 Nf`` entries pin ``Nf``; the length ``N//2+1`` of ``G``
     then pins ``Nt``; the energy of the atom pins ``dt``, because every active atom has
-    energy ``dt`` to rounding (``W_a W_a^T = dt I``).  ``N = Nf Nt`` is even, so the last
+    energy ``dt`` to rounding (``W W^T = dt I``).  ``N = Nf Nt`` is even, so the last
     bin is the Nyquist bin.  The window is not pinned: the atoms of every admissible window
     have energy ``dt``.
     """

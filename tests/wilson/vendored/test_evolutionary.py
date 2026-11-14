@@ -11,7 +11,7 @@ import pytest
 # The oracle packs the cells in band order; tests/wilson/test_evolutionary_kernels.py checks
 # the kernels against it.
 from wdm_dev_ev import evolutionary as ev
-from domainia.wilson.grid import active_mask, cells
+from domainia.wilson.grid import _active_mask, cells
 from domainia.wilson.matrix import build_W
 from domainia.wilson.transform import forward_time
 
@@ -30,7 +30,7 @@ def test_packed_grid_matches_the_dense_transform(rng):
     g = ev.PackedGrid(NF, NT, DT)
     Wa = build_W(NF, NT, DT)[BAND]
     assert g.size == N
-    np.testing.assert_array_equal(g.mask, active_mask(NF, NT))
+    np.testing.assert_array_equal(g.mask, _active_mask(NF, NT))
     x = rng.standard_normal((3, N))
     np.testing.assert_allclose(np.stack([g.forward(r) for r in x]), x @ Wa.T, atol=1e-12)
     np.testing.assert_allclose(g.forward(x[0]), forward_time(x[0], NF, NT, DT).ravel()[BAND], atol=0)

@@ -394,7 +394,7 @@ def test_atom_spectra_are_the_rfft_of_the_rows_of_W(window, Nf, Nt, dt):
     base = T.base_atom_spectra(Nf, Nt, dt, window=window)
     for (m, a), G in base.items():
         _close(G, np.fft.rfft(W[row[m, a]]), RTOL, f"base_atom_spectra[{m}, {a}]")
-    for m, n in zip(*np.nonzero(wilson.grid.active_mask(Nf, Nt)), strict=True):
+    for m, n in zip(*np.nonzero(wilson.grid._active_mask(Nf, Nt)), strict=True):
         _close(T.atom_spectrum(int(m), int(n), Nf, Nt, dt, base=base, window=window),
                np.fft.rfft(W[row[m, n]]), RTOL_ATOM, f"atom_spectrum({m}, {n}, base=)")
     for m, n in ((1, 3), (0, 2), (Nf, 2)):

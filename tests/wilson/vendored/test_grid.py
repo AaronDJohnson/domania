@@ -6,7 +6,6 @@ import numpy as np
 import pytest
 
 from domainia.wilson.grid import (
-    active_mask,
     band_frequencies,
     delta_F,
     delta_T,
@@ -14,36 +13,6 @@ from domainia.wilson.grid import (
     time_pixel_centers,
     validate_grid,
 )
-
-
-def test_active_mask_shape_and_dtype(simple_grid):
-    """active_mask returns shape (Nf+1, Nt) of bool."""
-    g = simple_grid
-    mask = active_mask(g.Nf, g.Nt)
-    assert mask.shape == (g.Nf + 1, g.Nt)
-    assert mask.dtype == bool
-
-
-def test_active_mask_interior_all_true(simple_grid):
-    """Interior bands (m=1..Nf-1) are fully active."""
-    g = simple_grid
-    mask = active_mask(g.Nf, g.Nt)
-    for m in range(1, g.Nf):
-        assert np.all(mask[m])
-
-
-def test_active_mask_dc_even_only(simple_grid):
-    """DC band (m=0) has only even n active."""
-    g = simple_grid
-    mask = active_mask(g.Nf, g.Nt)
-    assert np.all(mask[0] == (np.arange(g.Nt) % 2 == 0))
-
-
-def test_active_mask_nyquist_parity(simple_grid):
-    """Nyquist band (m=Nf) is active where (Nf + n) is even."""
-    g = simple_grid
-    mask = active_mask(g.Nf, g.Nt)
-    assert np.all(mask[g.Nf] == ((g.Nf + np.arange(g.Nt)) % 2 == 0))
 
 
 def test_band_frequencies_endpoints(simple_grid):

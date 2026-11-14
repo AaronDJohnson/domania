@@ -48,8 +48,8 @@ from scipy.special import ive
 
 from ._checks import require_dtype, require_real
 from .grid import (
+    _active_mask,
     _require_int,
-    active_mask,
     cells,
     delta_T,
     endpoint_weights,
@@ -147,8 +147,9 @@ def wrap_fractions(Nf: int, Nt: int, dt: float, *, bands: Array | None = None,
     ``nan`` at an edge band's inactive (odd) columns.
     """
     validate_grid(Nf, Nt)
+    validate_dt(dt)
     N = Nf * Nt
-    mask = active_mask(Nf, Nt)
+    mask = _active_mask(Nf, Nt)
     m_list = np.arange(Nf + 1) if bands is None else np.asarray(bands, int)
     out = np.full((m_list.size, Nt), np.nan)
     n = np.arange(Nt)

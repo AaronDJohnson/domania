@@ -13,7 +13,7 @@ import pytest
 
 from domainia import wilson
 from domainia.wilson.filter import phi_centered
-from domainia.wilson.grid import Grid, active_mask, cells, endpoint_weights, fold, unfold
+from domainia.wilson.grid import Grid, _active_mask, cells, endpoint_weights, fold, unfold
 from domainia.wilson.matrix import build_W
 from domainia.wilson.transform import atom_spectrum, base_atom_spectra, forward_time
 
@@ -47,7 +47,7 @@ def test_fold_and_unfold_round_trip_and_unfold_writes_exact_zeros(rng):
     P[..., m, n] = 0.0
     assert not P.any()
     B = unfold(np.ones((Nf, Nt), bool), Nf, Nt)
-    assert B.dtype == bool and np.array_equal(B, active_mask(Nf, Nt))
+    assert B.dtype == bool and np.array_equal(B, _active_mask(Nf, Nt))
     assert fold(B, Nf, Nt).dtype == bool
 
 
@@ -173,7 +173,7 @@ def test_atoms_are_the_rows_of_the_transform():
     W = build_W(Nf, Nt, dt)
     base = base_atom_spectra(Nf, Nt, dt)
     assert sorted(base) == [(m, a) for m in range(Nf + 1) for a in (0, 1)
-                            if active_mask(Nf, Nt)[m, a]]
+                            if _active_mask(Nf, Nt)[m, a]]
     m, n = (c.ravel() for c in cells(Nf, Nt))           # row p of W is folded slot p
     for p in range(m.size):
         atom = np.fft.irfft(atom_spectrum(int(m[p]), int(n[p]), Nf, Nt, dt, base=base), n=Nf * Nt)
