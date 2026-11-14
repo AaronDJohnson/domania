@@ -19,6 +19,7 @@ import vendored_2f7136c.stationary as ostat
 import domainia.wilson.noise as noise
 import domainia.wilson.stationary as stat
 from domainia import testing
+from domainia.wilson.grid import cells, unfold
 
 GRIDS = [(4, 8, 1.0), (8, 16, 0.5), (8, 32, 1.7), (16, 32, 2.0**-10)]
 #: max|got - ref| over max|ref| against the omega-era oracle.
@@ -55,7 +56,7 @@ def test_band_averaged_variance_is_the_oracle_to_rounding(grid):
     """band_averaged_variance (a phi^2-weighted average) to rounding."""
     Nf, Nt, dt = grid
     got = noise.band_averaged_variance(Nf, Nt, dt, _psd)
-    ref = onoise.band_averaged_variance(Nf, Nt, dt, _psd)
+    ref = onoise.band_averaged_variance(Nf, Nt, dt, _psd)[cells(Nf, Nt)]
     assert got.dtype == ref.dtype
     assert _gap(got, ref) <= RTOL64          # Hz window (v0.12.0): measured 4.8e-16
 
@@ -139,6 +140,8 @@ def test_stationary_builders_are_the_oracle_to_rounding(grid, rng):
     2 pi times the oracle's K (prefactor 1/N, was 2 pi/N); the active-index lists bit for bit."""
     Nf, Nt, dt = grid
     N = Nf * Nt
+    m, n = cells(Nf, Nt)
+    p = (m * Nt + n).ravel()                    # each folded slot's padded flat index
     S_rfft = _psd(np.fft.rfftfreq(N, d=dt))
     for noise_in in (_psd, S_rfft):
         d1, o1, n1 = stat.build_lambda_blocks_full_active(Nf, Nt, dt, noise_in)
@@ -153,7 +156,7 @@ def test_stationary_builders_are_the_oracle_to_rounding(grid, rng):
         assert max(_gap(a, b, lam) for a, b in zip(d1 + o1, d2 + o2, strict=True)) <= RTOL64
         assert all(np.array_equal(a, b) for a, b in zip(n1, n2, strict=True))
         got = stat.assemble_lambda_full_active(d1, o1, n1, Nf, Nt)
-        ref = ostat.assemble_lambda_full_active(d2, o2, n2, Nf, Nt)
+        ref = ostat.assemble_lambda_full_active(d2, o2, n2, Nf, Nt)[np.ix_(p, p)]
         assert _gap(got, ref) <= RTOL64          # Hz window (v0.12.0): measured 1.8e-16
         K1, L1 = stat.build_K_full_active(Nf, Nt, dt, noise_in)
         K2, L2 = ostat.build_K_full_active(Nf, Nt, dt, noise_in)
@@ -164,9 +167,9 @@ def test_stationary_builders_are_the_oracle_to_rounding(grid, rng):
         assert _gap(got, ostat.lambda_to_psd_slab(K2, Nf, Nt, dt)) <= RTOL64   # Hz: 2.3e-16
         got = stat.psd_from_lambda_blocks(d1, o1, n1, Nf, Nt, dt)
         assert _gap(got, ostat.lambda_to_psd(d2, o2, n2, Nf, Nt, dt)) <= RTOL64  # Hz: 7.1e-16
-    x = rng.standard_normal((Nf + 1, Nt))
+    x = rng.standard_normal((Nf, Nt))
     got = stat.apply_lambda_from_psd(x, Nf, Nt, dt, S_rfft)
-    ref = ostat.apply_lambda_from_psd(x, Nf, Nt, dt, S_rfft)
+    ref = ostat.apply_lambda_from_psd(unfold(x, Nf, Nt), Nf, Nt, dt, S_rfft)[m, n]
     assert got.dtype == ref.dtype
     assert _gap(got, ref) <= RTOL64              # Hz window (v0.12.0): measured 2.0e-16
 
@@ -223,7 +226,7 @@ def test_apply_lambda_from_psd_inf_psd_is_zero_power(rng):
     """An inf PSD sample (the LISA f = 0 case) is zero power: ``sanitize_psd`` maps it to 0.0."""
     Nf, Nt, dt = 8, 16, 0.5
     S = _psd(np.fft.rfftfreq(Nf * Nt, d=dt))
-    x = rng.standard_normal((Nf + 1, Nt))
+    x = rng.standard_normal((Nf, Nt))
     S[0] = 0.0
     want = stat.apply_lambda_from_psd(x, Nf, Nt, dt, S)
     S[0] = np.inf

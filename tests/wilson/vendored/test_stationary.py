@@ -5,7 +5,6 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from domainia.wilson.grid import cells
 from domainia.wilson.matrix import build_C_time, build_W
 from domainia.wilson.stationary import (
     assemble_lambda_full_active,
@@ -150,8 +149,7 @@ def test_full_active_assembly_matches_dense_W_C_W(simple_grid, lisa_psd):
     """Assembled full-active Λ matches the dense W @ C_time @ W^T at machine precision."""
     g = simple_grid
     diag, offd, n_active = build_lambda_blocks_full_active(g.Nf, g.Nt, g.dt, lisa_psd)
-    p = np.ravel_multi_index(cells(g.Nf, g.Nt), (g.Nf + 1, g.Nt)).ravel()
-    Lambda_fast = assemble_lambda_full_active(diag, offd, n_active, g.Nf, g.Nt)[np.ix_(p, p)]
+    Lambda_fast = assemble_lambda_full_active(diag, offd, n_active, g.Nf, g.Nt)
     Lambda_dense = _dense_lambda(g.Nf, g.Nt, g.dt, lisa_psd)
 
     rel = np.max(np.abs(Lambda_fast - Lambda_dense)) / np.max(np.abs(Lambda_dense))

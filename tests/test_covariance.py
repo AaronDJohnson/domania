@@ -175,7 +175,7 @@ def test_wdm_covariance_of_an_evolutionary_model(monkeypatch):
             one = wdm_covariance(lambda f, t, S=S, a=a: S(f, t)[a:a + 1, a:a + 1],
                                  Nf=Nf, Nt=Nt, dt=DT)
             for v in (got[a, a], one[0, 0]):
-                np.testing.assert_allclose(v[mask], want[mask], rtol=1e-14, atol=0)
+                np.testing.assert_allclose(wilson.grid.fold(v, Nf, Nt), want, rtol=1e-14, atol=0)
                 assert not np.any(v[~mask])
     points = ([], [])
 

@@ -99,11 +99,9 @@ def test_moved_functions_are_the_oracle_to_rounding(rng):
                 ev.exact_covariance(NF, NT, DT, _S_evo)) <= ORACLE_RTOL
     assert np.array_equal(E.draw_noise(N, DT, _S_evo, np.random.default_rng(5)),
                           ev.draw_noise(N, DT, _S_evo, np.random.default_rng(5)))
-    # Hz window (v0.12.0): measured 1.8e-16 (all bands and bands [0, 3, NF])
+    # Hz window (v0.12.0): measured 1.8e-16; the oracle's padded grid is gathered
     assert _gap(evolutionary_band_variance(NF, NT, DT, _S_evo),
-                ev.band_averaged_evolutionary_variance(NF, NT, DT, _S_evo)) <= ORACLE_RTOL
-    assert _gap(evolutionary_band_variance(NF, NT, DT, _S_evo, bands=[0, 3, NF]),
-                ev.band_averaged_evolutionary_variance(NF, NT, DT, _S_evo, bands=[0, 3, NF])
+                ev.band_averaged_evolutionary_variance(NF, NT, DT, _S_evo)[cells(NF, NT)]
                 ) <= ORACLE_RTOL
 
 

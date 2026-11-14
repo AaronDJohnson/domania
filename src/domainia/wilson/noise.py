@@ -16,9 +16,8 @@ band average of WDM Paper II, Eq. 36:
 
 A Monte-Carlo estimator, :func:`domainia.testing.empirical_variance`, checks them.
 
-Both grids have shape ``(Nf+1, Nt)``.  They fill the inactive edge pixels
-($m = 0$ and $m = N_f$ at odd $n$) by the same formula as the active ones, so they hold
-about $S_n/2$ there, not 0; :func:`domainia.wdm_covariance` sets those cells to 0.
+Both grids are in the folded layout ``(Nf, Nt)`` (:func:`domainia.wilson.grid.cells`): row 0's
+odd slots hold the Nyquist band.
 
 Every kernel here that reaches the window takes ``window=`` (a
 :class:`domainia.wilson.windows.Window`; default :data:`domainia.wilson.MEYER`) and
@@ -34,6 +33,7 @@ from numpy.typing import NDArray
 
 from .grid import (
     band_frequencies,
+    cells,
     delta_F,
     delta_T,
     n_samples,
@@ -66,8 +66,8 @@ def band_averaged_variance(
     = \\frac{\\sum_j \\hat\\phi^2(f_j - f_m)\\,S_n(f_j)}
             {\\sum_j \\hat\\phi^2(f_j - f_m)}$$
 
-    and returns $\\sigma_{mn}^2 = S_n^{\\text{eff}}(m)/2$ broadcast
-    over $n$, shape ``(Nf+1, Nt)``.  This is exact: it reproduces the diagonal of the WDM
+    and returns $\\sigma_{mn}^2 = S_n^{\\text{eff}}(m)/2$ at every cell, folded
+    ``(Nf, Nt)``.  This is exact: it reproduces the diagonal of the WDM
     covariance $W\\,C\\,W^T$ to machine precision, because the pixel
     variance is the $\\hat\\phi^2$-weighted average of the PSD across
     the band.
@@ -79,7 +79,7 @@ def band_averaged_variance(
     >>> steep = lambda f: 1e-3 * (1.0 + 1e2 / (f + 1 / (2 * dt * Nf)) ** 2)
     >>> var = wilson.band_averaged_variance(Nf, Nt, dt, steep)
     >>> var.shape
-    (9, 16)
+    (8, 16)
     >>> # exact: reproduces the diagonal of the WDM covariance
     >>> truth = np.diag(wilson.matrix.build_C_wdm(Nf, Nt, dt, steep))
     >>> bool(abs(var[1, 0] - truth[Nt]) / truth[Nt] < 1e-12)
@@ -117,7 +117,7 @@ def band_averaged_variance(
     weights = phi2[in_band]
     Sn_eff = Sn_vals[:, in_band] @ weights / np.sum(weights)
 
-    return np.broadcast_to(0.5 * Sn_eff[:, None], (Nf + 1, Nt)).copy()
+    return 0.5 * Sn_eff[cells(Nf, Nt)[0]]
 
 
 # ---------------------------------------------------------------------------
@@ -136,19 +136,15 @@ def _psd_at(Sn: PsdFtFunc, f: Array, t: Array, context: str) -> Array:
 
 
 def evolutionary_band_variance(Nf: int, Nt: int, dt: float, Sn: PsdFtFunc, *,
-                               bands: Array | None = None,
                                window: Window = MEYER) -> Array:
     r"""The filter-weighted band average of :math:`S(f, t_n)` at every cell centre,
 
     .. math::  \sigma^2_{mn} = \frac12\,
                \frac{\sum_j \tilde\phi^2(f_j - f_m)\,S(f_j, t_n)}{\sum_j \tilde\phi^2(f_j - f_m)},
 
-    WDM Paper II, Eq. 36 (eq:wdm_variance_band_average; the edge-band factor is not
-    applied -- inactive edge cells carry the same value, as in
-    :func:`band_averaged_variance`).  ``Sn(f, t)`` is elementwise and broadcasting
-    (argument order ``(f, t)``).  In the stationary limit this is
-    :func:`band_averaged_variance`.  Returns ``(Nf + 1, Nt)``, or
-    ``(len(bands), Nt)`` for the bands ``bands`` (all by default).
+    WDM Paper II, Eq. 36 (eq:wdm_variance_band_average).  ``Sn(f, t)`` is elementwise and
+    broadcasting (argument order ``(f, t)``).  In the stationary limit this is
+    :func:`band_averaged_variance`.  Returns the folded ``(Nf, Nt)``.
     """
     validate_grid(Nf, Nt)
     N = Nf * Nt
@@ -159,12 +155,11 @@ def evolutionary_band_variance(Nf: int, Nt: int, dt: float, Sn: PsdFtFunc, *,
     sup = np.flatnonzero(phi2)
     phi2 = phi2[sup]
     f_off = (np.arange(Nt) - Nt // 2)[sup] / (N * dt)
-    m = np.arange(Nf + 1) if bands is None else np.asarray(bands, int)
-    fb = band_frequencies(Nf, dt)[m][:, None] + f_off[None, :]
+    fb = band_frequencies(Nf, dt)[:, None] + f_off[None, :]
     f_nyq = 0.5 / dt
     ff = np.abs(fb)
-    ff = np.where(ff > f_nyq, 2.0 * f_nyq - ff, ff)                       # (B, J)
+    ff = np.where(ff > f_nyq, 2.0 * f_nyq - ff, ff)                    # (Nf+1, J)
     t = np.arange(Nt) * delta_T(Nf, dt)
     S = _psd_at(Sn, ff[:, None, :], t[None, :, None],
-                "evolutionary_band_variance")                              # (B, Nt, J)
-    return 0.5 * (S * phi2).sum(axis=-1) / phi2.sum()
+                "evolutionary_band_variance")                           # (Nf+1, Nt, J)
+    return (0.5 * (S * phi2).sum(axis=-1) / phi2.sum())[cells(Nf, Nt)]

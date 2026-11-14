@@ -27,7 +27,7 @@ versus $\\mathcal O(N^3)$ for the dense $W\\,C_{\\rm time}\\,W^T$.
 including the parity-restricted edge bands $m \\in \\{0, N_f\\}$, via
 half-slab Hermitian-extended IFFTs, with the edge $\\sqrt 2$ factors of the unit-norm
 basis (:mod:`domainia.wilson.transform`) built in.  It matches
-the dense $W_a\\,C_{\\rm time}\\,W_a^T$ at machine precision.
+the dense $W\\,C_{\\rm time}\\,W^T$ at machine precision.
 
 Backward maps (Paper I Alg. 4)
 ------------------------------
@@ -57,7 +57,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ._checks import REAL_KINDS, require_dtype
-from .grid import active_mask, n_samples, sanitize_psd, validate_dt, validate_grid
+from .grid import n_samples, sanitize_psd, unfold, validate_dt, validate_grid
 from .windows import MEYER, Window, sample_window
 
 type Array = NDArray[np.floating]
@@ -422,7 +422,7 @@ def build_lambda_blocks_full_active(
     ...     diag, offd, n_active, Nf, Nt
     ... )
     >>> Lam.shape
-    (144, 144)
+    (128, 128)
     """
     validate_grid(Nf, Nt)
     validate_dt(dt)
@@ -715,17 +715,16 @@ def apply_lambda_from_psd(
 
     Parameters
     ----------
-    x_wmn : ndarray, float, shape (Nf+1, Nt)
-        Input WDM coefficient array.  Inactive (parity-killed) edge entries
-        are ignored.
+    x_wmn : ndarray, float, shape (Nf, Nt)
+        Input WDM coefficients, folded (:func:`domainia.wilson.transform.forward`).
     Sn_rfft : ndarray, float, shape (N//2 + 1,)
         One-sided PSD evaluated on the ``rfftfreq(N, dt)`` grid.  ``inf`` samples are
         zero power (:func:`domainia.wilson.grid.sanitize_psd`).
 
     Returns
     -------
-    ndarray, float, shape (Nf+1, Nt)
-        $\Lambda \bm x$.
+    ndarray, float, shape (Nf, Nt)
+        $\Lambda \bm x$, folded.
 
     Notes
     -----
@@ -740,14 +739,12 @@ def apply_lambda_from_psd(
     >>> import numpy as np; from domainia import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> N = Nf * Nt
-    >>> x = wilson.grid.unfold(wilson.forward_time(
-    ...     np.random.default_rng(0).standard_normal(N), Nf, Nt, dt
-    ... ), Nf, Nt)
+    >>> x = wilson.forward_time(np.random.default_rng(0).standard_normal(N), Nf, Nt, dt)
     >>> Sn = 1e-3 * np.ones(N // 2 + 1)
     >>> wilson.stationary.apply_lambda_from_psd(x, Nf, Nt, dt, Sn).shape
-    (9, 16)
+    (8, 16)
     """
-    from .transform import _forward, _inverse
+    from .transform import forward, inverse
 
     validate_grid(Nf, Nt)
     validate_dt(dt)
@@ -758,9 +755,8 @@ def apply_lambda_from_psd(
             f"apply_lambda_from_psd: Sn_rfft must have shape ({n_rfft},) -- the "
             f"np.fft.rfftfreq(N, dt) grid; got {Sn_rfft.shape}"
         )
-    y = _inverse(x_wmn * active_mask(Nf, Nt), Nf, Nt, dt, window=window)    # inactive: ignored
-    z = (Sn_rfft / 2.0) * y
-    return _forward(z, Nf, Nt, dt, window=window)
+    z = (Sn_rfft / 2.0) * inverse(x_wmn, Nf, Nt, dt, window=window)
+    return forward(z, Nf, Nt, dt, window=window)
 
 
 def psd_from_lambda_blocks(
@@ -843,11 +839,12 @@ def assemble_lambda_full_active(
     Nf: int,
     Nt: int,
 ) -> Array:
-    """Assemble the full-active blocks into a dense $(N_f+1)N_t \\times (N_f+1)N_t$ matrix.
+    """Assemble the full-active blocks into the dense $N \\times N$ matrix, rows and columns in
+    folded flat order.
 
-    The blocks are :func:`build_lambda_blocks_full_active`'s.  Parity-killed edge entries
-    stay exactly zero, and the lower off-diagonal is filled by transposition, so the result
-    is symmetric: the dense $W\\,C_{\\rm time}\\,W^T$ at machine precision.
+    The blocks are :func:`build_lambda_blocks_full_active`'s.  The lower off-diagonal is
+    filled by transposition, so the result is symmetric: the dense
+    $W\\,C_{\\rm time}\\,W^T$ at machine precision.
 
     Examples
     --------
@@ -857,38 +854,17 @@ def assemble_lambda_full_active(
     ...     8, 16, 1.0, flat
     ... )
     >>> wilson.stationary.assemble_lambda_full_active(d, o, na, 8, 16).shape
-    (144, 144)
+    (128, 128)
     """
     validate_grid(Nf, Nt)
     _check_block_layout(diag_blocks, offd_blocks, n_active, Nf)
-    M = (Nf + 1) * Nt
-    Lambda = np.zeros((M, M))
-    band_offset = [m * Nt for m in range(Nf + 2)]
-
-    # Diagonal blocks: place in active rows/cols of band-m's slot.  Interior
-    # bands are contiguous, so a plain slice beats np.ix_'s fancy indexing.
+    N = n_samples(Nf, Nt)
+    slot = unfold(np.arange(N).reshape(Nf, Nt), Nf, Nt)      # each cell's folded flat index
+    idx = [slot[m, n] for m, n in enumerate(n_active)]
+    Lambda = np.zeros((N, N))
     for m, D in enumerate(diag_blocks):
-        if m in (0, Nf):
-            idx = band_offset[m] + n_active[m]
-            Lambda[np.ix_(idx, idx)] = D
-        else:
-            s0 = band_offset[m]
-            Lambda[s0 : s0 + Nt, s0 : s0 + Nt] = D
-
-    # Off-diagonal (m, m+1) blocks: edge dimensions on the edge side only.
+        Lambda[np.ix_(idx[m], idx[m])] = D
     for m, L in enumerate(offd_blocks):
-        row_idx: NDArray[np.integer]
-        col_idx: NDArray[np.integer]
-        if m == 0:
-            row_idx = band_offset[0] + n_active[0]  # edge restriction
-            col_idx = band_offset[1] + np.arange(Nt)  # interior full
-        elif m == Nf - 1:
-            row_idx = band_offset[Nf - 1] + np.arange(Nt)
-            col_idx = band_offset[Nf] + n_active[Nf]  # edge restriction
-        else:
-            row_idx = band_offset[m] + np.arange(Nt)
-            col_idx = band_offset[m + 1] + np.arange(Nt)
-        Lambda[np.ix_(row_idx, col_idx)] = L
-        Lambda[np.ix_(col_idx, row_idx)] = L.T
-
+        Lambda[np.ix_(idx[m], idx[m + 1])] = L
+        Lambda[np.ix_(idx[m + 1], idx[m])] = L.T
     return Lambda

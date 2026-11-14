@@ -49,7 +49,9 @@ DROPPED = ("domainia::TimeToWDM.", "domainia::WDMToTime.", "domainia::FourierToW
 RTOL = 1e-12
 #: Families recorded padded ``(..., Nf+1, Nt)`` whose kernels now return the folded layout.
 FOLDED = ("wilson::transform.forward", "wilson::transform.forward_many",
-          "wilson::transform.forward_time", "wilson::transform.forward_time_many")
+          "wilson::transform.forward_time", "wilson::transform.forward_time_many",
+          "wilson::stationary.apply_lambda_from_psd", "wilson::noise.band_averaged_variance",
+          "wilson::noise.evolutionary_band_variance")
 #: Dense families recorded with padded ``(Nf+1) Nt`` rows (and columns, ``build_C_wdm``), now
 #: in folded flat order.
 FOLDED_ROWS = ("wilson::matrix.build_W", "wilson::matrix.build_C_wdm")
@@ -171,8 +173,7 @@ def wilson_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
          lambda kw: St.build_lambda_blocks_full_active(Nf, Nt, dt, psd, **kw)),
         ("stationary.build_K_full_active", lambda kw: St.build_K_full_active(Nf, Nt, dt, psd, **kw)),
         ("stationary.psd_from_K", lambda kw: St.psd_from_K(K0, Nf, Nt, dt, **kw)),
-        ("stationary.apply_lambda_from_psd",
-         lambda kw: St.apply_lambda_from_psd(wl.grid.unfold(w, Nf, Nt), Nf, Nt, dt, S, **kw)),
+        ("stationary.apply_lambda_from_psd", lambda kw: St.apply_lambda_from_psd(w, Nf, Nt, dt, S, **kw)),
         ("stationary.psd_from_lambda_blocks", lambda kw: St.psd_from_lambda_blocks(*B0, Nf, Nt, dt, **kw)),
         ("noise.band_averaged_variance", lambda kw: No.band_averaged_variance(Nf, Nt, dt, psd, **kw)),
         ("noise.evolutionary_band_variance",
@@ -221,7 +222,8 @@ def domainia_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
                                                              k=plan.k_used))
 
     cases: list[Case] = [
-        ("BandAveragedVariance", lambda kw: wl.noise.evolutionary_band_variance(Nf, Nt, dt, Sn, **kw)[m, n]),
+        ("BandAveragedVariance", lambda kw: wl.grid.unfold(
+            wl.noise.evolutionary_band_variance(Nf, Nt, dt, Sn, **kw), Nf, Nt)[m, n]),
         ("EvolutionaryCovariance.interp", interp),
     ]
     if (Nf, Nt) == DENSE_GRID:

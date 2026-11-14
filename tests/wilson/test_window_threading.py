@@ -465,13 +465,12 @@ def test_stationary_builders_are_the_blocks_of_the_dense_covariance(window, Nf, 
     """``build_lambda_blocks_full_active``, and the blocks ``build_K_full_active``'s ``K``
     stand for, assemble to ``build_C_wdm``."""
     C = _dense(window, Nf, Nt, dt)[1]
-    p = np.ravel_multi_index(wilson.grid.cells(Nf, Nt), (Nf + 1, Nt)).ravel()
     d, o, na = St.build_lambda_blocks_full_active(Nf, Nt, dt, psd, window=window)
-    _close(St.assemble_lambda_full_active(d, o, na, Nf, Nt)[np.ix_(p, p)], C, RTOL_KERNEL,
+    _close(St.assemble_lambda_full_active(d, o, na, Nf, Nt), C, RTOL_KERNEL,
            "build_lambda_blocks_full_active")
     K_diag, K_off = St.build_K_full_active(Nf, Nt, dt, psd, window=window)
-    _close(St.assemble_lambda_full_active(*_K_blocks(K_diag, K_off, na, Nf, Nt), na, Nf, Nt)
-           [np.ix_(p, p)], C, RTOL_KERNEL, "build_K_full_active")
+    _close(St.assemble_lambda_full_active(*_K_blocks(K_diag, K_off, na, Nf, Nt), na, Nf, Nt),
+           C, RTOL_KERNEL, "build_K_full_active")
 
 
 @pytest.mark.parametrize("Nf, Nt, dt, window", [
@@ -496,14 +495,11 @@ def test_stationary_backward_maps_recover_the_psd(window, Nf, Nt, dt):
 @pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
 @pytest.mark.parametrize("Nf, Nt, dt", GRIDS)
 def test_apply_lambda_from_psd_is_the_dense_covariance(window, Nf, Nt, dt):
-    """``apply_lambda_from_psd(x)`` is ``build_C_wdm @ x`` on the active cells (junk in
-    the inactive cells of ``x`` is ignored)."""
+    """``apply_lambda_from_psd(x)`` is ``build_C_wdm @ x``."""
     N = Nf * Nt
-    mask = wilson.grid.active_mask(Nf, Nt)
-    x = np.random.default_rng(N + Nf + 3).standard_normal((Nf + 1, Nt))
+    x = np.random.default_rng(N + Nf + 3).standard_normal((Nf, Nt))
     S = psd(np.fft.rfftfreq(N, dt))
-    want = np.zeros_like(x)
-    want[mask] = _dense(window, Nf, Nt, dt)[3] @ x[mask]
+    want = (_dense(window, Nf, Nt, dt)[1] @ x.ravel()).reshape(Nf, Nt)
     got = St.apply_lambda_from_psd(x, Nf, Nt, dt, S, window=window)
     _close(got, want, RTOL_KERNEL, "apply_lambda_from_psd")
 
@@ -512,19 +508,12 @@ def test_apply_lambda_from_psd_is_the_dense_covariance(window, Nf, Nt, dt):
 @pytest.mark.parametrize("Nf, Nt, dt", GRIDS)
 def test_band_variances_are_the_diagonal_of_the_dense_covariance(window, Nf, Nt, dt):
     """``band_averaged_variance`` and the stationary limit of ``evolutionary_band_variance``
-    (all bands, and selected ``bands=``) are ``diag(build_C_wdm)`` on the active cells."""
-    mask = wilson.grid.active_mask(Nf, Nt)
-    want = np.diag(_dense(window, Nf, Nt, dt)[3])
-    _close(No.band_averaged_variance(Nf, Nt, dt, psd, window=window)[mask], want, RTOL_KERNEL,
+    are ``diag(build_C_wdm)``."""
+    want = np.diag(_dense(window, Nf, Nt, dt)[1]).reshape(Nf, Nt)
+    _close(No.band_averaged_variance(Nf, Nt, dt, psd, window=window), want, RTOL_KERNEL,
            "band_averaged_variance")
-    _close(No.evolutionary_band_variance(Nf, Nt, dt, _stationary, window=window)[mask], want,
+    _close(No.evolutionary_band_variance(Nf, Nt, dt, _stationary, window=window), want,
            RTOL_KERNEL, "evolutionary_band_variance")
-    bands = np.array([0, Nf // 2, Nf])
-    grid = np.zeros((Nf + 1, Nt))
-    grid[mask] = want
-    sub = No.evolutionary_band_variance(Nf, Nt, dt, _stationary, bands=bands, window=window)
-    _close(sub[mask[bands]], grid[bands][mask[bands]], RTOL_KERNEL,
-           "evolutionary_band_variance(bands)")
 
 
 @pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
