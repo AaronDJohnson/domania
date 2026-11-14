@@ -59,15 +59,10 @@ channel, with any leading axes. Slot `(i, j)` holds the padded cell `(m, n)`:
 - **The flat form is `w.reshape(..., N)`**, so slot (i, j) has flat index `i·Nt + j`. N×N
   matrices index their rows and columns in this order, and cell masks are boolean
   `(Nf, Nt)`.
-- **Compatibility with other packages:**
-  - **The user's local `wdm` package** (unreleased, `packed_wdm_indices`, `data.py:88-104`):
-    the same slots and the same values, because it uses the same normalisation (atoms of
-    unit norm, Σw² = dt·Σx², edge bands ÷√2). Its `build_W` and folded `Covariance` use
-    the same flat order.
-  - **pywavelet** `(Nf, Nt)` and Digman's `WDMWaveletTransforms` `(Nt, Nf)`: the same slots,
-    but different values. Read from their code but not measured, they differ by √dt
-    (√(dt/2) for pywavelet) and by a sign on the interior cells where m+n is odd. domainia
-    does not try to match those values.
+- **The user's local `wdm` package** (unreleased, `packed_wdm_indices`, `data.py:88-104`)
+  uses the same slots. Read from its code, though not yet measured, it should also hold the
+  same values, because it uses the same normalisation (atoms of unit norm, Σw² = dt·Σx²,
+  edge bands ÷√2). Its `build_W` and folded `Covariance` use the same flat order.
 - **Nothing in the folded layout is structurally zero.** Every inactive-cell rule goes: the
   residue checks, the zeroing, the NaN fills and the mask refusals.
 - **Band structure in this order:** row 0 couples to row 1 through its DC slots, and to row
@@ -467,10 +462,6 @@ family in the same task that changes that family's kernel.
 - **Square grids:** an Nf/Nt transpose is invisible on a square grid (§1).
 - **Enchilada's choice** between (a) and (b) in §6 is Enchilada's, and until it is made, the
   two packages disagree on the WDM layout. Enchilada does not import domainia today.
-- **Digman and pywavelet:** value compatibility is out of scope (§1). A future
-  converter would need the √dt scale (√(dt/2) for pywavelet), the sign on the interior cells
-  where m+n is odd, and Digman's transpose. All three were read from their code and have not
-  been measured.
 - **Two defaults that were not the user's explicit decisions:**
   - `fold` refuses a padded array whose inactive cells hold more than 1e-10 of the slice's
     peak (§2). This is `transform`'s rule today, carried over.
