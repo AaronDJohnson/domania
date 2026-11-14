@@ -38,16 +38,21 @@ BASELINE = Path(__file__).resolve().parent / "data" / "meyer_baseline.npz"
 #: Case-name prefixes whose kernels take ``window=``.  The single source for
 #: ``test_meyer_baseline.py`` and ``test_window_threading.py``.
 THREADED = ("transform.", "matrix.", "stationary.", "noise.", "evolutionary.")
-#: Baseline key prefixes of code that domainia 3.0 deletes: maps (54 keys), inner_product (24)
-#: and the band-limited entry points (18).  They are not replayed.
+#: Baseline key prefixes of code that domainia 3.0 deletes: maps (54 keys), inner_product (24),
+#: the band-limited entry points (18) and the active-cell matrices (4), which the folded layout
+#: made ``build_W`` and ``build_C_wdm``.  They are not replayed.
 DROPPED = ("domainia::TimeToWDM.", "domainia::WDMToTime.", "domainia::FourierToWDM.",
            "wilson::inner_product.", "wilson::transform.band_atoms::",
-           "wilson::transform.forward_bands::", "wilson::transform.inverse_bands::")
+           "wilson::transform.forward_bands::", "wilson::transform.inverse_bands::",
+           "wilson::matrix.active_W::", "wilson::matrix.build_C_wdm_active::")
 #: The comparison: ``max |got - want| <= RTOL * s`` (see :func:`mismatches`).
 RTOL = 1e-12
 #: Families recorded padded ``(..., Nf+1, Nt)`` whose kernels now return the folded layout.
 FOLDED = ("wilson::transform.forward", "wilson::transform.forward_many",
           "wilson::transform.forward_time", "wilson::transform.forward_time_many")
+#: Dense families recorded with padded ``(Nf+1) Nt`` rows (and columns, ``build_C_wdm``), now
+#: in folded flat order.
+FOLDED_ROWS = ("wilson::matrix.build_W", "wilson::matrix.build_C_wdm")
 
 Case = tuple[str, Callable[[dict], Any]]
 
@@ -60,16 +65,21 @@ def _family(key: str) -> str:
 def load_baseline() -> dict[str, np.ndarray]:
     """The recorded baseline as ``{key: array}``.  The families whose kernels now return the
     folded WDM layout are converted here, never in :func:`mismatches` (folded WDM spec,
-    section 5): the :data:`FOLDED` ones are gathered into the folded slots, without
+    section 5): the :data:`FOLDED` ones are gathered into the folded slots, and the
+    :data:`FOLDED_ROWS` rows (and the covariance's columns) into folded flat order, without
     ``wilson.grid.fold``'s check of the inactive cells."""
     from domainia.wilson.grid import cells
 
     with np.load(BASELINE) as z:
         out = {k: z[k] for k in z.files}
     for k, v in out.items():
-        if _family(k) in FOLDED:
-            m, n = cells(*map(int, k.split("::")[2].split("x")))
-            out[k] = v[..., m, n]
+        fam = _family(k)
+        if fam in FOLDED + FOLDED_ROWS:
+            Nf, Nt = map(int, k.split("::")[2].split("x"))
+            m, n = cells(Nf, Nt)
+            p = (m * Nt + n).ravel()                # each folded slot's padded flat index
+            out[k] = (v[..., m, n] if fam in FOLDED else v[p] if fam == "wilson::matrix.build_W"
+                      else v[np.ix_(p, p)])
     return out
 
 
@@ -182,9 +192,7 @@ def wilson_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
     if (Nf, Nt) == DENSE_GRID:
         cases += [
             ("matrix.build_W", lambda kw: M.build_W(Nf, Nt, dt, **kw)),
-            ("matrix.active_W", lambda kw: M.active_W(Nf, Nt, dt, **kw)),
             ("matrix.build_C_wdm", lambda kw: M.build_C_wdm(Nf, Nt, dt, psd, **kw)),
-            ("matrix.build_C_wdm_active", lambda kw: M.build_C_wdm_active(Nf, Nt, dt, psd, **kw)),
             ("evolutionary.exact_covariance", lambda kw: E.exact_covariance(Nf, Nt, dt, Sn, **kw)),
             ("evolutionary.eq45_direct", lambda kw: E.eq45_direct(E.eq45_plan(Nf, Nt, dt, **kw), Sn)),
         ]

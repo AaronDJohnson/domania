@@ -6,16 +6,19 @@ import numpy as np
 import pytest
 
 # The frozen wdm_dev oracle (tests/wilson/oracle/wdm_dev_ev) against domainia.wilson's dense
-# references: its packed grid, atoms and time mask against active_W and forward_time, its band
-# average and exact covariance against band_averaged_variance, build_C_time and
-# build_C_wdm_active.  tests/wilson/test_evolutionary_kernels.py checks the kernels against it.
+# references: its packed grid, atoms and time mask against build_W and forward_time, its band
+# average and exact covariance against band_averaged_variance, build_C_time and build_C_wdm.
+# The oracle packs the cells in band order; tests/wilson/test_evolutionary_kernels.py checks
+# the kernels against it.
 from wdm_dev_ev import evolutionary as ev
-from domainia.wilson.grid import active_mask, unfold
-from domainia.wilson.matrix import active_W
+from domainia.wilson.grid import active_mask, cells, unfold
+from domainia.wilson.matrix import build_W
 from domainia.wilson.transform import forward_time
 
 NF, NT, DT = 8, 16, 0.5
 N = NF * NT
+#: ``build_W``'s folded rows in the oracle's band order (``numpy.nonzero`` of the padded mask).
+BAND = np.argsort(np.ravel_multi_index(cells(NF, NT), (NF + 1, NT)), axis=None)
 
 
 @pytest.fixture
@@ -25,7 +28,7 @@ def rng():
 
 def test_packed_grid_matches_the_dense_transform(rng):
     g = ev.PackedGrid(NF, NT, DT)
-    Wa = active_W(NF, NT, DT)
+    Wa = build_W(NF, NT, DT)[BAND]
     assert g.size == N
     np.testing.assert_array_equal(g.mask, active_mask(NF, NT))
     x = rng.standard_normal((3, N))
@@ -36,14 +39,14 @@ def test_packed_grid_matches_the_dense_transform(rng):
 
 def test_atoms_are_the_rows_of_the_transform():
     g = ev.PackedGrid(NF, NT, DT)
-    Wa = active_W(NF, NT, DT)
+    Wa = build_W(NF, NT, DT)[BAND]
     for p in range(g.size):
         np.testing.assert_allclose(g.atom(p), Wa[p], atol=1e-12)
 
 
 def test_apply_mask_and_energy_fraction_match_the_dense_mask(rng):
     g = ev.PackedGrid(NF, NT, DT)
-    Wa = active_W(NF, NT, DT)
+    Wa = build_W(NF, NT, DT)[BAND]
     w2 = rng.uniform(0.0, 1.0, N)
     Mm = Wa @ np.diag(w2) @ Wa.T / DT
     Y = rng.standard_normal((2, N))
@@ -55,7 +58,7 @@ def test_apply_mask_and_energy_fraction_match_the_dense_mask(rng):
 # General S(f, t): band average and exact covariance
 # ---------------------------------------------------------------------------
 
-from domainia.wilson.matrix import build_C_time, build_C_wdm_active  # noqa: E402
+from domainia.wilson.matrix import build_C_time, build_C_wdm  # noqa: E402
 from domainia.wilson.noise import band_averaged_variance  # noqa: E402
 
 T_REC = N * DT
@@ -93,10 +96,10 @@ def test_stationary_limit_of_the_exact_covariance():
     np.testing.assert_allclose(ev.time_domain_covariance(N, DT, Sst), build_C_time(N, DT, _S_stat),
                                atol=1e-12)
     Lam = ev.exact_covariance(NF, NT, DT, Sst)
-    np.testing.assert_allclose(Lam, build_C_wdm_active(NF, NT, DT, _S_stat), atol=1e-12)
+    np.testing.assert_allclose(Lam, build_C_wdm(NF, NT, DT, _S_stat)[np.ix_(BAND, BAND)], atol=1e-12)
 
 
 def test_exact_covariance_is_the_transformed_time_covariance():
-    Wa = active_W(NF, NT, DT)
+    Wa = build_W(NF, NT, DT)[BAND]
     ref = Wa @ ev.time_domain_covariance(N, DT, _S_evo) @ Wa.T
     np.testing.assert_allclose(ev.exact_covariance(NF, NT, DT, _S_evo), ref, atol=1e-12 * np.abs(ref).max())

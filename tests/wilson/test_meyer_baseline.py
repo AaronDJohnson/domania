@@ -21,10 +21,11 @@ def baseline() -> dict[str, np.ndarray]:
     return load_baseline()
 
 
-def test_the_dropped_families_are_96_of_the_1504_keys(baseline):
-    """maps 54, inner_product 24 and the band-limited entry points 18."""
+def test_the_dropped_families_are_100_of_the_1504_keys(baseline):
+    """maps 54, inner_product 24, the band-limited entry points 18 and the active-cell
+    matrices 4."""
     assert len(baseline) == 1504
-    assert sum(k.startswith(DROPPED) for k in baseline) == 96
+    assert sum(k.startswith(DROPPED) for k in baseline) == 100
 
 
 def test_the_comparator():

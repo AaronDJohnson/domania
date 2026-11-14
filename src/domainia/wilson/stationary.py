@@ -179,7 +179,7 @@ def _normalize_noise_to_sigma2(
                     "The fast stationary algorithm requires off-diagonal "
                     f"entries < {rtol:g} times the max diagonal entry. "
                     "For non-stationary noise build the dense pipeline "
-                    "explicitly: W = domainia.wilson.matrix.build_W(...) (or active_W), "
+                    "explicitly: W = domainia.wilson.matrix.build_W(...), "
                     "then W @ C @ W.T with your own (N, N) covariance. Note "
                     "domainia.wilson.matrix.build_C_wdm does NOT accept one -- it takes a "
                     "stationary PSD callable and builds a Toeplitz C_time."

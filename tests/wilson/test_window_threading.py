@@ -35,7 +35,7 @@ MEYER_HELPERS = frozenset({"phi_centered"})
 CONSUMERS = frozenset({
     "_gather_bands", "forward", "forward_time", "inverse", "inverse_time", "_forward",
     "_forward_time", "_inverse", "_inverse_time", "base_atom_spectra", "atom_spectrum",
-    "build_W", "active_W", "build_C_wdm", "build_C_wdm_active",
+    "build_W", "build_C_wdm",
     "_slab_K", "build_lambda_blocks_full_active", "build_K_full_active", "psd_from_K",
     "apply_lambda_from_psd", "psd_from_lambda_blocks",
     "band_averaged_variance", "evolutionary_band_variance", "empirical_variance",
@@ -326,7 +326,7 @@ def test_atom_spectrum_checks_the_window_even_when_base_is_given(bogus):
 @pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
 @pytest.mark.parametrize("Nf, Nt, dt", GRIDS)
 def test_every_admissible_window_gives_an_orthonormal_basis(window, Nf, Nt, dt):
-    A = wilson.matrix.active_W(Nf, Nt, dt, window=window)
+    A = wilson.matrix.build_W(Nf, Nt, dt, window=window)
     np.testing.assert_allclose(A @ A.T, dt * np.eye(A.shape[0]), rtol=0, atol=1e-12 * dt)
 
 
@@ -344,9 +344,9 @@ def test_time_round_trip_and_energy(window, Nf, Nt, dt):
 @pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
 def test_stationary_covariance_is_block_tridiagonal(window):
     Nf, Nt, dt = 8, 16, 1.0
-    C = wilson.matrix.build_C_wdm(Nf, Nt, dt, psd, window=window).reshape(Nf + 1, Nt, Nf + 1, Nt)
-    far = max(float(np.max(np.abs(C[m, :, k, :])))
-              for m in range(Nf + 1) for k in range(Nf + 1) if abs(m - k) > 1)
+    C = wilson.matrix.build_C_wdm(Nf, Nt, dt, psd, window=window)
+    m = wilson.grid.cells(Nf, Nt)[0].ravel()               # the band of each folded slot
+    far = float(np.max(np.abs(C[np.abs(m[:, None] - m[None, :]) > 1])))
     assert far <= 1e-12 * float(np.max(np.abs(C)))
 
 
@@ -373,19 +373,14 @@ def _close(got, want, rtol: float, what: str) -> None:
 @pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
 @pytest.mark.parametrize("Nf, Nt, dt", GRIDS)
 def test_build_W_is_the_impulse_response(window, Nf, Nt, dt):
-    """Column ``k`` of ``W`` is ``forward_time(e_k)``, unfolded to ``build_W``'s padded rows (the
-    definition; ``build_W`` probes ``2 (Nf+1)`` rows and rolls them by ``2 Nf`` samples
-    instead), and the other matrix builders follow from it."""
+    """Column ``k`` of ``W`` is ``forward_time(e_k)`` in folded flat order (the definition;
+    ``build_W`` probes ``2 Nf`` rows and rolls them by ``2 Nf`` samples instead), and
+    ``build_C_wdm`` follows from it."""
     N = Nf * Nt
-    W_def = wilson.grid.unfold(wilson.forward_time(np.eye(N), Nf, Nt, dt, window=window), Nf, Nt)
-    W_def = W_def.reshape(N, -1).T
-    mask = wilson.grid.active_mask(Nf, Nt).ravel()
+    W_def = wilson.forward_time(np.eye(N), Nf, Nt, dt, window=window).reshape(N, N).T
     C_def = W_def @ M.build_C_time(N, dt, psd) @ W_def.T
     _close(M.build_W(Nf, Nt, dt, window=window), W_def, RTOL, "build_W")
-    _close(M.active_W(Nf, Nt, dt, window=window), W_def[mask], RTOL, "active_W")
     _close(M.build_C_wdm(Nf, Nt, dt, psd, window=window), C_def, RTOL, "build_C_wdm")
-    _close(M.build_C_wdm_active(Nf, Nt, dt, psd, window=window), C_def[np.ix_(mask, mask)], RTOL,
-           "build_C_wdm_active")
 
 
 @pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
@@ -395,20 +390,21 @@ def test_atom_spectra_are_the_rfft_of_the_rows_of_W(window, Nf, Nt, dt):
     one in each edge band -- built from ``window=`` alone (``atom_spectrum``'s own
     ``base_atom_spectra(window=)`` call)."""
     W = M.build_W(Nf, Nt, dt, window=window)
+    row = wilson.grid.unfold(np.arange(Nf * Nt).reshape(Nf, Nt), Nf, Nt)    # cell (m, n)'s row
     base = T.base_atom_spectra(Nf, Nt, dt, window=window)
     for (m, a), G in base.items():
-        _close(G, np.fft.rfft(W[m * Nt + a]), RTOL, f"base_atom_spectra[{m}, {a}]")
+        _close(G, np.fft.rfft(W[row[m, a]]), RTOL, f"base_atom_spectra[{m}, {a}]")
     for m, n in zip(*np.nonzero(wilson.grid.active_mask(Nf, Nt)), strict=True):
         _close(T.atom_spectrum(int(m), int(n), Nf, Nt, dt, base=base, window=window),
-               np.fft.rfft(W[m * Nt + n]), RTOL_ATOM, f"atom_spectrum({m}, {n}, base=)")
+               np.fft.rfft(W[row[m, n]]), RTOL_ATOM, f"atom_spectrum({m}, {n}, base=)")
     for m, n in ((1, 3), (0, 2), (Nf, 2)):
-        _close(T.atom_spectrum(m, n, Nf, Nt, dt, window=window), np.fft.rfft(W[m * Nt + n]),
+        _close(T.atom_spectrum(m, n, Nf, Nt, dt, window=window), np.fft.rfft(W[row[m, n]]),
                RTOL_ATOM, f"atom_spectrum({m}, {n})")
 
 
 # ---------------------------------------------------------------------------
 # The stationary, noise, evolutionary and inner-product kernels, each against a dense reference
-# built from the value-verified matrix kernels above (W, W_a, build_C_wdm, build_C_wdm_active)
+# built from the value-verified matrix kernels above (build_W and build_C_wdm)
 # with the same window.  A kernel that samples the window but computes with MEYER fails these
 # for every window but MEYER.
 # ---------------------------------------------------------------------------
@@ -432,20 +428,20 @@ def _read_only(a):
 
 @lru_cache(maxsize=None)
 def _dense(window, Nf, Nt, dt):
-    """``(W, C, W_a, C_a)``: ``build_W``, ``build_C_wdm``, ``active_W`` and
-    ``build_C_wdm_active`` of ``psd`` with ``window`` (read-only)."""
-    return tuple(_read_only(a) for a in (
-        M.build_W(Nf, Nt, dt, window=window), M.build_C_wdm(Nf, Nt, dt, psd, window=window),
-        M.active_W(Nf, Nt, dt, window=window), M.build_C_wdm_active(Nf, Nt, dt, psd, window=window)))
+    """``(W, C, W_a, C_a)``: ``build_W`` and ``build_C_wdm`` of ``psd`` with ``window``, and the
+    same with their rows (and columns) in band order, ``numpy.nonzero`` of the padded mask
+    (read-only)."""
+    W, C = M.build_W(Nf, Nt, dt, window=window), M.build_C_wdm(Nf, Nt, dt, psd, window=window)
+    a = np.argsort(np.ravel_multi_index(wilson.grid.cells(Nf, Nt), (Nf + 1, Nt)), axis=None)
+    return tuple(_read_only(x) for x in (W, C, W[a], C[np.ix_(a, a)]))
 
 
-def _blocks_of(C, n_active, Nf, Nt):
-    """The diagonal and upper band blocks of a dense ``(Nf+1) Nt`` square matrix, restricted to
-    the active cells (the ``build_lambda_blocks_full_active`` layout)."""
-    C4 = C.reshape(Nf + 1, Nt, Nf + 1, Nt)
-    diag = [C4[m, :, m][np.ix_(n_active[m], n_active[m])] for m in range(Nf + 1)]
-    offd = [C4[m, :, m + 1][np.ix_(n_active[m], n_active[m + 1])] for m in range(Nf)]
-    return diag, offd
+def _blocks_of(C, Nf, Nt):
+    """The diagonal and upper band blocks of a dense folded ``N x N`` matrix (the
+    ``build_lambda_blocks_full_active`` layout: band ``m``'s cells, time ascending)."""
+    band = [np.flatnonzero(wilson.grid.cells(Nf, Nt)[0] == m) for m in range(Nf + 1)]
+    return ([C[np.ix_(b, b)] for b in band],
+            [C[np.ix_(b, c)] for b, c in zip(band[:-1], band[1:], strict=True)])
 
 
 def _K_blocks(K_diag, K_off, n_active, Nf, Nt):
@@ -469,12 +465,13 @@ def test_stationary_builders_are_the_blocks_of_the_dense_covariance(window, Nf, 
     """``build_lambda_blocks_full_active``, and the blocks ``build_K_full_active``'s ``K``
     stand for, assemble to ``build_C_wdm``."""
     C = _dense(window, Nf, Nt, dt)[1]
+    p = np.ravel_multi_index(wilson.grid.cells(Nf, Nt), (Nf + 1, Nt)).ravel()
     d, o, na = St.build_lambda_blocks_full_active(Nf, Nt, dt, psd, window=window)
-    _close(St.assemble_lambda_full_active(d, o, na, Nf, Nt), C, RTOL_KERNEL,
+    _close(St.assemble_lambda_full_active(d, o, na, Nf, Nt)[np.ix_(p, p)], C, RTOL_KERNEL,
            "build_lambda_blocks_full_active")
     K_diag, K_off = St.build_K_full_active(Nf, Nt, dt, psd, window=window)
-    _close(St.assemble_lambda_full_active(*_K_blocks(K_diag, K_off, na, Nf, Nt), na, Nf, Nt), C,
-           RTOL_KERNEL, "build_K_full_active")
+    _close(St.assemble_lambda_full_active(*_K_blocks(K_diag, K_off, na, Nf, Nt), na, Nf, Nt)
+           [np.ix_(p, p)], C, RTOL_KERNEL, "build_K_full_active")
 
 
 @pytest.mark.parametrize("Nf, Nt, dt, window", [
@@ -491,7 +488,7 @@ def test_stationary_backward_maps_recover_the_psd(window, Nf, Nt, dt):
     d, o, na = St.build_lambda_blocks_full_active(Nf, Nt, dt, psd, window=window)
     _close(St.psd_from_lambda_blocks(d, o, na, Nf, Nt, dt, window=window), S, RTOL_KERNEL,
            "psd_from_lambda_blocks")
-    dense = _blocks_of(_dense(window, Nf, Nt, dt)[1], na, Nf, Nt)
+    dense = _blocks_of(_dense(window, Nf, Nt, dt)[1], Nf, Nt)
     _close(St.psd_from_lambda_blocks(*dense, na, Nf, Nt, dt, window=window), S, RTOL_KERNEL,
            "psd_from_lambda_blocks(blocks of build_C_wdm)")
 
@@ -499,7 +496,7 @@ def test_stationary_backward_maps_recover_the_psd(window, Nf, Nt, dt):
 @pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
 @pytest.mark.parametrize("Nf, Nt, dt", GRIDS)
 def test_apply_lambda_from_psd_is_the_dense_covariance(window, Nf, Nt, dt):
-    """``apply_lambda_from_psd(x)`` is ``build_C_wdm_active @ x`` on the active cells (junk in
+    """``apply_lambda_from_psd(x)`` is ``build_C_wdm @ x`` on the active cells (junk in
     the inactive cells of ``x`` is ignored)."""
     N = Nf * Nt
     mask = wilson.grid.active_mask(Nf, Nt)
@@ -515,7 +512,7 @@ def test_apply_lambda_from_psd_is_the_dense_covariance(window, Nf, Nt, dt):
 @pytest.mark.parametrize("Nf, Nt, dt", GRIDS)
 def test_band_variances_are_the_diagonal_of_the_dense_covariance(window, Nf, Nt, dt):
     """``band_averaged_variance`` and the stationary limit of ``evolutionary_band_variance``
-    (all bands, and selected ``bands=``) are ``diag(build_C_wdm_active)`` on the active cells."""
+    (all bands, and selected ``bands=``) are ``diag(build_C_wdm)`` on the active cells."""
     mask = wilson.grid.active_mask(Nf, Nt)
     want = np.diag(_dense(window, Nf, Nt, dt)[3])
     _close(No.band_averaged_variance(Nf, Nt, dt, psd, window=window)[mask], want, RTOL_KERNEL,
@@ -538,8 +535,9 @@ def test_empirical_variance_is_the_mean_square_of_the_same_draws(window, Nf, Nt,
     W = _dense(window, Nf, Nt, dt)[0]
     rng = np.random.default_rng(5)
     draws = [W @ np.fft.irfft(colored_noise(N, dt, psd, rng), n=N) for _ in range(3)]
-    want = np.mean(np.square(draws), axis=0).reshape(Nf + 1, Nt)
-    _close(empirical_variance(Nf, Nt, dt, psd, 3, seed=5, window=window), want, RTOL_KERNEL,
+    want = np.mean(np.square(draws), axis=0).reshape(Nf, Nt)
+    m, n = wilson.grid.cells(Nf, Nt)
+    _close(empirical_variance(Nf, Nt, dt, psd, 3, seed=5, window=window)[m, n], want, RTOL_KERNEL,
            "empirical_variance")
 
 
@@ -562,14 +560,14 @@ def test_time_masks_are_the_dense_mask(window, Nf, Nt, dt):
            RTOL_KERNEL, "apply_time_mask(1-D)")
 
 
-def _wrap_reference(W, Nf, Nt):
-    """The definition of ``wrap_fractions`` on the rows of ``W``: for the active cell
+def _wrap_reference(W_a, Nf, Nt):
+    """The definition of ``wrap_fractions`` on the band-order rows ``W_a``: for the active cell
     ``(m, n)``, centred on sample ``c = n Nf``, the share of ``sum_t g_mn(t)^2`` at samples
     whose unwrapped position ``c + delta`` (``delta`` the signed offset from the centre, in
     ``[-N/2, N/2)``) lies outside ``[0, N)``; ``nan`` at inactive cells."""
     N = Nf * Nt
     m, n = np.nonzero(wilson.grid.active_mask(Nf, Nt))
-    g2 = W.reshape(Nf + 1, Nt, N)[m, n] ** 2
+    g2 = W_a ** 2
     c = n[:, None] * Nf
     pos = c + (np.arange(N)[None, :] - c + N // 2) % N - N // 2
     out = np.full((Nf + 1, Nt), np.nan)
@@ -592,7 +590,7 @@ def _cut_reference(frac, tol):
 def test_wrap_rule_is_its_definition_on_the_rows_of_W(window, Nf, Nt, dt):
     """``wrap_fractions`` (all bands and a subset) is its definition on the rows of
     ``build_W``, and ``wrap_cut_columns`` is the cut rule on those fractions."""
-    want = _wrap_reference(_dense(window, Nf, Nt, dt)[0], Nf, Nt)
+    want = _wrap_reference(_dense(window, Nf, Nt, dt)[2], Nf, Nt)
     got = E.wrap_fractions(Nf, Nt, dt, window=window)
     assert np.array_equal(np.isnan(got), np.isnan(want))
     _close(np.nan_to_num(got, nan=-1.0), np.nan_to_num(want, nan=-1.0), RTOL_KERNEL, "wrap_fractions")
@@ -607,7 +605,7 @@ def test_wrap_rule_is_its_definition_on_the_rows_of_W(window, Nf, Nt, dt):
 @pytest.mark.parametrize("Nf, Nt, dt", GRIDS)
 def test_exact_covariance_is_the_dense_congruence(window, Nf, Nt, dt):
     """``exact_covariance`` is ``W_a Sigma W_a^T`` (``Sigma = time_domain_covariance``), and
-    ``build_C_wdm_active`` in the stationary limit."""
+    ``build_C_wdm`` in the stationary limit."""
     N = Nf * Nt
     Wa, Ca = _dense(window, Nf, Nt, dt)[2:]
     _close(E.exact_covariance(Nf, Nt, dt, _stationary, window=window), Ca, RTOL_KERNEL,
@@ -648,7 +646,7 @@ def _assemble_gram(gplan, diag, up, n):
 @pytest.mark.parametrize("Nf, Nt, dt", GRIDS)
 def test_eq45_plan_carries_the_window_to_every_eq45_builder(window, Nf, Nt, dt):
     """``plan.base`` is ``base_atom_spectra(window=)``, and in the stationary limit the plan's
-    ``eq45_direct``, ``eq45_blocks_cheb`` and ``eq45_blocks_gram`` are ``build_C_wdm_active``,
+    ``eq45_direct``, ``eq45_blocks_cheb`` and ``eq45_blocks_gram`` are ``build_C_wdm``,
     on all cells and on a ``keep`` subset (the kept rows and columns)."""
     Ca = _dense(window, Nf, Nt, dt)[3]
     base = T.base_atom_spectra(Nf, Nt, dt, window=window)

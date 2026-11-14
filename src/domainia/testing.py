@@ -2,7 +2,7 @@
 ``O(N^2)`` memory or worse: keep ``N`` <~ 2048.
 
 * :func:`dense_W`, :func:`wdm_congruence`: the WDM rows of a set of cells
-  (``wilson.matrix.active_W``) and ``W_K Sigma W_K^T``.
+  (``wilson.matrix.build_W``) and ``W_K Sigma W_K^T``.
 * :func:`eq45_dense`: Eq. (45) on a set of cells by the direct sum over rfft bins
   (``wilson.evolutionary.eq45_direct``).
 * :func:`colored_noise`, :func:`empirical_variance`: one draw of stationary noise (its rfft)
@@ -63,10 +63,11 @@ def _keep(Nf: int, Nt: int, mask: Any) -> NDArray[np.bool_]:
 
 def dense_W(Nf: int, Nt: int, dt: float, mask: Any, *, window: Window = MEYER) -> Array:
     """``(cells, N)``: row ``p`` is the atom of the ``p``-th cell of ``mask`` sampled in
-    time, so ``W x`` are those cells of ``x`` (``wilson.matrix.active_W`` rows,
-    ``W_a W_a^T = dt I``) in the Wilson basis of ``window``."""
+    time, so ``W x`` are those cells of ``x`` (``wilson.matrix.build_W`` rows,
+    ``W W^T = dt I``) in the Wilson basis of ``window``."""
     keep = _keep(Nf, Nt, mask)
-    return wilson.matrix.active_W(Nf, Nt, dt, window=window)[keep]
+    band = np.argsort(np.ravel_multi_index(wilson.grid.cells(Nf, Nt), (Nf + 1, Nt)), axis=None)
+    return wilson.matrix.build_W(Nf, Nt, dt, window=window)[band[keep]]
 
 
 def wdm_congruence(Sigma: Array, Nf: int, Nt: int, dt: float, mask: Any, *,

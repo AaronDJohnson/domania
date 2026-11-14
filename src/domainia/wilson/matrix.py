@@ -1,15 +1,15 @@
 """Explicit WDM transform matrix and noise covariance.
 
 The WDM forward transform is a linear map $w = W\\,x$ where $W$ is a
-real $(N_f+1)N_t \\times N$ matrix.  Restricted to its $N$ active rows
-(skipping the inactive edge-band entries), $W_a$ is square and
+real $N \\times N$ matrix whose rows are the folded slots in flat order (slot $(i, j)$ is
+row $i\\,N_t + j$; :func:`~domainia.wilson.grid.cells` gives its band and time).  $W$ is
 orthogonal **up to the sampling scale**:
 
-$$W_a W_a^T = W_a^T W_a = \\delta t\\,I,$$
+$$W W^T = W^T W = \\delta t\\,I,$$
 
-i.e. $W_a = \\sqrt{\\delta t}\\,Q$ with $Q$ orthogonal.  Invert with
-$x = W_a^T w / \\delta t$.  The $\\delta t$ is the same factor that
-appears in Parseval ($\\sum w^2 = \\delta t \\sum x^2$); $W_a$ is
+i.e. $W = \\sqrt{\\delta t}\\,Q$ with $Q$ orthogonal.  Invert with
+$x = W^T w / \\delta t$.  The $\\delta t$ is the same factor that
+appears in Parseval ($\\sum w^2 = \\delta t \\sum x^2$); $W$ is
 exactly orthogonal only when $\\delta t = 1$.
 
 Every builder takes ``window=`` (default :data:`domainia.wilson.MEYER`) and returns the
@@ -18,8 +18,7 @@ window (:mod:`domainia.wilson.windows`).
 
 This module exposes:
 
-* :func:`build_W` — full $(N_f+1)N_t \\times N$ matrix.
-* :func:`active_W` — the $N \\times N$ restriction ($W_a W_a^T = \\delta t\\,I$).
+* :func:`build_W` — the $N \\times N$ matrix ($W W^T = \\delta t\\,I$).
 * :func:`build_C_time` — Toeplitz time-domain noise covariance from
   a PSD (vectorized via ``irfft`` of the power spectrum).
 * :func:`build_C_wdm` — WDM-domain noise covariance via the similarity
@@ -42,7 +41,7 @@ from numpy.typing import NDArray
 from .grid import (
     _require_even_positive_int,
     _require_int,
-    active_mask,
+    cells,
     n_samples,
     sanitize_psd,
     validate_dt,
@@ -56,10 +55,8 @@ type CArray = NDArray[np.complexfloating]
 type PsdFunc = Callable[[Array], Array]
 
 __all__ = [
-    "active_W",
     "build_C_time",
     "build_C_wdm",
-    "build_C_wdm_active",
     "build_W",
     "real_to_rfft",
     "rfft_to_real",
@@ -73,93 +70,53 @@ def build_W(
     *,
     window: Window = MEYER,
 ) -> Array:
-    """Build the full $(N_f+1)N_t \\times N$ WDM transform matrix for ``window``.
+    """Build the $N \\times N$ WDM transform matrix for ``window``.
 
-    Row $\\alpha = (m, n)$ is the basis function $g_{mn}$ sampled in time, so
-    $W$ is *defined* by "column $k_0$ is the WDM transform of a delta at sample
-    $k_0$".  It is *built* from the lattice's shift-covariance instead, which
-    agrees with the definition to rounding.
+    Row $p = i\\,N_t + j$ is the basis function $g_{mn}$ of folded slot $(i, j)$ sampled in
+    time ($(m, n)$ from :func:`~domainia.wilson.grid.cells`), so $W$ is *defined* by "column
+    $k_0$ is the flattened WDM transform of a delta at sample $k_0$".  It is *built* from the
+    lattice's shift-covariance instead, which agrees with the definition to rounding.
 
     Returns
     -------
-    ndarray, shape ((Nf+1)*Nt, N)
-        Real matrix.  Rows are indexed by the flattened ``(m, n)``
-        pixel index $\\alpha = m\\,N_t + n$; columns by the time
-        sample $k_0 = 0, \\ldots, N - 1$.  Inactive edge-band rows are exactly zero.
+    ndarray, shape (N, N)
+        Real matrix with $W W^T = \\delta t\\,I$.  Rows are the folded slots in flat order
+        (``W @ x`` is ``forward_time(x).reshape(N)``); columns are the time samples
+        $k_0 = 0, \\ldots, N - 1$.
 
     Notes
     -----
-    Cost: $2(N_f+1)$ inverse transforms plus $O(N^2)$ of copying, and
+    Cost: $2 N_f$ inverse transforms plus $O(N^2)$ of copying, and
     $O(N^2)$ memory.
 
     Examples
     --------
     >>> import numpy as np; from domainia import wilson
     >>> W = wilson.matrix.build_W(4, 8, 1.0)
-    >>> W.shape
-    (40, 32)
+    >>> W.shape, bool(np.allclose(W @ W.T, 1.0 * np.eye(32)))
+    ((32, 32), True)
     """
     validate_grid(Nf, Nt)
     validate_dt(dt)
     N = n_samples(Nf, Nt)
-    W = np.zeros((Nf + 1, Nt, N))
+    m, n = cells(Nf, Nt)
+    W = np.empty((Nf, Nt, N))
 
-    # Since W_a^T W_a = dt*I, row (m, n) is exactly dt * inverse(e_mn).  The
-    # lattice is shift-covariant in steps of TWO time pixels -- one step flips
-    # the carrier parity (-1)^{(m+1)n} -- so rows n and n+2 differ only by a
-    # circular shift of 2*Nf samples.  Probing n = 0 and n = 1 per band and
-    # rolling the rest turns N transforms into 2(Nf+1).
-    #
-    # Only ACTIVE pixels are seeded: inactive edge pixels correspond to zero
-    # rows of W, and those rows come out exactly zero here rather than carrying
-    # the ~1e-17 of cancellation noise that impulse probing leaves.
-    mask = active_mask(Nf, Nt)
+    # Since W^T W = dt*I, row p is exactly dt * inverse(e_p).  The lattice is
+    # shift-covariant in steps of TWO time pixels -- one step flips the carrier
+    # parity (-1)^{(m+1)n} -- so slots j and j+2 of a row (the same band, in row 0
+    # too) differ only by a circular shift of 2*Nf samples.  Probing j = 0 and
+    # j = 1 per row and rolling the rest turns N transforms into 2*Nf.
     seed = np.zeros((Nf + 1, Nt))
-    for n0 in (0, 1):
-        for m in range(Nf + 1):
-            if not mask[m, n0]:
-                continue
+    for i in range(Nf):
+        for j0 in (0, 1):
             seed[:] = 0.0
-            seed[m, n0] = 1.0
+            seed[m[i, j0], n[i, j0]] = 1.0
             row = dt * _inverse_time(seed, Nf, Nt, dt, window=window)
-            for n in range(n0, Nt, 2):
-                W[m, n] = np.roll(row, (n - n0) * Nf)
+            for j in range(j0, Nt, 2):
+                W[i, j] = np.roll(row, (j - j0) * Nf)
 
-    return W.reshape((Nf + 1) * Nt, N)
-
-
-def active_W(
-    Nf: int,
-    Nt: int,
-    dt: float,
-    *,
-    window: Window = MEYER,
-) -> Array:
-    """Restrict :func:`build_W` to its $N$ active rows.
-
-    Returns the square $N \\times N$ matrix obtained by keeping only
-    the rows corresponding to active pixels (interior bands and the
-    parity-selected edge-band entries).  This matrix is orthogonal up to
-    the sampling scale:
-    $W_a W_a^T = W_a^T W_a = \\delta t\\,I$.  Invert with
-    $x = W_a^T w / \\delta t$; the plain transpose is the inverse only
-    at $\\delta t = 1$.
-
-    Returns
-    -------
-    ndarray, shape (N, N)
-        Square real matrix satisfying $W_a W_a^T = \\delta t\\,I$.
-
-    Examples
-    --------
-    >>> import numpy as np; from domainia import wilson
-    >>> Wa = wilson.matrix.active_W(4, 8, 1.0)
-    >>> Wa.shape, bool(np.allclose(Wa @ Wa.T, 1.0 * np.eye(32)))
-    ((32, 32), True)
-    """
-    W = build_W(Nf, Nt, dt, window=window)
-    mask = active_mask(Nf, Nt).ravel()
-    return W[mask, :]
+    return W.reshape(N, N)
 
 
 def build_C_time(N: int, dt: float, Sn_func: PsdFunc) -> Array:
@@ -227,53 +184,29 @@ def build_C_wdm(
 ) -> Array:
     """WDM-domain covariance via the similarity transform $W\\,C^{(\\text{time})}\\,W^T$.
 
-    Returns the full $(N_f+1)N_t \\times (N_f+1)N_t$ covariance matrix
-    of the WDM coefficients under stationary noise with PSD $S_n(f)$.
+    Returns the $N \\times N$ covariance matrix of the WDM coefficients, rows and columns in
+    :func:`build_W`'s folded flat order, under stationary noise with PSD $S_n(f)$.
     Block-tridiagonal in the band index $m$ for every admissible ``window``
     (compact support inside one slab): only $|m - m'| \\le 1$ blocks are
-    nonzero (up to numerical noise).
+    nonzero (up to numerical noise).  Row 0 holds both edge bands, so in slot rows this is
+    block-tridiagonal plus the $(0, N_f - 1)$ corner pair.
 
     Returns
     -------
-    ndarray, shape ((Nf+1)*Nt, (Nf+1)*Nt)
+    ndarray, shape (N, N)
         Symmetric real covariance matrix.
 
     Examples
     --------
     >>> import numpy as np; from domainia import wilson
     >>> C = wilson.matrix.build_C_wdm(4, 8, 1.0, lambda f: 1e-3 * np.ones_like(f))
-    >>> C.shape
-    (40, 40)
+    >>> C.shape, float(np.round(np.diag(C)[0], 6))   # ~ S_n / 2
+    ((32, 32), 0.0005)
     """
     N = n_samples(Nf, Nt)
     W = build_W(Nf, Nt, dt, window=window)
     C_time = build_C_time(N, dt, Sn_func)
     return W @ C_time @ W.T
-
-
-def build_C_wdm_active(
-    Nf: int,
-    Nt: int,
-    dt: float,
-    Sn_func: PsdFunc,
-    *,
-    window: Window = MEYER,
-) -> Array:
-    """Active-pixel restriction of :func:`build_C_wdm`: the $N \\times N$ covariance of the
-    active WDM coefficients, i.e. ``build_C_wdm`` on the active rows and columns.
-
-    Examples
-    --------
-    >>> import numpy as np; from domainia import wilson
-    >>> flat = lambda f: 1e-3 * np.ones_like(f)
-    >>> C = wilson.matrix.build_C_wdm_active(4, 8, 1.0, flat)
-    >>> C.shape, float(np.round(np.diag(C)[0], 6))   # ~ S_n / 2
-    ((32, 32), 0.0005)
-    """
-    N = n_samples(Nf, Nt)
-    Wa = active_W(Nf, Nt, dt, window=window)
-    C_time = build_C_time(N, dt, Sn_func)
-    return Wa @ C_time @ Wa.T
 
 
 def rfft_to_real(x_rfft: CArray, N: int) -> Array:

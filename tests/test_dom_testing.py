@@ -18,6 +18,8 @@ N = NF * NT
 F_MIN, F_REF = 0.5, 1.0
 #: Every active cell.
 MASK = wilson.grid.active_mask(NF, NT)
+#: ``wilson.matrix.build_W``'s folded rows in ``MASK``'s band order.
+BAND = np.argsort(np.ravel_multi_index(wilson.grid.cells(NF, NT), (NF + 1, NT)), axis=None)
 
 
 def L_of(f):
@@ -69,17 +71,17 @@ def test_eq45_differs_from_exact_at_second_order_with_drift():
 
 
 def test_the_oracles_compute_in_the_window_they_are_given():
-    """With ALT_WINDOW: ``dense_W`` is ``active_W``, the congruence is ``W S W^T``, and Eq. 45
+    """With ALT_WINDOW: ``dense_W`` is ``build_W``, the congruence is ``W S W^T``, and Eq. 45
     of a stationary spectrum is the exact covariance; each differs from Meyer's."""
     W = T.dense_W(NF, NT, DT, MASK, window=T.ALT_WINDOW)
-    np.testing.assert_array_equal(W, wilson.matrix.active_W(NF, NT, DT, window=T.ALT_WINDOW))
+    np.testing.assert_array_equal(W, wilson.matrix.build_W(NF, NT, DT, window=T.ALT_WINDOW)[BAND])
     S = np.diag(1.0 + np.arange(N) / N)                  # not the identity: W I W^T = dt I for any window
     alt = T.wdm_congruence(S, NF, NT, DT, MASK, window=T.ALT_WINDOW)
     np.testing.assert_allclose(alt, W @ S @ W.T, rtol=0, atol=1e-12)
     assert not np.allclose(alt, T.wdm_congruence(S, NF, NT, DT, MASK))
     got = T.eq45_dense(NF, NT, DT, MASK, drift(-1.2, 0.0), window=T.ALT_WINDOW)
-    exact = wilson.matrix.build_C_wdm_active(NF, NT, DT, lambda f: drift(-1.2, 0.0)(f, 0.0),
-                                             window=T.ALT_WINDOW)
+    exact = wilson.matrix.build_C_wdm(NF, NT, DT, lambda f: drift(-1.2, 0.0)(f, 0.0),
+                                      window=T.ALT_WINDOW)[np.ix_(BAND, BAND)]
     assert rel(got, exact) < 1e-10
     assert not np.allclose(got, T.eq45_dense(NF, NT, DT, MASK, drift(-1.2, 0.0)))
 

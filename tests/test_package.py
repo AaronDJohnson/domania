@@ -49,13 +49,17 @@ def test_the_project_metadata():
 
 def test_the_public_names():
     """A name that left a top level stays in its submodule (``wilson.grid.active_mask``,
-    ``wilson.windows.WindowError``)."""
+    ``wilson.windows.WindowError``).  ``wilson.matrix`` has no ``active_W`` or
+    ``build_C_wdm_active``: ``build_W`` and ``build_C_wdm`` are already ``N x N``."""
     assert set(domainia.__all__) == PUBLIC
     assert set(wilson.__all__) == WILSON_PUBLIC
     assert all(hasattr(domainia, name) for name in domainia.__all__)
     assert all(hasattr(wilson, name) for name in wilson.__all__)
     assert not hasattr(domainia, "MEYER") and not hasattr(wilson, "active_mask")
     assert wilson.MEYER is wilson.windows.MEYER and wilson.Grid is wilson.grid.Grid
+    assert set(wilson.matrix.__all__) == {"build_C_time", "build_C_wdm", "build_W",
+                                          "real_to_rfft", "rfft_to_real"}
+    assert not hasattr(wilson.matrix, "active_W") and not hasattr(wilson.matrix, "build_C_wdm_active")
 
 
 def test_no_release_leftovers():

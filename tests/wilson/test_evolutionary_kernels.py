@@ -21,7 +21,8 @@ import pytest
 from wdm_dev_ev import evolutionary as ev
 
 from domainia.wilson import evolutionary as E
-from domainia.wilson.matrix import active_W
+from domainia.wilson.grid import cells
+from domainia.wilson.matrix import build_C_wdm, build_W
 from domainia.wilson.noise import evolutionary_band_variance
 
 from .conftest import _oracle_paths
@@ -34,6 +35,8 @@ F_NYQ = 0.5 / DT
 LINEAGE_A = ("toy_models/vendor/wdm/src", "wdm_paper_2/toy_models/src")
 #: max|got - ref| over max|ref| against the omega-era sources (float64).
 ORACLE_RTOL = 1e-14
+#: ``build_W``'s folded rows in band order (``numpy.nonzero`` of the padded mask).
+BAND = np.argsort(np.ravel_multi_index(cells(NF, NT), (NF + 1, NT)), axis=None)
 
 
 def _gap(got, ref, scale=None):
@@ -105,7 +108,7 @@ def test_moved_functions_are_the_oracle_to_rounding(rng):
 
 
 def test_energy_fraction_and_time_mask_match_the_dense_mask(rng):
-    Wa = active_W(NF, NT, DT)
+    Wa = build_W(NF, NT, DT)[BAND]
     w2 = rng.uniform(0.0, 1.0, N)
     Mm = Wa @ np.diag(w2) @ Wa.T / DT
     Y = rng.standard_normal((2, N))
@@ -165,11 +168,9 @@ def test_interp_blocks_and_direct_sum_are_the_oracle_to_rounding(keep):
 
 
 def test_eq45_is_exact_for_stationary_noise():
-    from domainia.wilson.matrix import build_C_wdm_active
-
     plan = E.eq45_plan(NF, NT, DT)
     Sst = lambda f, t: _S_stat(f) + 0 * t  # noqa: E731
-    ref = build_C_wdm_active(NF, NT, DT, _S_stat)
+    ref = build_C_wdm(NF, NT, DT, _S_stat)[np.ix_(BAND, BAND)]
     assert np.max(np.abs(E.eq45_direct(plan, Sst) - ref)) <= 1e-12 * np.abs(ref).max()
     coeffs = E.eq45_coeffs_interp(Sst, plan.f, plan.t_max, plan.P, k=plan.k_used)
     C = _assemble(plan, *E.eq45_blocks_cheb(plan, coeffs))

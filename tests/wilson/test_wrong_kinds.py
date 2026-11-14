@@ -246,7 +246,6 @@ def test_float32_input_is_computed_in_double():
         "empirical_variance": lambda dt: testing.empirical_variance(6, 10, dt, psd, 2, seed=0),
         "build_C_time": lambda dt: M.build_C_time(60, dt, psd),
         "build_C_wdm": lambda dt: M.build_C_wdm(6, 10, dt, psd),
-        "build_C_wdm_active": lambda dt: M.build_C_wdm_active(6, 10, dt, psd),
         "build_lambda_blocks_full_active": lambda dt: St.build_lambda_blocks_full_active(
             6, 10, dt, psd)[0][1],
         "build_K_full_active": lambda dt: St.build_K_full_active(6, 10, dt, psd)[0][1],

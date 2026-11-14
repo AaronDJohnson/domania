@@ -5,7 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from domainia.wilson.matrix import active_W, build_C_time, build_W
+from domainia.wilson.grid import cells
+from domainia.wilson.matrix import build_C_time, build_W
 from domainia.wilson.stationary import (
     assemble_lambda_full_active,
     build_lambda_blocks_full_active,
@@ -145,39 +146,13 @@ def test_invalid_2d_shape_raises(simple_grid):
         build_lambda_blocks(g.Nf, g.Nt, g.dt, bad)
 
 
-def test_full_active_blocks_match_dense_active(simple_grid, lisa_psd):
-    """Full-active slab-IFFT (interior + edges) matches W_a @ C @ W_a^T at machine precision."""
-    g = simple_grid
-    diag, offd, n_active = build_lambda_blocks_full_active(g.Nf, g.Nt, g.dt, lisa_psd)
-    W_a = active_W(g.Nf, g.Nt, g.dt)
-    C_time = build_C_time(g.N, g.dt, lisa_psd)
-    Lambda_a = W_a @ C_time @ W_a.T
-
-    # Active-W ordering: m=0 (Nt/2 rows), m=1..Nf-1 (Nt each), m=Nf (Nt/2).
-    offsets = [0]
-    for m in range(g.Nf + 1):
-        offsets.append(offsets[-1] + len(n_active[m]))
-
-    for m in range(g.Nf + 1):
-        ref = Lambda_a[offsets[m] : offsets[m + 1], offsets[m] : offsets[m + 1]]
-        rel = np.max(np.abs(diag[m] - ref)) / max(np.max(np.abs(ref)), 1.0)
-        assert rel < 1e-10, f"diag[m={m}] rel err = {rel:.3e}"
-
-    for m in range(g.Nf):
-        ref = Lambda_a[offsets[m] : offsets[m + 1], offsets[m + 1] : offsets[m + 2]]
-        rel = np.max(np.abs(offd[m] - ref)) / max(np.max(np.abs(ref)), 1.0)
-        assert rel < 1e-10, f"offd[m={m}] rel err = {rel:.3e}"
-
-
 def test_full_active_assembly_matches_dense_W_C_W(simple_grid, lisa_psd):
     """Assembled full-active Λ matches the dense W @ C_time @ W^T at machine precision."""
     g = simple_grid
     diag, offd, n_active = build_lambda_blocks_full_active(g.Nf, g.Nt, g.dt, lisa_psd)
-    Lambda_fast = assemble_lambda_full_active(diag, offd, n_active, g.Nf, g.Nt)
-
-    W = build_W(g.Nf, g.Nt, g.dt)
-    C_time = build_C_time(g.N, g.dt, lisa_psd)
-    Lambda_dense = W @ C_time @ W.T
+    p = np.ravel_multi_index(cells(g.Nf, g.Nt), (g.Nf + 1, g.Nt)).ravel()
+    Lambda_fast = assemble_lambda_full_active(diag, offd, n_active, g.Nf, g.Nt)[np.ix_(p, p)]
+    Lambda_dense = _dense_lambda(g.Nf, g.Nt, g.dt, lisa_psd)
 
     rel = np.max(np.abs(Lambda_fast - Lambda_dense)) / np.max(np.abs(Lambda_dense))
     assert rel < 1e-10, f"|Λ_fast − W C W^T| / |Λ| = {rel:.3e}"

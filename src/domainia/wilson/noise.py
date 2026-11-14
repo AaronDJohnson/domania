@@ -81,8 +81,8 @@ def band_averaged_variance(
     >>> var.shape
     (9, 16)
     >>> # exact: reproduces the diagonal of the WDM covariance
-    >>> truth = np.diag(wilson.matrix.build_C_wdm_active(Nf, Nt, dt, steep))
-    >>> bool(abs(var[1, 0] - truth[Nt // 2]) / truth[Nt // 2] < 1e-12)
+    >>> truth = np.diag(wilson.matrix.build_C_wdm(Nf, Nt, dt, steep))
+    >>> bool(abs(var[1, 0] - truth[Nt]) / truth[Nt] < 1e-12)
     True
     """
     validate_grid(Nf, Nt)

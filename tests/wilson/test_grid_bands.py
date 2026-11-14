@@ -14,7 +14,7 @@ import pytest
 from domainia import wilson
 from domainia.wilson.filter import phi_centered
 from domainia.wilson.grid import Grid, active_mask, cells, endpoint_weights, fold, unfold
-from domainia.wilson.matrix import active_W
+from domainia.wilson.matrix import build_W
 from domainia.wilson.transform import atom_spectrum, base_atom_spectra, forward_time
 
 from .conftest import _oracle_paths
@@ -170,14 +170,14 @@ def test_rfft_packing_rejects_odd_N():
 
 def test_atoms_are_the_rows_of_the_transform():
     Nf, Nt, dt = 8, 16, 0.5
-    Wa = active_W(Nf, Nt, dt)
+    W = build_W(Nf, Nt, dt)
     base = base_atom_spectra(Nf, Nt, dt)
     assert sorted(base) == [(m, a) for m in range(Nf + 1) for a in (0, 1)
                             if active_mask(Nf, Nt)[m, a]]
-    m, n = np.nonzero(active_mask(Nf, Nt))
+    m, n = (c.ravel() for c in cells(Nf, Nt))           # row p of W is folded slot p
     for p in range(m.size):
         atom = np.fft.irfft(atom_spectrum(int(m[p]), int(n[p]), Nf, Nt, dt, base=base), n=Nf * Nt)
-        assert np.allclose(atom, Wa[p], rtol=0, atol=1e-12)
+        assert np.allclose(atom, W[p], rtol=0, atol=1e-12)
     with pytest.raises(ValueError, match="not an active cell"):
         atom_spectrum(0, 1, Nf, Nt, dt, base=base)
 
