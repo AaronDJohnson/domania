@@ -177,6 +177,8 @@ def wrap_cut_columns(Nf: int, Nt: int, dt: float, tol: float = 1e-3, *,
                      window: Window = MEYER) -> tuple[int, int]:
     """``(leading, trailing)`` time columns to cut so that no kept atom of ``bands``
     (all by default) wraps more than ``tol`` of its energy (WDM Paper II: ``tol = 1e-3``).
+    The counts are cell times ``n``: on a folded array keep ``lead <= n < Nt - trail`` with
+    ``n = wilson.grid.cells(Nf, Nt)[1]``, which is not a column slice.
 
     The rule is geometric (it ignores the noise).  Another window has other atoms, so other
     cuts.
@@ -338,9 +340,9 @@ def eq45_plan(Nf: int, Nt: int, dt: float, keep: BoolArray | None = None, *,
     by default), Chebyshev order ``P`` in time on ``t_bar in [0, t_max]`` (default: this grid's
     ``T = N dt``).  The kept cells are in folded flat order.
 
-    Pair mid-times of the kept cells must lie in ``[0, t_max]``.  A padded grid
+    Pair mid-times of the kept cells must lie in ``[0, t_max]``.  A grid extended in time
     passes its extended ``t_max``; the spectrum's time dependence is then
-    continued over the padding by the caller (``r = t_max / T_obs`` in
+    continued over the extension by the caller (``r = t_max / T_obs`` in
     :func:`eq45_coeffs_bessel`).
 
     ``window`` sets the atoms (``plan.base``); every Eq. (45) function downstream of the plan
@@ -413,7 +415,7 @@ def eq45_coeffs_bessel(L: Array, alpha_c: Any, alpha_d: Any, P: int, *, r: float
     :math:`\alpha = \alpha_c + \alpha_d (r/2 - 1/2) + (\alpha_d r/2)\,u`.
 
     ``r`` is a required keyword: ``plan.t_max / T_obs``, i.e. ``1.0`` on the
-    data grid and ``Nt' / Nt`` on a grid padded to ``Nt'`` columns.
+    data grid and ``Nt' / Nt`` on a grid extended to ``Nt'`` columns.
     :math:`I_p(a)` is ``scipy.special.ive(p, a) * exp(|a|)``.
     """
     a = np.asarray(0.5 * alpha_d * r * L)

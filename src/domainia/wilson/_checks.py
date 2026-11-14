@@ -113,6 +113,17 @@ def require_dtype(name: str, a: object, kinds: str, expected: str) -> None:
         raise TypeError(f"{name} must be {expected}, got dtype {dtype}")
 
 
+def require_array(name: str, x: object, kinds: str, expected: str) -> np.ndarray:
+    """``numpy.asarray(x)``, after a ``TypeError`` for a masked array (``asarray`` would drop
+    the mask) and :func:`require_dtype`."""
+    if isinstance(x, np.ma.MaskedArray):
+        raise TypeError(f"{name} is a masked array; numpy.asarray would drop the mask, so fill "
+                        "it first")
+    a = np.asarray(x)
+    require_dtype(name, a, kinds, expected)
+    return a
+
+
 def validate_dt(dt: object) -> None:
     """Raise unless the sampling interval ``dt`` is a positive finite real number.
 

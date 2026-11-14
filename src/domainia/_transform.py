@@ -18,7 +18,7 @@ import numpy as np
 
 from . import wilson
 from .wilson import MEYER, Window
-from .wilson._checks import require_dtype, require_int
+from .wilson._checks import require_array, require_int
 from .wilson.grid import RESIDUE, _fold_fix
 
 __all__ = ["transform"]
@@ -53,10 +53,7 @@ def _grid(role: str, kind: Any, wdm: Any, N: int) -> tuple[int, int] | None:
 
 def _checked(x: Any, kind: str, N: int, grid: tuple[int, int] | None) -> np.ndarray:
     """``x`` as a float64 (complex128 on frequency) copy, after the input checks."""
-    if isinstance(x, np.ma.MaskedArray):
-        raise TypeError("x is a masked array; numpy.asarray would drop the mask, so fill it first")
-    a = np.asarray(x)
-    require_dtype("x", a, "iufc", "a numeric array")
+    a = require_array("x", x, "iufc", "a numeric array")
     if a.dtype.kind == "c" and kind != "frequency":
         raise ValueError(f"x is complex, but {kind} data are real")
     shape = {"time": (N,), "frequency": (N // 2 + 1,)}.get(kind) or grid

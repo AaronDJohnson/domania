@@ -13,7 +13,7 @@ import pytest
 import domainia
 from domainia import testing, wilson
 from domainia.wilson.filter import nu_d, phi_centered
-from domainia.wilson.grid import _require_int, n_samples, validate_dt, validate_grid
+from domainia.wilson.grid import _require_int, cells, n_samples, validate_dt, validate_grid
 
 
 @pytest.mark.parametrize(("args", "match"), [
@@ -23,7 +23,7 @@ from domainia.wilson.grid import _require_int, n_samples, validate_dt, validate_
     ((np.float64(8), 16), "Nf must be an integer, got float64"),
     (("8", 16), "Nf must be an integer, got str"),
 ])
-@pytest.mark.parametrize("check", [validate_grid, n_samples], ids=["validate_grid", "n_samples"])
+@pytest.mark.parametrize("check", [validate_grid, n_samples, cells], ids=lambda f: f.__name__)
 def test_grid_sizes_of_the_wrong_kind_raise_type_error(check, args, match):
     with pytest.raises(TypeError, match=match):
         check(*args)

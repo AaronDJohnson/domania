@@ -27,7 +27,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from ._checks import REAL_KINDS, require_dtype
+from ._checks import REAL_KINDS, require_array, require_dtype
 from ._checks import require_int as _require_int, validate_dt, validate_finite
 
 type Array = NDArray[np.floating]
@@ -332,11 +332,7 @@ def cells(Nf: int, Nt: int) -> tuple[np.ndarray, np.ndarray]:
 def _wdm_array(name: str, x: object, shape: tuple[int, int]) -> np.ndarray:
     """``x`` as an array, after the kind and trailing-shape checks of :func:`fold` and
     :func:`unfold`."""
-    if isinstance(x, np.ma.MaskedArray):
-        raise TypeError(f"{name} is a masked array; numpy.asarray would drop the mask, so fill "
-                        "it first")
-    a = np.asarray(x)
-    require_dtype(name, a, "biufc", "a numeric or boolean array")
+    a = require_array(name, x, "biufc", "a numeric or boolean array")
     if a.shape[-2:] != shape:
         raise ValueError(f"{name} has shape {a.shape}, but must end in ({shape[0]}, {shape[1]})")
     return a

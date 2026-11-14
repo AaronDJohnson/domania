@@ -13,7 +13,7 @@ from typing import Any
 
 import numpy as np
 
-from .wilson._checks import require_callable, require_dtype, require_int, validate_dt
+from .wilson._checks import require_array, require_callable, require_int, validate_dt
 from .wilson.grid import band_frequencies, cells, delta_T, validate_grid
 from .wilson.windows import MEYER, Window, sample_window
 
@@ -38,11 +38,7 @@ def _hermitian(out: Any, points: tuple[int, ...], name: str) -> np.ndarray:
     first entry), so a point whose entries are all 0 passes.  ``H`` has ``S``'s shape, so a
     size-1 axis is never expanded, and is float64 for a real ``S``, complex128 otherwise.
     """
-    if isinstance(out, np.ma.MaskedArray):
-        raise TypeError(f"{name} is a masked array; numpy.asarray would drop the mask, so fill "
-                        "it first")
-    S = np.asarray(out)
-    require_dtype(name, S, "iufc", "a numeric array")
+    S = require_array(name, out, "iufc", "a numeric array")
     if S.ndim == 3 and S.shape[2] == 1:                  # a constant model, on any grid
         S = S.reshape(S.shape[:2] + (1,) * len(points))
     if (S.ndim != 2 + len(points) or not 0 < S.shape[0] == S.shape[1]
