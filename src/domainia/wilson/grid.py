@@ -70,7 +70,7 @@ class Grid:
     (128, 0.0625, 8.0)
     >>> x = np.random.default_rng(0).standard_normal(g.N)
     >>> wilson.forward_time(x, *g).shape          # unpacks as (Nf, Nt, dt)
-    (9, 16)
+    (8, 16)
     >>> wilson.Grid(Nf=9, Nt=16, dt=1.0)
     Traceback (most recent call last):
     ValueError: Nf must be even, got 9
@@ -358,6 +358,16 @@ def _wdm_array(name: str, x: object, shape: tuple[int, int]) -> np.ndarray:
     if a.shape[-2:] != shape:
         raise ValueError(f"{name} has shape {a.shape}, but must end in {shape}")
     return a
+
+
+def _fold_fix(shape: tuple[int, ...], Nf: int, Nt: int) -> str:
+    """The fix a WDM array of ``shape`` needs if it is padded or flat, as the end of the
+    kernels' wrong-shape message (``""`` for any other shape)."""
+    if shape[-2:] == (Nf + 1, Nt):
+        return "; fold a padded (..., Nf+1, Nt) array with wilson.grid.fold first"
+    if shape[-1:] == (Nf * Nt,):
+        return f"; reshape a flat (..., N) array with .reshape(..., {Nf}, {Nt}) first"
+    return ""
 
 
 def fold(P: object, Nf: int, Nt: int) -> np.ndarray:

@@ -4,8 +4,8 @@ The layouts, on the trailing axes of an array with any leading axes (typically `
 
 * ``"time"``: real ``(N,)``;
 * ``"frequency"``: complex ``(N // 2 + 1,)``, ``dt * numpy.fft.rfft(x)``;
-* ``"wdm"``: real ``(Nf + 1, Nt)``, the Wilson coefficients of ``window``, edge bands
-  included.
+* ``"wdm"``: real ``(Nf, Nt)``, the Wilson coefficients of ``window`` in the folded layout
+  (:func:`domainia.wilson.grid.cells` gives each slot's band and time).
 
 Every route goes through the rfft ``numpy.fft.rfft(x)``.
 """
@@ -19,7 +19,7 @@ import numpy as np
 from . import wilson
 from .wilson import MEYER, Window
 from .wilson._checks import require_dtype, require_int
-from .wilson.grid import RESIDUE
+from .wilson.grid import RESIDUE, _fold_fix
 
 __all__ = ["transform"]
 
@@ -59,30 +59,25 @@ def _checked(x: Any, kind: str, N: int, grid: tuple[int, int] | None) -> np.ndar
     require_dtype("x", a, "iufc", "a numeric array")
     if a.dtype.kind == "c" and kind != "frequency":
         raise ValueError(f"x is complex, but {kind} data are real")
-    shape = {"time": (N,), "frequency": (N // 2 + 1,)}.get(kind) or (grid[0] + 1, grid[1])
-    nd = len(shape)
-    if a.shape[a.ndim - nd:] != shape:
-        raise ValueError(f"x has shape {a.shape}, but {kind} data end in shape {shape}")
+    shape = {"time": (N,), "frequency": (N // 2 + 1,)}.get(kind) or grid
+    if a.shape[a.ndim - len(shape):] != shape:
+        raise ValueError(f"x has shape {a.shape}, but {kind} data end in shape {shape}"
+                         + (_fold_fix(a.shape, *grid) if grid else ""))
     wilson.grid.validate_finite(a, "x")
     a = a.astype(np.complex128 if kind == "frequency" else np.float64)
-    if kind == "time":
+    if kind != "frequency":
         return a
-    if kind == "frequency":
-        ends = np.zeros(shape, bool)
-        ends[-1] = N % 2 == 0
-        ends[0] = True
-        off = np.where(ends, np.abs(a.imag), 0.0)
-    else:
-        off = np.where(wilson.grid.active_mask(*grid), 0.0, np.abs(a))
-    peak = np.max(np.abs(a), axis=tuple(range(-nd, 0)), keepdims=True)
+    ends = np.zeros(shape, bool)
+    ends[-1] = N % 2 == 0
+    ends[0] = True
+    off = np.where(ends, np.abs(a.imag), 0.0)
+    peak = np.max(np.abs(a), axis=-1, keepdims=True)
     rel = np.divide(off, peak, out=np.zeros_like(off), where=peak > 0)
     bad = np.argwhere(rel > RESIDUE)
     if bad.size:
-        at = [int(i) for i in bad[0]]
-        lead, k = at[:-nd], at[-nd:]
-        where = (f"the imaginary part of rfft bin {k[0]} ({'Nyquist' if k[0] else 'DC'})"
-                 if kind == "frequency" else f"inactive WDM cell (m={k[0]}, n={k[1]})")
-        raise ValueError(f"x{lead if lead else ''}: {where} is {rel[tuple(at)]:.2g} of the "
+        *lead, k = (int(i) for i in bad[0])
+        raise ValueError(f"x{lead if lead else ''}: the imaginary part of rfft bin {k} "
+                         f"({'Nyquist' if k else 'DC'}) is {rel[tuple(bad[0])]:.2g} of the "
                          f"slice's peak; at most {RESIDUE:g} is accepted")
     return a
 
@@ -99,17 +94,20 @@ def transform(x: Any, source: str, target: str, *, N: int, dt: float,
     regrids through the rfft.  When the source equals the target, grid included, the result
     is a validated canonical copy.
 
-    The result is float64 (complex128 on frequency) and exactly canonical: inactive WDM cells
-    are 0, and so are the imaginary parts at DC and even-``N`` Nyquist.  An input may carry a
-    residue there up to :data:`RESIDUE` of its slice's peak (``max |x|`` over the domain axes,
-    for each leading index); a larger one is refused, naming the cell or bin.
+    The result is float64 (complex128 on frequency); on frequency it is exactly canonical, with
+    the imaginary parts at DC and even-``N`` Nyquist 0.  A frequency input may carry a residue
+    there up to :data:`~domainia.wilson.grid.RESIDUE` of its slice's peak (``max |x|`` over the
+    last axis, for each leading index); a larger one is refused, naming the bin.  A WDM output
+    is the folded output of :func:`domainia.wilson.forward` as it is.
 
     Raises ``TypeError`` for a masked or non-numeric ``x`` (bool, str, object), a non-string
     ``source``/``target``, a WDM grid that is not a sequence, a non-integer ``N``, ``Nf`` or
     ``Nt``, a non-real ``dt`` or a non-window ``window``; ``ValueError`` for an unknown domain,
     a missing or misplaced WDM grid or one that is not a valid ``(Nf, Nt)`` pair, ``N < 1``, a
-    non-positive or non-finite ``dt``, complex ``x`` on time or WDM, a wrong trailing shape, a
-    non-finite value, or a residue above :data:`RESIDUE`; and ``WindowError``, a
+    non-positive or non-finite ``dt``, complex ``x`` on time or WDM, a wrong trailing shape (for
+    a padded ``(..., Nf+1, Nt)`` or a flat ``(..., N)`` WDM ``x`` the message names the fix,
+    ``wilson.grid.fold`` or ``.reshape(..., Nf, Nt)``), a non-finite value, or a residue above
+    :data:`~domainia.wilson.grid.RESIDUE`; and ``WindowError``, a
     ``ValueError``, for a window inadmissible on a WDM grid.  A real ``x`` on frequency is
     taken as complex.
     """
@@ -138,6 +136,4 @@ def transform(x: Any, source: str, target: str, *, N: int, dt: float,
         y[..., 0] = y[..., 0].real
         if N % 2 == 0:
             y[..., -1] = y[..., -1].real
-    elif target == "wdm":
-        y[..., ~wilson.grid.active_mask(*tg)] = 0.0
     return y

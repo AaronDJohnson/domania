@@ -33,12 +33,11 @@ MEYER_HELPERS = frozenset({"phi_centered"})
 
 #: Every function that samples the window, directly or through another consumer.
 CONSUMERS = frozenset({
-    "_gather_bands", "forward", "forward_time", "inverse", "inverse_time", "base_atom_spectra",
-    "atom_spectrum",
+    "_gather_bands", "forward", "forward_time", "inverse", "inverse_time", "_forward",
+    "_forward_time", "_inverse", "_inverse_time", "base_atom_spectra", "atom_spectrum",
     "build_W", "active_W", "build_C_wdm", "build_C_wdm_active",
     "_slab_K", "build_lambda_blocks_full_active", "build_K_full_active", "psd_from_K",
-    "apply_lambda_from_psd", "psd_from_lambda_blocks", "_forward", "_inverse", "_forward_wdm",
-    "_inverse_wdm",
+    "apply_lambda_from_psd", "psd_from_lambda_blocks",
     "band_averaged_variance", "evolutionary_band_variance", "empirical_variance",
     "energy_fraction", "apply_time_mask", "wrap_fractions", "wrap_cut_columns", "exact_covariance",
     "eq45_plan",
@@ -374,12 +373,12 @@ def _close(got, want, rtol: float, what: str) -> None:
 @pytest.mark.parametrize("window", WINDOWS, ids=lambda w: w.name)
 @pytest.mark.parametrize("Nf, Nt, dt", GRIDS)
 def test_build_W_is_the_impulse_response(window, Nf, Nt, dt):
-    """Column ``k`` of ``W`` is ``forward_time(e_k)`` (the definition; ``build_W`` probes
-    ``2 (Nf+1)`` rows and rolls them by ``2 Nf`` samples instead), and the other matrix
-    builders follow from it."""
+    """Column ``k`` of ``W`` is ``forward_time(e_k)``, unfolded to ``build_W``'s padded rows (the
+    definition; ``build_W`` probes ``2 (Nf+1)`` rows and rolls them by ``2 Nf`` samples
+    instead), and the other matrix builders follow from it."""
     N = Nf * Nt
-    W_def = np.stack([wilson.forward_time(e, Nf, Nt, dt, window=window).ravel() for e in np.eye(N)],
-                     axis=1)
+    W_def = wilson.grid.unfold(wilson.forward_time(np.eye(N), Nf, Nt, dt, window=window), Nf, Nt)
+    W_def = W_def.reshape(N, -1).T
     mask = wilson.grid.active_mask(Nf, Nt).ravel()
     C_def = W_def @ M.build_C_time(N, dt, psd) @ W_def.T
     _close(M.build_W(Nf, Nt, dt, window=window), W_def, RTOL, "build_W")

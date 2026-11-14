@@ -10,7 +10,7 @@ import pytest
 # average and exact covariance against band_averaged_variance, build_C_time and
 # build_C_wdm_active.  tests/wilson/test_evolutionary_kernels.py checks the kernels against it.
 from wdm_dev_ev import evolutionary as ev
-from domainia.wilson.grid import active_mask
+from domainia.wilson.grid import active_mask, unfold
 from domainia.wilson.matrix import active_W
 from domainia.wilson.transform import forward_time
 
@@ -30,7 +30,8 @@ def test_packed_grid_matches_the_dense_transform(rng):
     np.testing.assert_array_equal(g.mask, active_mask(NF, NT))
     x = rng.standard_normal((3, N))
     np.testing.assert_allclose(np.stack([g.forward(r) for r in x]), x @ Wa.T, atol=1e-12)
-    np.testing.assert_allclose(g.forward(x[0]), forward_time(x[0], NF, NT, DT)[g.mask], atol=0)
+    w = unfold(forward_time(x[0], NF, NT, DT), NF, NT)
+    np.testing.assert_allclose(g.forward(x[0]), w[g.mask], atol=0)
 
 
 def test_atoms_are_the_rows_of_the_transform():

@@ -20,21 +20,19 @@ subdirectories each one expects).
 
 ```python
 import numpy as np
-from domainia import transform, wilson
+from domainia import transform
 
 Nf, Nt, dt = 6, 12, 0.3
 N = Nf * Nt
 x = np.random.default_rng(6).standard_normal((2, N))            # any leading axes
 
-w = transform(x, "time", "wdm", N=N, dt=dt, target_wdm=(Nf, Nt))       # (2, 7, 12) float64
+w = transform(x, "time", "wdm", N=N, dt=dt, target_wdm=(Nf, Nt))       # (2, 6, 12) float64
 X = transform(w, "wdm", "frequency", N=N, dt=dt, source_wdm=(Nf, Nt))  # (2, 37): dt * rfft(x)
 v = transform(X, "frequency", "wdm", N=N, dt=dt, target_wdm=(12, 6))   # another WDM grid
 assert np.allclose(transform(v, "wdm", "time", N=N, dt=dt, source_wdm=(12, 6)), x)
 
-# Raw kernel output (~1e-17 in the inactive cells) and a full-FFT slice (~1e-16 imaginary
-# at Nyquist) are taken as they are; a residue above 1e-10 of the peak is refused.
-assert np.allclose(transform(wilson.forward_time(x, Nf, Nt, dt), "wdm", "time", N=N, dt=dt,
-                             source_wdm=(Nf, Nt)), x)
+# A full-FFT slice (~1e-16 imaginary at Nyquist) is taken as it is; a residue above 1e-10
+# of the peak is refused.
 assert np.allclose(transform(dt * np.fft.fft(x)[:, : N // 2 + 1], "frequency", "time",
                              N=N, dt=dt), x)
 ```

@@ -45,6 +45,9 @@ DROPPED = ("domainia::TimeToWDM.", "domainia::WDMToTime.", "domainia::FourierToW
            "wilson::transform.forward_bands::", "wilson::transform.inverse_bands::")
 #: The comparison: ``max |got - want| <= RTOL * s`` (see :func:`mismatches`).
 RTOL = 1e-12
+#: Families recorded padded ``(..., Nf+1, Nt)`` whose kernels now return the folded layout.
+FOLDED = ("wilson::transform.forward", "wilson::transform.forward_many",
+          "wilson::transform.forward_time", "wilson::transform.forward_time_many")
 
 Case = tuple[str, Callable[[dict], Any]]
 
@@ -57,9 +60,17 @@ def _family(key: str) -> str:
 def load_baseline() -> dict[str, np.ndarray]:
     """The recorded baseline as ``{key: array}``.  The families whose kernels now return the
     folded WDM layout are converted here, never in :func:`mismatches` (folded WDM spec,
-    section 5)."""
+    section 5): the :data:`FOLDED` ones are gathered into the folded slots, without
+    ``wilson.grid.fold``'s check of the inactive cells."""
+    from domainia.wilson.grid import cells
+
     with np.load(BASELINE) as z:
-        return {k: z[k] for k in z.files}
+        out = {k: z[k] for k in z.files}
+    for k, v in out.items():
+        if _family(k) in FOLDED:
+            m, n = cells(*map(int, k.split("::")[2].split("x")))
+            out[k] = v[..., m, n]
+    return out
 
 
 def mismatches(got: dict[str, np.ndarray], want: dict[str, np.ndarray]) -> list[str]:
@@ -150,7 +161,8 @@ def wilson_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
          lambda kw: St.build_lambda_blocks_full_active(Nf, Nt, dt, psd, **kw)),
         ("stationary.build_K_full_active", lambda kw: St.build_K_full_active(Nf, Nt, dt, psd, **kw)),
         ("stationary.psd_from_K", lambda kw: St.psd_from_K(K0, Nf, Nt, dt, **kw)),
-        ("stationary.apply_lambda_from_psd", lambda kw: St.apply_lambda_from_psd(w, Nf, Nt, dt, S, **kw)),
+        ("stationary.apply_lambda_from_psd",
+         lambda kw: St.apply_lambda_from_psd(wl.grid.unfold(w, Nf, Nt), Nf, Nt, dt, S, **kw)),
         ("stationary.psd_from_lambda_blocks", lambda kw: St.psd_from_lambda_blocks(*B0, Nf, Nt, dt, **kw)),
         ("noise.band_averaged_variance", lambda kw: No.band_averaged_variance(Nf, Nt, dt, psd, **kw)),
         ("noise.evolutionary_band_variance",
@@ -159,7 +171,8 @@ def wilson_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
          lambda kw: testing.empirical_variance(Nf, Nt, dt, psd, 3, seed=11, **kw)),
         # w2 is a length-N time-domain weight (rho_p = sum_t w2(t) g_p(t)^2 / dt).
         ("evolutionary.energy_fraction", lambda kw: E.energy_fraction(x ** 2, Nf, Nt, dt, **kw)),
-        ("evolutionary.apply_time_mask", lambda kw: E.apply_time_mask(Wm[:, mask], chi, Nf, Nt, dt, **kw)),
+        ("evolutionary.apply_time_mask",
+         lambda kw: E.apply_time_mask(wl.grid.unfold(Wm, Nf, Nt)[:, mask], chi, Nf, Nt, dt, **kw)),
         # nan (inactive cells) -> -1, as recorded; the fractions lie in [0, 1].
         ("evolutionary.wrap_fractions",
          lambda kw: np.nan_to_num(E.wrap_fractions(Nf, Nt, dt, **kw), nan=-1.0)),

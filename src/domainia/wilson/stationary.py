@@ -57,7 +57,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ._checks import REAL_KINDS, require_dtype
-from .grid import n_samples, sanitize_psd, validate_dt, validate_grid
+from .grid import active_mask, n_samples, sanitize_psd, validate_dt, validate_grid
 from .windows import MEYER, Window, sample_window
 
 type Array = NDArray[np.floating]
@@ -740,15 +740,14 @@ def apply_lambda_from_psd(
     >>> import numpy as np; from domainia import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> N = Nf * Nt
-    >>> x = wilson.forward_time(
+    >>> x = wilson.grid.unfold(wilson.forward_time(
     ...     np.random.default_rng(0).standard_normal(N), Nf, Nt, dt
-    ... )
+    ... ), Nf, Nt)
     >>> Sn = 1e-3 * np.ones(N // 2 + 1)
     >>> wilson.stationary.apply_lambda_from_psd(x, Nf, Nt, dt, Sn).shape
     (9, 16)
     """
-    from .transform import forward as _forward
-    from .transform import inverse as _inverse
+    from .transform import _forward, _inverse
 
     validate_grid(Nf, Nt)
     validate_dt(dt)
@@ -759,7 +758,7 @@ def apply_lambda_from_psd(
             f"apply_lambda_from_psd: Sn_rfft must have shape ({n_rfft},) -- the "
             f"np.fft.rfftfreq(N, dt) grid; got {Sn_rfft.shape}"
         )
-    y = _inverse(x_wmn, Nf, Nt, dt, window=window)
+    y = _inverse(x_wmn * active_mask(Nf, Nt), Nf, Nt, dt, window=window)    # inactive: ignored
     z = (Sn_rfft / 2.0) * y
     return _forward(z, Nf, Nt, dt, window=window)
 
@@ -820,8 +819,7 @@ def psd_from_lambda_blocks(
     >>> Sn.shape
     (65,)
     """
-    from .transform import forward as _forward_wdm
-    from .transform import inverse as _inverse_wdm
+    from .transform import _forward, _inverse
 
     validate_grid(Nf, Nt)
     validate_dt(dt)
@@ -829,11 +827,11 @@ def psd_from_lambda_blocks(
     N = n_samples(Nf, Nt)
 
     ones_rfft = np.ones(N // 2 + 1, dtype=complex)
-    bar_w = _forward_wdm(ones_rfft, Nf, Nt, dt, window=window)
+    bar_w = _forward(ones_rfft, Nf, Nt, dt, window=window)
 
     u = _block_tridiag_matvec(diag_blocks, offd_blocks, n_active, bar_w)
 
-    X = _inverse_wdm(u, Nf, Nt, dt, window=window)
+    X = _inverse(u, Nf, Nt, dt, window=window)
 
     return 2.0 * X.real
 

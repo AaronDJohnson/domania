@@ -14,6 +14,11 @@ computes in the Wilson basis of that window: $\\hat\\phi_c$ below is the window'
 centred samples, from :func:`domainia.wilson.windows.sample_window`.  The formulas
 and the edge normalisation are the same for every admissible window.
 
+The public kernels take and return the folded layout ``(..., Nf, Nt)``
+(:func:`domainia.wilson.grid.cells`).  Each computes through a private twin (``_forward``, ...)
+on the padded ``(..., Nf+1, Nt)`` grid, where row ``m`` is band ``m``; the other kernels call
+the twins.
+
 The slab is linear-centred:
 
 $$\\ell_{m,k} \\equiv k + (m - 1)\\,N_t/2,\\qquad k = 0, \\ldots, N_t - 1.$$
@@ -60,8 +65,11 @@ from numpy.typing import NDArray
 
 from ._checks import REAL_KINDS, require_dtype, require_int
 from .grid import (
+    _fold_fix,
     active_mask,
+    cells,
     n_samples,
+    unfold,
     validate_dt,
     validate_finite,
     validate_grid,
@@ -121,24 +129,6 @@ def _build_slab(X_rfft: CArray, m: int, Nf: int, Nt: int) -> CArray:
     if over.size:
         slab[..., over] = np.conj(X_rfft[..., N - ell[over]])
     return slab
-
-
-def _prepare_edges_for_inverse(wmn: Array, Nf: int, Nt: int) -> Array:
-    """Working copy of ``wmn`` with the edge bands put into ``inverse``'s form.
-
-    Two things, both edge-only:
-
-    1. **Zero the parity-killed entries.** They correspond to zero rows of $W$,
-       so the adjoint must ignore them; otherwise junk there leaks into the
-       active pixels of the reconstruction.
-    2. **Undo the unit-norm $\\sqrt2$** that :func:`forward` applied.
-    """
-    work = wmn.astype(np.float64)      # always a fresh copy, so updating it in place is safe
-    mask = active_mask(Nf, Nt)
-    root2 = np.sqrt(2.0)
-    work[..., 0, :] *= mask[0] * root2
-    work[..., Nf, :] *= mask[Nf] * root2
-    return work
 
 
 def _scatter_interior_bands(
@@ -206,7 +196,7 @@ def _gather_bands(x_rfft: CArray, Nf: int, Nt: int, dt: float, *,
                   window: Window = MEYER) -> Array:
     """Coefficient grid(s) from spectra: ``(..., N//2+1) -> (..., Nf+1, Nt)``.
 
-    The whole of the forward algorithm; :func:`forward` validates and calls it.
+    The whole of the forward algorithm; :func:`_forward` validates and calls it.
 
     Interior bands $m = 1 \\ldots N_f-1$: every slab index
     $\\ell_{m,k} = k + (m-1)N_t/2$ lies in $[0, N/2]$
@@ -247,6 +237,21 @@ def _gather_bands(x_rfft: CArray, Nf: int, Nt: int, dt: float, *,
     return out
 
 
+def _forward(x_rfft: CArray, Nf: int, Nt: int, dt: float, *, window: Window = MEYER) -> Array:
+    """:func:`forward` on the padded grid: ``(..., N//2+1)`` to ``(..., Nf+1, Nt)``."""
+    validate_grid(Nf, Nt)
+    validate_dt(dt)
+    N = n_samples(Nf, Nt)
+    x_rfft = np.asarray(x_rfft)
+    if x_rfft.shape[-1:] != (N // 2 + 1,):
+        raise ValueError(
+            f"x_rfft must have shape (..., {N // 2 + 1}) for Nf={Nf}, Nt={Nt}; "
+            f"got {x_rfft.shape}"
+        )
+    validate_finite(x_rfft, "forward: x_rfft")
+    return _gather_bands(x_rfft, Nf, Nt, dt, window=window)
+
+
 def forward(
     x_rfft: CArray,
     Nf: int,
@@ -266,11 +271,9 @@ def forward(
 
     Returns
     -------
-    ndarray, float, shape (..., Nf+1, Nt)
-        Real WDM coefficients.  Edge bands have $N_t/2$ active values;
-        the inactive entries vanish by Hermitian symmetry of the slab,
-        realized to floating-point rounding (~1e-16 relative to the
-        peak) rather than bit-exactly.  Compare them with a tolerance.
+    ndarray, float, shape (..., Nf, Nt)
+        Real WDM coefficients in the folded layout: slot ``(i, j)`` holds band ``m[i, j]`` at
+        time ``n[i, j]``, with ``m, n = wilson.grid.cells(Nf, Nt)``.
 
     Raises
     ------
@@ -294,25 +297,38 @@ def forward(
     >>> x = np.random.default_rng(0).standard_normal(Nf * Nt)
     >>> w = wilson.forward(np.fft.rfft(x), Nf, Nt, dt)
     >>> w.shape
-    (9, 16)
+    (8, 16)
     >>> bool(np.isclose(np.sum(w**2), dt * np.sum(x**2)))  # Parseval
     True
     >>> xs = np.random.default_rng(1).standard_normal((2, 3, Nf * Nt))   # leading axes
     >>> wilson.forward(np.fft.rfft(xs), Nf, Nt, dt).shape
-    (2, 3, 9, 16)
+    (2, 3, 8, 16)
     """
+    m, n = cells(Nf, Nt)
+    return _forward(x_rfft, Nf, Nt, dt, window=window)[..., m, n]
+
+
+def _inverse(wmn: Array, Nf: int, Nt: int, dt: float, *, window: Window = MEYER) -> CArray:
+    """:func:`inverse` on the padded grid ``(..., Nf+1, Nt)``, whose inactive cells must be 0."""
     validate_grid(Nf, Nt)
     validate_dt(dt)
     N = n_samples(Nf, Nt)
-    x_rfft = np.asarray(x_rfft)
-    if x_rfft.shape[-1:] != (N // 2 + 1,):
-        raise ValueError(
-            f"x_rfft must have shape (..., {N // 2 + 1}) for Nf={Nf}, Nt={Nt}; "
-            f"got {x_rfft.shape}"
-        )
-    validate_finite(x_rfft, "forward: x_rfft")
-    out = _gather_bands(x_rfft, Nf, Nt, dt, window=window)
-    return out
+    wmn = np.asarray(wmn)
+    # A complex grid would have its imaginary part silently discarded.
+    require_dtype("wmn", wmn, REAL_KINDS, "a real numeric array")
+    if wmn.shape[-2:] != (Nf + 1, Nt):
+        raise ValueError(f"wmn must have shape (..., {Nf + 1}, {Nt}); got {wmn.shape}")
+    validate_finite(wmn, "inverse: wmn")
+
+    phi_c = sample_window(window, Nf, Nt, dt)
+    wmn_work = wmn.astype(np.float64)              # a fresh copy, so scaling it in place is safe
+    wmn_work[..., [0, Nf], :] *= np.sqrt(2.0)      # undo forward's unit-norm edge scaling
+
+    lam = 1.0 / (np.sqrt(2.0) * dt)
+    X = np.zeros((*wmn.shape[:-2], N // 2 + 1), dtype=complex)
+    X = _scatter_interior_bands(X, wmn_work, Nf, Nt, phi_c, lam)
+    X = _scatter_edge_bands(X, wmn_work, Nf, Nt, N, phi_c, lam)
+    return X
 
 
 def inverse(
@@ -326,12 +342,12 @@ def inverse(
     """Inverse WDM transform (Algorithm 2): $w_{mn} \\to \\text{rfft}(x)$.
 
     Each band scatters into the one-sided rfft accumulator at its linear-centred slab
-    indices.  The inactive edge cells of ``wmn`` are ignored.
+    indices.
 
     Parameters
     ----------
-    wmn : ndarray, float, shape (..., Nf+1, Nt)
-        WDM coefficient grid, with any leading axes.
+    wmn : ndarray, float, shape (..., Nf, Nt)
+        WDM coefficients in the folded layout of :func:`forward`, with any leading axes.
 
     Returns
     -------
@@ -345,8 +361,10 @@ def inverse(
         is not a real numeric array: a complex grid would have its imaginary part
         silently discarded, and a bool, str or object grid is refused too.
     ValueError
-        If the grid is invalid, if ``wmn`` is wrongly shaped, or
-        if it holds a ``nan`` or ``inf`` (see :func:`domainia.wilson.grid.validate_finite`).
+        If the grid is invalid, if ``wmn`` does not end in ``(Nf, Nt)`` (for a padded
+        ``(..., Nf+1, Nt)`` or a flat ``(..., N)`` array the message names the fix,
+        :func:`domainia.wilson.grid.fold` or ``.reshape(..., Nf, Nt)``), or if it holds a
+        ``nan`` or ``inf`` (see :func:`domainia.wilson.grid.validate_finite`).
 
     Examples
     --------
@@ -362,22 +380,32 @@ def inverse(
     """
     validate_grid(Nf, Nt)
     validate_dt(dt)
-    N = n_samples(Nf, Nt)
     wmn = np.asarray(wmn)
-    # A complex grid would have its imaginary part silently discarded.
     require_dtype("wmn", wmn, REAL_KINDS, "a real numeric array")
-    if wmn.shape[-2:] != (Nf + 1, Nt):
-        raise ValueError(f"wmn must have shape (..., {Nf + 1}, {Nt}); got {wmn.shape}")
+    if wmn.shape[-2:] != (Nf, Nt):
+        raise ValueError(f"wmn must have shape (..., {Nf}, {Nt}); got {wmn.shape}"
+                         + _fold_fix(wmn.shape, Nf, Nt))
     validate_finite(wmn, "inverse: wmn")
+    return _inverse(unfold(wmn, Nf, Nt), Nf, Nt, dt, window=window)
 
-    phi_c = sample_window(window, Nf, Nt, dt)
-    wmn_work = _prepare_edges_for_inverse(wmn, Nf, Nt)
 
-    lam = 1.0 / (np.sqrt(2.0) * dt)
-    X = np.zeros((*wmn.shape[:-2], N // 2 + 1), dtype=complex)
-    X = _scatter_interior_bands(X, wmn_work, Nf, Nt, phi_c, lam)
-    X = _scatter_edge_bands(X, wmn_work, Nf, Nt, N, phi_c, lam)
-    return X
+def _forward_time(x: Array, Nf: int, Nt: int, dt: float, *, window: Window = MEYER) -> Array:
+    """:func:`forward_time` on the padded grid: ``(..., N)`` to ``(..., Nf+1, Nt)``."""
+    validate_grid(Nf, Nt)
+    x = np.asarray(x)
+    expected = n_samples(Nf, Nt)
+    if x.shape[-1:] != (expected,):
+        raise ValueError(
+            f"x must have shape (..., {expected}) = (..., Nf*Nt) for Nf={Nf}, Nt={Nt}; "
+            f"got {x.shape}"
+        )
+    # Check here rather than only on the rfft: reporting "index 5 of x" beats
+    # reporting that every bin of the transformed spectrum went non-finite.
+    validate_finite(x, "forward_time: x")
+    # At least double before the rfft, which keeps a lower-precision float's precision.
+    # A complex x stays complex, and the rfft refuses it.
+    x_rfft = np.fft.rfft(x.astype(np.result_type(x, np.float64), copy=False))
+    return _forward(x_rfft, Nf, Nt, dt, window=window)
 
 
 def forward_time(
@@ -389,7 +417,7 @@ def forward_time(
     window: Window = MEYER,
 ) -> Array:
     """Time-domain forward transform, ``forward(np.fft.rfft(x), ...)``: a real ``x`` of shape
-    ``(..., N)``, $N = N_f N_t$, to ``(..., Nf+1, Nt)``.
+    ``(..., N)``, $N = N_f N_t$, to the folded ``(..., Nf, Nt)``.
 
     Raises
     ------
@@ -406,27 +434,19 @@ def forward_time(
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> x = np.random.default_rng(0).standard_normal(Nf * Nt)
     >>> wilson.forward_time(x, Nf, Nt, dt).shape
-    (9, 16)
+    (8, 16)
     >>> x[5] = np.nan                      # one gap-filled sample
     >>> wilson.forward_time(x, Nf, Nt, dt)    # doctest: +ELLIPSIS
     Traceback (most recent call last):
     ValueError: forward_time: x: 1 of 128 entries are not finite...
     """
-    validate_grid(Nf, Nt)
-    x = np.asarray(x)
-    expected = n_samples(Nf, Nt)
-    if x.shape[-1:] != (expected,):
-        raise ValueError(
-            f"x must have shape (..., {expected}) = (..., Nf*Nt) for Nf={Nf}, Nt={Nt}; "
-            f"got {x.shape}"
-        )
-    # Check here rather than only on the rfft: reporting "index 5 of x" beats
-    # reporting that every bin of the transformed spectrum went non-finite.
-    validate_finite(x, "forward_time: x")
-    # At least double before the rfft, which keeps a lower-precision float's precision.
-    # A complex x stays complex, and the rfft refuses it.
-    x_rfft = np.fft.rfft(x.astype(np.result_type(x, np.float64), copy=False))
-    return forward(x_rfft, Nf, Nt, dt, window=window)
+    m, n = cells(Nf, Nt)
+    return _forward_time(x, Nf, Nt, dt, window=window)[..., m, n]
+
+
+def _inverse_time(wmn: Array, Nf: int, Nt: int, dt: float, *, window: Window = MEYER) -> Array:
+    """:func:`inverse_time` on the padded grid, whose inactive cells must be 0."""
+    return np.fft.irfft(_inverse(wmn, Nf, Nt, dt, window=window), n=n_samples(Nf, Nt))
 
 
 def inverse_time(
@@ -438,7 +458,7 @@ def inverse_time(
     window: Window = MEYER,
 ) -> Array:
     """Time-domain inverse transform, ``np.fft.irfft(inverse(wmn, ...), n=N)``:
-    ``(..., Nf+1, Nt)`` to ``(..., N)``.
+    the folded ``(..., Nf, Nt)`` to ``(..., N)``.
 
     Examples
     --------
@@ -453,10 +473,7 @@ def inverse_time(
     ...                  atol=1e-12))
     True
     """
-    N = n_samples(Nf, Nt)
-    x_rfft = inverse(wmn, Nf, Nt, dt, window=window)
-    x = np.fft.irfft(x_rfft, n=N)
-    return x
+    return np.fft.irfft(inverse(wmn, Nf, Nt, dt, window=window), n=n_samples(Nf, Nt))
 
 
 # ---------------------------------------------------------------------------
@@ -482,7 +499,7 @@ def base_atom_spectra(Nf: int, Nt: int, dt: float, *,
                 continue
             e = np.zeros((Nf + 1, Nt))
             e[m, a] = 1.0
-            out[m, a] = dt * inverse(e, Nf, Nt, dt, window=window)
+            out[m, a] = dt * _inverse(e, Nf, Nt, dt, window=window)
     return out
 
 

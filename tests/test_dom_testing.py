@@ -37,7 +37,8 @@ def rel(a, b):
 def test_dense_W_rows_are_the_atoms(rng):
     W = T.dense_W(NF, NT, DT, MASK)
     x = rng.standard_normal(N)
-    assert np.max(np.abs(W @ x - wilson.forward_time(x, NF, NT, DT)[MASK])) < 1e-12
+    w = wilson.grid.unfold(wilson.forward_time(x, NF, NT, DT), NF, NT)
+    assert np.max(np.abs(W @ x - w[MASK])) < 1e-12
     assert np.max(np.abs(W @ W.T - DT * np.eye(N))) < 1e-14
     sub = MASK.copy()
     sub[:, :3] = sub[:, -1:] = False

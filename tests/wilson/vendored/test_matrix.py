@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from domainia.wilson.grid import unfold
 from domainia.wilson.matrix import (
     active_W,
     build_C_time,
@@ -30,7 +31,7 @@ def test_W_matches_FFT_transform(simple_grid):
     rng = np.random.default_rng(0)
     x = rng.standard_normal(g.N)
     w_matrix = (W @ x).reshape(g.Nf + 1, g.Nt)
-    w_fft = forward_time(x, g.Nf, g.Nt, g.dt)
+    w_fft = unfold(forward_time(x, g.Nf, g.Nt, g.dt), g.Nf, g.Nt)
     assert np.allclose(w_matrix, w_fft, atol=1e-13)
 
 

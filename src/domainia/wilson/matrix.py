@@ -48,7 +48,7 @@ from .grid import (
     validate_dt,
     validate_grid,
 )
-from .transform import inverse_time
+from .transform import _inverse_time
 from .windows import MEYER, Window
 
 type Array = NDArray[np.floating]
@@ -121,7 +121,7 @@ def build_W(
                 continue
             seed[:] = 0.0
             seed[m, n0] = 1.0
-            row = dt * inverse_time(seed, Nf, Nt, dt, window=window)
+            row = dt * _inverse_time(seed, Nf, Nt, dt, window=window)
             for n in range(n0, Nt, 2):
                 W[m, n] = np.roll(row, (n - n0) * Nf)
 

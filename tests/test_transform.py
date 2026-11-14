@@ -39,29 +39,30 @@ def test_agrees_with_the_recorded_translate_transform():
     """The six pairs on four WDM grids, time <-> frequency at odd N, one channel with no
     leading axis, and WDM -> WDM across two grids: each output within 1e-12 of its peak
     (measured: 0.0) and exactly canonical.  At odd N the last bin is not a Nyquist bin, and
-    it keeps its imaginary part."""
+    it keeps its imaginary part.  The recorded WDM arrays are padded, with exact zeros in the
+    inactive cells, and are folded at load."""
     with np.load(REFERENCE) as z:
         for i, ((s, t), (n, dt, *g)) in enumerate(zip(z["routes"], z["grids"])):
             n, sg, tg = int(n), (int(g[0]), int(g[1])), (int(g[2]), int(g[3]))
-            got = transform(z[f"x{i}"], s, t, N=n, dt=dt, source_wdm=sg if s == "wdm" else None,
+            x = wilson.grid.fold(z[f"x{i}"], *sg) if s == "wdm" else z[f"x{i}"]
+            y = wilson.grid.fold(z[f"y{i}"], *tg) if t == "wdm" else z[f"y{i}"]
+            got = transform(x, s, t, N=n, dt=dt, source_wdm=sg if s == "wdm" else None,
                             target_wdm=tg if t == "wdm" else None)
-            _close(got, z[f"y{i}"], 1e-12)
+            _close(got, y, 1e-12)
             if t == "frequency":
                 assert not np.any(got[..., 0].imag), i
                 assert np.all(got[..., -1].imag) if n % 2 else not np.any(got[..., -1].imag), i
-            if t == "wdm":
-                assert not np.any(got[..., ~wilson.grid.active_mask(*tg)]), i
 
 
 def test_round_trips_leading_axes_and_parseval():
-    """Every pair maps X's three layouts onto each other and back, with a non-default window;
-    each row is the kernel's; the energy scales by dt on WDM and dt^2 N on frequency, also at
-    odd N."""
+    """Every pair, a domain onto itself included, maps X's three layouts onto each other and
+    back, with a non-default window; each row is the kernel's; the energy scales by dt on the
+    folded WDM array and dt^2 N on frequency, also at odd N."""
     on = {k: _on(k, window=ALT_WINDOW) for k in KINDS}
-    assert np.array_equal(on["time"], X) and on["wdm"].shape == (3, 2, 9, 16)
+    assert np.array_equal(on["time"], X) and on["wdm"].shape == (3, 2, 8, 16)
     _close(on["frequency"], DT * np.fft.rfft(X), 1e-15)
     _close(on["wdm"][2, 1], wilson.forward_time(X[2, 1], *G, DT, window=ALT_WINDOW), 1e-15)
-    for s, t in itertools.permutations(KINDS, 2):
+    for s, t in itertools.product(KINDS, repeat=2):
         y = transform(on[s], s, t, **_kw(s, t, window=ALT_WINDOW))
         _close(y, on[t], 1e-12)
         _close(transform(y, t, s, **_kw(t, s, window=ALT_WINDOW)), on[s], 1e-12)
@@ -76,26 +77,23 @@ def test_round_trips_leading_axes_and_parseval():
 
 
 def test_a_residue_up_to_1e_10_of_the_peak_is_accepted_and_the_copy_is_canonical():
-    """1e-12 of the slice's peak at DC, at Nyquist or in an inactive cell passes, and
-    ``source == target`` returns a fresh canonical copy; 1e-6 is refused, naming the place."""
-    for kind, at, name in (("frequency", (0,), r"bin 0 \(DC\)"), ("frequency", (64,), r"bin 64 \(Nyquist\)"),
-                           ("wdm", (0, 1), r"cell \(m=0, n=1\)"), ("wdm", (8, 15), r"cell \(m=8, n=15\)")):
-        x = _on(kind)
-        unit = 1j if kind == "frequency" else 1.0
-        peak = np.max(np.abs(x[2, 1]))
+    """1e-12 of the slice's peak at DC or at Nyquist passes, and ``source == target`` returns a
+    fresh canonical copy; 1e-6 is refused, naming the bin."""
+    kw, x = _kw("frequency", "time"), _on("frequency")
+    peak = np.max(np.abs(x[2, 1]))
+    for at, name in ((0, r"bin 0 \(DC\)"), (64, r"bin 64 \(Nyquist\)")):
         r = x.copy()
-        r[(2, 1, *at)] += 1e-12 * peak * unit
-        same = transform(r, kind, kind, **_kw(kind, kind))
+        r[2, 1, at] += 1e-12j * peak
+        same = transform(r, "frequency", "frequency", **kw)
         assert np.array_equal(same, x) and not np.shares_memory(same, r)
-        assert np.array_equal(transform(r, kind, "time", **_kw(kind, "time")),
-                              transform(x, kind, "time", **_kw(kind, "time")))
-        r[(2, 1, *at)] += 1e-6 * peak * unit
+        assert np.array_equal(transform(r, "frequency", "time", **kw),
+                              transform(x, "frequency", "time", **kw))
+        r[2, 1, at] += 1e-6j * peak
         with pytest.raises(ValueError, match=rf"^x\[2, 1\]: .*{name} is 1e-06 of the slice's peak; "
                                              r"at most 1e-10 is accepted$"):
-            transform(r, kind, "time", **_kw(kind, "time"))
+            transform(r, "frequency", "time", **kw)
     real = np.arange(65)                                                         # integers too
-    assert np.array_equal(transform(real, "frequency", "frequency", **_kw("frequency", "frequency")),
-                          real.astype(np.complex128))
+    assert np.array_equal(transform(real, "frequency", "frequency", **kw), real.astype(np.complex128))
 
 
 def test_wdm_to_wdm_across_two_grids_is_the_chain_through_frequency():
@@ -128,7 +126,11 @@ def test_every_refusal():
         (t, "time", "frequency", {"window": "garbage"}, TypeError, "window must be a domainia.wilson"),
         (t, "time", "wdm", {"dt": 0.0}, ValueError, "dt must be"),
         (t[:-1], "time", "wdm", {}, ValueError, r"shape \(127,\)"),
-        (w.T, "wdm", "time", {}, ValueError, r"shape \(16, 9\)"),
+        (w.T, "wdm", "time", {}, ValueError, r"shape \(16, 8\)"),
+        (wilson.grid.unfold(w, *G), "wdm", "time", {}, ValueError,
+         r"shape \(9, 16\), .*; fold a padded .* with wilson\.grid\.fold first$"),
+        (w.ravel(), "wdm", "time", {}, ValueError,
+         r"shape \(128,\), .*; reshape a flat .* with \.reshape\(\.\.\., 8, 16\) first$"),
         (np.where(np.arange(N) == 3, np.nan, t), "time", "wdm", {}, ValueError, "not finite"),
         (t + 0j, "time", "frequency", {}, ValueError, "complex"),
         (w + 0j, "wdm", "time", {}, ValueError, "complex"),

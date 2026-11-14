@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from domainia.wilson.grid import active_mask
+from domainia.wilson.grid import cells, unfold
 from domainia.wilson.transform import forward, forward_time, inverse, inverse_time
 
 
@@ -26,23 +26,12 @@ def test_parseval_normalized(simple_grid, white_noise):
 
 
 def test_output_shape_dtype(simple_grid):
-    """Forward returns shape (Nf+1, Nt) of real floats."""
+    """Forward returns shape (Nf, Nt) of real floats."""
     g = simple_grid
     x = np.random.default_rng(0).standard_normal(g.N)
     w = forward_time(x, g.Nf, g.Nt, g.dt)
-    assert w.shape == (g.Nf + 1, g.Nt)
+    assert w.shape == (g.Nf, g.Nt)
     assert w.dtype.kind == "f"
-
-
-def test_inactive_pixels_zero(simple_grid, white_noise):
-    """Coefficients at inactive (masked-False) positions vanish to machine precision."""
-    g = simple_grid
-    w = forward_time(white_noise, g.Nf, g.Nt, g.dt)
-    mask = active_mask(g.Nf, g.Nt)
-    # Inactive pixels come from algebraic cancellations and are at the
-    # floating-point noise floor, not bit-exactly zero.
-    scale = np.max(np.abs(w[mask]))
-    assert np.max(np.abs(w[~mask])) < 1e-12 * scale
 
 
 def test_monochromatic_lands_in_band(medium_grid):
@@ -52,7 +41,7 @@ def test_monochromatic_lands_in_band(medium_grid):
     t = np.arange(g.N) * g.dt
     x = np.cos(2 * np.pi * m_signal * g.dF * t)
     w = forward_time(x, g.Nf, g.Nt, g.dt)
-    band_powers = np.sum(w**2, axis=1)
+    band_powers = np.sum(unfold(w, g.Nf, g.Nt) ** 2, axis=1)     # rows are bands 0..Nf
     assert np.argmax(band_powers) == m_signal
 
 
@@ -73,7 +62,7 @@ def test_linearity(simple_grid):
 def test_inverse_returns_complex_rfft(simple_grid):
     """inverse returns shape (N//2+1,) of complex."""
     g = simple_grid
-    w = np.zeros((g.Nf + 1, g.Nt))
+    w = np.zeros((g.Nf, g.Nt))
     w[5, 3] = 1.0
     out = inverse(w, g.Nf, g.Nt, g.dt)
     assert out.shape == (g.N // 2 + 1,)
@@ -131,5 +120,5 @@ def test_forward_matches_a_naive_reference(simple_grid, white_noise, dt):
     g = simple_grid
     x_rfft = np.fft.rfft(white_noise)
     fast = forward(x_rfft, g.Nf, g.Nt, dt)
-    naive = _forward_reference(x_rfft, g.Nf, g.Nt, dt)
+    naive = _forward_reference(x_rfft, g.Nf, g.Nt, dt)[cells(g.Nf, g.Nt)]   # padded -> folded
     assert np.max(np.abs(fast - naive)) < 1e-14 * np.max(np.abs(naive))

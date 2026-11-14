@@ -54,10 +54,10 @@ from .grid import (
 )
 from .noise import _psd_at
 from .transform import (
+    _forward_time,
+    _inverse_time,
     atom_spectrum,
     base_atom_spectra,
-    forward_time,
-    inverse_time,
 )
 from .windows import MEYER, Window
 
@@ -130,8 +130,8 @@ def apply_time_mask(Y: Array, chi: Array, Nf: int, Nt: int, dt: float, *,
     Y = np.atleast_2d(Y)
     full = np.zeros((Y.shape[0], Nf + 1, Nt))
     full[:, mask] = Y
-    X = inverse_time(full, Nf, Nt, dt, window=window) * chi
-    return forward_time(X, Nf, Nt, dt, window=window)[:, mask]
+    X = _inverse_time(full, Nf, Nt, dt, window=window) * chi
+    return _forward_time(X, Nf, Nt, dt, window=window)[:, mask]
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +162,7 @@ def wrap_fractions(Nf: int, Nt: int, dt: float, *, bands: Array | None = None,
                 continue
             e = np.zeros((Nf + 1, Nt))
             e[m, a] = 1.0
-            g2 = inverse_time(e, Nf, Nt, dt, window=window) ** 2        # base atom, centre a Nf
+            g2 = _inverse_time(e, Nf, Nt, dt, window=window) ** 2       # base atom, centre a Nf
             delta = (np.arange(N) - a * Nf + N // 2) % N - N // 2       # signed offset from centre
             order = np.argsort(delta, kind="stable")
             ds, cum = delta[order], np.concatenate([[0.0], np.cumsum(g2[order])])
@@ -250,8 +250,8 @@ def exact_covariance(Nf: int, Nt: int, dt: float, Sn: PsdFtFunc, *,
     validate_grid(Nf, Nt)
     N = Nf * Nt
     G = time_domain_factor(N, dt, Sn)
-    A = forward_time(np.ascontiguousarray(G.T), Nf, Nt, dt,
-                     window=window)[:, active_mask(Nf, Nt)].T
+    A = _forward_time(np.ascontiguousarray(G.T), Nf, Nt, dt,
+                      window=window)[:, active_mask(Nf, Nt)].T
     Lam = A @ A.T
     return 0.5 * (Lam + Lam.T)
 

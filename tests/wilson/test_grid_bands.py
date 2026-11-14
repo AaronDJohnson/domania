@@ -139,7 +139,7 @@ def test_unrepresentable_delta_F_raises_instead_of_returning_zeros(dt):
     calls = {
         "phi_centered": lambda: phi_centered(Nf, Nt, dt),
         "forward_time": lambda: forward_time(np.ones(Nf * Nt), Nf, Nt, dt),
-        "inverse_time": lambda: wilson.inverse_time(np.ones((Nf + 1, Nt)), Nf, Nt, dt),
+        "inverse_time": lambda: wilson.inverse_time(np.ones((Nf, Nt)), Nf, Nt, dt),
     }
     for name, call in calls.items():
         with pytest.raises(ValueError, match="delta_F is not representable"):
