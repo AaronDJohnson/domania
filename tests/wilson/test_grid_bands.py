@@ -56,6 +56,9 @@ def test_fold_refuses_a_live_inactive_cell_and_both_refuse_a_wrong_shape_or_kind
     P = unfold(np.array([1.0, 4.0])[:, None, None] * np.ones((Nf, Nt)), Nf, Nt)
     P[:, 4, 3] = [1e-10, 4e-10]                   # exactly 1e-10 of each slice's peak: accepted
     fold(P, Nf, Nt)
+    H = unfold(np.full((Nf, Nt), 65504, np.float16), Nf, Nt)
+    H[4, 3] = 6e-8                                # 9e-13 of a float16 peak: accepted
+    fold(H, Nf, Nt)
     for value in (2e-10, np.nan):                 # 2e-10 is under slice 1's tolerance, not 0's
         Q = P.copy()
         Q[0, 0, 1] = value

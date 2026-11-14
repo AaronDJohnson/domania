@@ -15,9 +15,11 @@ centred samples, from :func:`domainia.wilson.windows.sample_window`.  The formul
 and the edge normalisation are the same for every admissible window.
 
 The public kernels take and return the folded layout ``(..., Nf, Nt)``
-(:func:`domainia.wilson.grid.cells`).  Each computes through a private twin (``_forward``, ...)
-on the padded ``(..., Nf+1, Nt)`` grid, where row ``m`` is band ``m``; the other kernels call
-the twins.
+(:func:`domainia.wilson.grid.cells`).  ``forward`` and ``inverse`` compute through private
+twins on the padded ``(..., Nf+1, Nt)`` grid, where row ``m`` is band ``m`` (``_forward``,
+``_inverse``, and ``_inverse_time`` for the time domain).  The code that builds or probes the
+padded grid calls the twins: ``base_atom_spectra``, ``matrix.build_W``,
+``stationary.psd_from_lambda_blocks`` and ``evolutionary.wrap_fractions``.
 
 The slab is linear-centred:
 
@@ -312,7 +314,7 @@ def _inverse(wmn: Array, Nf: int, Nt: int, dt: float, *, window: Window = MEYER)
     N = n_samples(Nf, Nt)
     validate_finite(wmn, "inverse: wmn")
 
-    phi_c = sample_window(window, Nf, Nt, dt)   # checks the grid and dt
+    phi_c = sample_window(window, Nf, Nt, dt)      # checks the grid and dt
     wmn_work = wmn.astype(np.float64)              # a fresh copy, so scaling it in place is safe
     wmn_work[..., [0, Nf], :] *= np.sqrt(2.0)      # undo forward's unit-norm edge scaling
 

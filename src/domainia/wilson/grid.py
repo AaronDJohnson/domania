@@ -338,7 +338,7 @@ def _wdm_array(name: str, x: object, shape: tuple[int, int]) -> np.ndarray:
     a = np.asarray(x)
     require_dtype(name, a, "biufc", "a numeric or boolean array")
     if a.shape[-2:] != shape:
-        raise ValueError(f"{name} has shape {a.shape}, but must end in {shape}")
+        raise ValueError(f"{name} has shape {a.shape}, but must end in ({shape[0]}, {shape[1]})")
     return a
 
 
@@ -359,11 +359,11 @@ def fold(P: object, Nf: int, Nt: int) -> np.ndarray:
     Raises
     ------
     TypeError
-        If ``P`` is masked, or neither numeric nor boolean.
+        If ``P`` is masked or neither numeric nor boolean, or ``Nf`` or ``Nt`` is not an integer.
     ValueError
-        If the grid is invalid, ``P`` does not end in ``(Nf+1, Nt)``, or an inactive cell is
-        non-finite or exceeds :data:`RESIDUE` of its slice's peak (``max |P|`` over the last two
-        axes; for a boolean mask, any ``True``): fold drops it.
+        If ``Nf`` or ``Nt`` is not positive and even, ``P`` does not end in ``(Nf+1, Nt)``, or an
+        inactive cell is non-finite or exceeds :data:`RESIDUE` of its slice's peak (``max |P|``
+        over the last two axes; for a boolean mask, any ``True``): fold drops it.
 
     Examples
     --------
@@ -379,7 +379,7 @@ def fold(P: object, Nf: int, Nt: int) -> np.ndarray:
     """
     m, n = cells(Nf, Nt)
     a = _wdm_array("P", P, (Nf + 1, Nt))
-    v = np.abs(a.astype(np.result_type(a, 1.0), copy=False))
+    v = np.abs(a.astype(np.result_type(a, np.float64), copy=False))
     peak = np.max(v, axis=(-2, -1), keepdims=True)
     bad = np.argwhere(~_active_mask(Nf, Nt) & (~np.isfinite(v) | (v > RESIDUE * peak)))
     if bad.size:

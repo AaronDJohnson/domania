@@ -194,7 +194,7 @@ def test_eq45_plan_t_max_takes_numpy_reals_and_is_stored_as_a_float():
 def test_eq45_plan_keep_message_names_the_dtype():
     with pytest.raises(TypeError, match=_exact("keep must be a boolean mask over the packed cells, "
                                                "got dtype int64")):
-        wilson.evolutionary.eq45_plan(8, 16, 1.0, np.ones(128, np.int64))
+        wilson.evolutionary.eq45_plan(8, 16, 1.0, np.ones((8, 16), np.int64))
 
 
 #: The real-array checks: the call, an accepted float64 array, and the name in

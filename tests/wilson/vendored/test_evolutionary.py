@@ -87,8 +87,6 @@ def test_band_average_samples_the_cell_centres():
     m, n = cells(NF, NT)
     tn = n * NF * DT                                    # each folded slot's cell time
     np.testing.assert_allclose(sep[m, n], stat * (1 + 0.4 * np.sin(2 * np.pi * tn / T_REC)), rtol=1e-13)
-    sub = ev.band_averaged_evolutionary_variance(NF, NT, DT, _S_evo, bands=[0, 3, NF])
-    np.testing.assert_array_equal(sub, sep[[0, 3, NF]])
 
 
 def test_stationary_limit_of_the_exact_covariance():

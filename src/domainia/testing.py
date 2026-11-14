@@ -38,7 +38,6 @@ from domainia import wilson
 from domainia.wilson._checks import require_callable, require_dtype, require_int
 from domainia.wilson.evolutionary import eq45_direct, eq45_plan
 from domainia.wilson.grid import n_samples, sanitize_psd, validate_dt, validate_grid
-from domainia.wilson.transform import _forward
 from domainia.wilson.windows import MEYER, SampledWindow, Window
 
 __all__ = ["ALT_WINDOW", "colored_noise", "dense_W", "empirical_variance", "eq45_dense",
@@ -151,12 +150,12 @@ def empirical_variance(
         raise ValueError(f"n_realizations must be >= 1, got {n_realizations}")
     N = n_samples(Nf, Nt)
     rng = np.random.default_rng(seed)
-    accum = np.zeros((Nf + 1, Nt))
+    accum = np.zeros((Nf, Nt))
     for _ in range(n_realizations):
         x_rfft = colored_noise(N, dt, Sn_func, rng)
-        w = _forward(x_rfft, Nf, Nt, dt, window=window)
+        w = wilson.forward(x_rfft, Nf, Nt, dt, window=window)
         accum += w * w
-    return accum[wilson.grid.cells(Nf, Nt)] / n_realizations
+    return accum / n_realizations
 
 
 def smoothstep(x: Any) -> Array:

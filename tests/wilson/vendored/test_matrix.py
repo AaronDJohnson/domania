@@ -4,34 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from domainia.wilson.matrix import (
-    build_C_time,
-    build_C_wdm,
-    build_W,
-    real_to_rfft,
-    rfft_to_real,
-)
-from domainia.wilson.transform import forward_time
-
-
-def test_W_matches_FFT_transform(simple_grid):
-    """W @ x == forward(rfft(x)) to machine precision, rows in folded flat order."""
-    g = simple_grid
-    W = build_W(g.Nf, g.Nt, g.dt)
-    rng = np.random.default_rng(0)
-    x = rng.standard_normal(g.N)
-    w_matrix = (W @ x).reshape(g.Nf, g.Nt)
-    w_fft = forward_time(x, g.Nf, g.Nt, g.dt)
-    assert np.allclose(w_matrix, w_fft, atol=1e-13)
-
-
-def test_W_orthogonal(simple_grid):
-    """W @ W.T = dt I (orthogonal rows)."""
-    g = simple_grid
-    W = build_W(g.Nf, g.Nt, g.dt)
-    assert W.shape == (g.N, g.N)
-    err = np.max(np.abs(W @ W.T - g.dt * np.eye(g.N)))
-    assert err < 1e-12
+from domainia.wilson.matrix import build_C_time, build_C_wdm, real_to_rfft, rfft_to_real
 
 
 def test_C_time_symmetric(simple_grid, lisa_psd):

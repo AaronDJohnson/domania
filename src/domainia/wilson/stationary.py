@@ -785,9 +785,9 @@ def psd_from_lambda_blocks(
     impulse at $t=0$).  The pipeline is therefore three steps:
 
     1. Build the basis-only test wmn $\widetilde W\,\mathbf{1}$ via one
-       :func:`domainia.wilson.transform.forward` call on the all-ones rfft.
+       padded forward transform (the private ``_forward``) of the all-ones rfft.
     2. Apply $\Lambda$ to that real wmn vector (block-tridiag matvec).
-    3. Apply :func:`domainia.wilson.transform.inverse` and take the real part.
+    3. Apply the padded inverse (the private ``_inverse``) and take the real part.
 
     The round-trip with :func:`build_lambda_blocks_full_active` holds to
     machine precision: feeding the returned $\mathcal{S}_n$ back to the

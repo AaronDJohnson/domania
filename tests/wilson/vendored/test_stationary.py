@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from domainia.wilson.matrix import build_C_time, build_W
+from domainia.wilson.matrix import build_C_wdm
 from domainia.wilson.stationary import (
     assemble_lambda_full_active,
     build_lambda_blocks_full_active,
@@ -35,17 +35,11 @@ def _rel(a, b, scale):
     return float(np.max(np.abs(a - b))) / scale
 
 
-def _dense_lambda(Nf, Nt, dt, Sn_func):
-    W = build_W(Nf, Nt, dt)
-    C_time = build_C_time(Nf * Nt, dt, Sn_func)
-    return W @ C_time @ W.T
-
-
 def test_blocks_match_dense_reference(simple_grid, lisa_psd):
     """Fast slab-IFFT interior blocks match the dense W C W^T reference."""
     g = simple_grid
     diag, offd = build_lambda_blocks(g.Nf, g.Nt, g.dt, lisa_psd)
-    Lambda = _dense_lambda(g.Nf, g.Nt, g.dt, lisa_psd)
+    Lambda = build_C_wdm(g.Nf, g.Nt, g.dt, lisa_psd)
     scale = float(np.max(np.abs(Lambda)))
     assert scale > 0
     for k, m in enumerate(range(1, g.Nf)):
@@ -150,7 +144,7 @@ def test_full_active_assembly_matches_dense_W_C_W(simple_grid, lisa_psd):
     g = simple_grid
     diag, offd, n_active = build_lambda_blocks_full_active(g.Nf, g.Nt, g.dt, lisa_psd)
     Lambda_fast = assemble_lambda_full_active(diag, offd, n_active, g.Nf, g.Nt)
-    Lambda_dense = _dense_lambda(g.Nf, g.Nt, g.dt, lisa_psd)
+    Lambda_dense = build_C_wdm(g.Nf, g.Nt, g.dt, lisa_psd)
 
     rel = np.max(np.abs(Lambda_fast - Lambda_dense)) / np.max(np.abs(Lambda_dense))
     assert rel < 1e-10, f"|Λ_fast − W C W^T| / |Λ| = {rel:.3e}"

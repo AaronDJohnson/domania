@@ -371,7 +371,7 @@ def eq45_plan(Nf: int, Nt: int, dt: float, keep: BoolArray | None = None, *,
     eta[[0, -1]] = 0.5
     base = base_atom_spectra(Nf, Nt, dt, window=window)
     keep = np.ones((Nf, Nt), bool) if keep is None else np.asarray(keep)
-    # An index array (e.g. np.arange(N)) would silently drop cell 0.
+    # An integer mask (e.g. np.arange(N).reshape(Nf, Nt)) would silently drop cell 0.
     require_dtype("keep", keep, "b", "a boolean mask over the packed cells")
     if keep.shape != (Nf, Nt):
         raise ValueError(f"keep must have shape (Nf, Nt) = {(Nf, Nt)}, got {keep.shape}")
@@ -525,9 +525,9 @@ def eq45_gram_plan(plan: Eq45Plan) -> Eq45GramPlan:
     gG = np.zeros((nb, B, Kb), complex)
     gW = np.zeros((nb, Kb))
     gT = np.zeros((nb, B))
-    for mm, cells in enumerate(plan.band_cells):
+    for mm, cs in enumerate(plan.band_cells):
         k = sup[mm]
-        for i, p in enumerate(cells):
+        for i, p in enumerate(cs):
             gG[mm, i, :len(k)] = atom_spectrum(int(plan.m[p]), int(plan.n[p]), plan.Nf,
                                                plan.Nt, plan.dt, base=plan.base)[k]
             gT[mm, i] = plan.t[p]

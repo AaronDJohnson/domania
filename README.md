@@ -55,7 +55,7 @@ D = wdm_covariance(lambda f, t: S(f), Nf=Nf, Nt=Nt, dt=dt)               # (2, 2
 E = wdm_covariance(lambda f, t: S(f) * (1.3 + 0.3 * np.cos(2 * np.pi * t / (N * dt))),
                    Nf=Nf, Nt=Nt, dt=dt)                                  # evolutionary
 assert np.array_equal(C, C.conj().transpose(1, 0, 2))
-assert np.array_equal(D, D.transpose(1, 0, 2, 3))
+assert D.shape == E.shape == (2, 2, Nf, Nt) and np.array_equal(D, D.transpose(1, 0, 2, 3))
 ```
 
 ## Conventions
