@@ -19,12 +19,11 @@ import numpy as np
 from . import wilson
 from .wilson import MEYER, Window
 from .wilson._checks import require_dtype, require_int
+from .wilson.grid import RESIDUE
 
 __all__ = ["transform"]
 
 KINDS = ("time", "frequency", "wdm")
-#: The largest canonical-form residue an input may carry, as a fraction of its slice's peak.
-RESIDUE = 1e-10
 
 
 def _grid(role: str, kind: Any, wdm: Any, N: int) -> tuple[int, int] | None:

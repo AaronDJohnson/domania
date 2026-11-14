@@ -13,7 +13,7 @@ import pytest
 
 from domainia import wilson
 from domainia.wilson.filter import phi_centered
-from domainia.wilson.grid import Grid, active_mask, endpoint_weights
+from domainia.wilson.grid import Grid, active_mask, cells, endpoint_weights, fold, unfold
 from domainia.wilson.matrix import active_W
 from domainia.wilson.transform import atom_spectrum, base_atom_spectra, forward_time
 
@@ -30,6 +30,49 @@ def test_grid_is_frozen_positional_and_unpacks():
     assert tuple(g) == (8, 16, 0.5) and g.N == 128
     with pytest.raises(AttributeError):
         g.Nf = 4  # type: ignore[misc]
+
+
+def test_cells_is_the_folded_slot_table():
+    m, n = cells(4, 4)
+    assert m.tolist() == [[0, 4, 0, 4], [1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3]]
+    assert n.tolist() == [[0, 0, 2, 2], [0, 1, 2, 3], [0, 1, 2, 3], [0, 1, 2, 3]]
+
+
+def test_fold_and_unfold_round_trip_and_unfold_writes_exact_zeros(rng):
+    Nf, Nt = 8, 6
+    R = rng.standard_normal((2, 3, Nf, Nt))
+    P = unfold(R, Nf, Nt)
+    assert P.shape == (2, 3, Nf + 1, Nt) and np.array_equal(fold(P, Nf, Nt), R)
+    m, n = cells(Nf, Nt)
+    P[..., m, n] = 0.0
+    assert not P.any()
+    B = unfold(np.ones((Nf, Nt), bool), Nf, Nt)
+    assert B.dtype == bool and np.array_equal(B, active_mask(Nf, Nt))
+    assert fold(B, Nf, Nt).dtype == bool
+
+
+def test_fold_refuses_a_live_inactive_cell_and_both_refuse_a_wrong_shape_or_kind():
+    Nf, Nt = 4, 4
+    P = unfold(np.array([1.0, 4.0])[:, None, None] * np.ones((Nf, Nt)), Nf, Nt)
+    P[:, 4, 3] = [1e-10, 4e-10]                   # exactly 1e-10 of each slice's peak: accepted
+    fold(P, Nf, Nt)
+    for value in (2e-10, np.nan):                 # 2e-10 is under slice 1's tolerance, not 0's
+        Q = P.copy()
+        Q[0, 0, 1] = value
+        with pytest.raises(ValueError, match=r"P\[0\]: the inactive cell \(m=0, n=1\)"):
+            fold(Q, Nf, Nt)
+    with pytest.raises(ValueError, match=r"^P: the inactive cell \(m=0, n=1\) holds True"):
+        fold(np.ones((Nf + 1, Nt), bool), Nf, Nt)
+    Q = unfold(np.ones((Nf, Nt), np.int8), Nf, Nt)
+    Q[0, 1] = np.iinfo(np.int8).min                 # np.abs(Q) would wrap it back to -128
+    with pytest.raises(ValueError, match=r"^P: the inactive cell \(m=0, n=1\) holds -128;"):
+        fold(Q, Nf, Nt)
+    for f, wrong in ((fold, (Nf, Nt)), (unfold, (Nf + 1, Nt))):
+        with pytest.raises(ValueError, match="must end in"):
+            f(np.zeros(wrong), Nf, Nt)
+        for x in (np.ma.zeros(wrong), np.full(wrong, "a")):
+            with pytest.raises(TypeError):
+                f(x, Nf, Nt)
 
 
 def test_endpoint_weights():

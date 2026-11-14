@@ -13,13 +13,12 @@ import pytest
 
 from domainia import wilson
 
-from .meyer_cases import BASELINE, DROPPED, RTOL, THREADED, compute, mismatches
+from .meyer_cases import DROPPED, RTOL, THREADED, compute, load_baseline, mismatches
 
 
 @pytest.fixture(scope="module")
 def baseline() -> dict[str, np.ndarray]:
-    with np.load(BASELINE) as z:
-        return {k: z[k] for k in z.files}
+    return load_baseline()
 
 
 def test_the_dropped_families_are_96_of_the_1504_keys(baseline):

@@ -1,5 +1,5 @@
-"""Time-frequency grid: the grid and input checks, pixel widths and centres, and the
-active-pixel mask.
+"""Time-frequency grid: the grid and input checks, pixel widths and centres, the
+active-pixel mask and the folded layout.
 
 The WDM transform partitions the time-frequency plane into a grid of
 $N_f+1$ frequency bands (indexed by $m = 0,\\ldots,N_f$) and $N_t$
@@ -13,6 +13,10 @@ Edge bands ($m=0$ DC, $m=N_f$ Nyquist) carry only $N_t/2$ active
 coefficients each (parity-selected); interior bands carry all $N_t$.
 The total active count is therefore
 $(N_f - 1)\\,N_t + N_t/2 + N_t/2 = N$.
+
+The folded layout ``(Nf, Nt)`` holds exactly those $N$ cells: row ``i >= 1`` is band ``i``,
+and row 0 holds band 0 in its even slots and band ``Nf`` in its odd ones (:func:`cells`).
+:func:`fold` and :func:`unfold` convert between it and the padded ``(Nf+1, Nt)`` array.
 """
 
 from __future__ import annotations
@@ -33,16 +37,22 @@ __all__ = [
     "Grid",
     "active_mask",
     "band_frequencies",
+    "cells",
     "delta_F",
     "delta_T",
     "endpoint_weights",
+    "fold",
     "n_samples",
     "sanitize_psd",
     "time_pixel_centers",
+    "unfold",
     "validate_dt",
     "validate_finite",
     "validate_grid",
 ]
+
+#: The largest canonical-form residue an input may carry, as a fraction of its slice's peak.
+RESIDUE = 1e-10
 
 
 @dataclass(frozen=True)
@@ -313,6 +323,90 @@ def active_mask(Nf: int, Nt: int) -> BoolArray:
     mask[0] = n % 2 == 0
     mask[Nf] = (Nf + n) % 2 == 0
     return mask
+
+
+def cells(Nf: int, Nt: int) -> tuple[np.ndarray, np.ndarray]:
+    """The band ``m`` and time ``n`` of each folded slot, two int arrays of shape ``(Nf, Nt)``.
+
+    Slot ``(i, j)`` with ``i >= 1`` is band ``i`` at time ``j``.  Row 0 holds band 0 (DC) at
+    time ``j`` in its even slots and band ``Nf`` (Nyquist) at time ``j - 1`` in its odd ones.
+    A slot's frequency and time are ``band_frequencies(Nf, dt)[m]`` and
+    ``time_pixel_centers(Nf, Nt, dt)[n]``.
+
+    Examples
+    --------
+    >>> from domainia import wilson
+    >>> m, n = wilson.grid.cells(4, 4)
+    >>> m[0].tolist(), n[0].tolist()
+    ([0, 4, 0, 4], [0, 0, 2, 2])
+    """
+    validate_grid(Nf, Nt)
+    m, n = np.indices((Nf, Nt))
+    m[0, 1::2] = Nf
+    n[0, 1::2] -= 1
+    return m, n
+
+
+def _wdm_array(name: str, x: object, shape: tuple[int, int]) -> np.ndarray:
+    """``x`` as an array, after the kind and trailing-shape checks of :func:`fold` and
+    :func:`unfold`."""
+    if isinstance(x, np.ma.MaskedArray):
+        raise TypeError(f"{name} is a masked array; numpy.asarray would drop the mask, so fill "
+                        "it first")
+    a = np.asarray(x)
+    require_dtype(name, a, "biufc", "a numeric or boolean array")
+    if a.shape[-2:] != shape:
+        raise ValueError(f"{name} has shape {a.shape}, but must end in {shape}")
+    return a
+
+
+def fold(P: object, Nf: int, Nt: int) -> np.ndarray:
+    """The padded ``(..., Nf+1, Nt)`` array ``P`` in the folded layout ``(..., Nf, Nt)``:
+    ``P[..., m, n]`` with ``m, n = cells(Nf, Nt)``, in ``P``'s dtype (a boolean mask folds too).
+
+    Raises
+    ------
+    TypeError
+        If ``P`` is masked, or neither numeric nor boolean.
+    ValueError
+        If the grid is invalid, ``P`` does not end in ``(Nf+1, Nt)``, or an inactive cell is
+        non-finite or exceeds :data:`RESIDUE` of its slice's peak (``max |P|`` over the last two
+        axes; for a boolean mask, any ``True``): fold drops it.
+
+    Examples
+    --------
+    >>> import numpy as np; from domainia import wilson
+    >>> R = np.arange(32.0).reshape(4, 8)
+    >>> P = wilson.grid.unfold(R, 4, 8)
+    >>> P.shape, bool(np.array_equal(wilson.grid.fold(P, 4, 8), R))
+    ((5, 8), True)
+    >>> P[0, 1] = 1.0
+    >>> wilson.grid.fold(P, 4, 8)                  # doctest: +ELLIPSIS
+    Traceback (most recent call last):
+    ValueError: P: the inactive cell (m=0, n=1) holds 1.0; ...
+    """
+    m, n = cells(Nf, Nt)
+    a = _wdm_array("P", P, (Nf + 1, Nt))
+    v = np.abs(a.astype(np.result_type(a, 1.0), copy=False))
+    peak = np.max(v, axis=(-2, -1), keepdims=True)
+    bad = np.argwhere(~active_mask(Nf, Nt) & (~np.isfinite(v) | (v > RESIDUE * peak)))
+    if bad.size:
+        *lead, i, j = (int(k) for k in bad[0])
+        raise ValueError(f"P{lead if lead else ''}: the inactive cell (m={i}, n={j}) holds "
+                         f"{a[tuple(bad[0])].item()}; fold drops inactive cells, so each must be "
+                         f"finite and at most {RESIDUE:g} of its slice's peak")
+    return a[..., m, n]
+
+
+def unfold(R: object, Nf: int, Nt: int) -> np.ndarray:
+    """The folded ``(..., Nf, Nt)`` array ``R`` in the padded layout ``(..., Nf+1, Nt)``, in
+    ``R``'s dtype, with the inactive cells exactly 0 (``False``); the inverse of :func:`fold`.
+    Raises as :func:`fold` does for a wrong kind, grid or shape."""
+    m, n = cells(Nf, Nt)
+    a = _wdm_array("R", R, (Nf, Nt))
+    P = np.zeros(a.shape[:-2] + (Nf + 1, Nt), a.dtype)
+    P[..., m, n] = a
+    return P
 
 
 def endpoint_weights(n_rfft: int) -> Array:
