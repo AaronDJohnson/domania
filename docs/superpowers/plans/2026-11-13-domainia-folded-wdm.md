@@ -5228,3 +5228,58 @@ EOF
 git log --oneline -1
 ```
 
+
+---
+
+## Execution errata
+
+Executed on 2026-11-14, subagent-driven, one workflow per task: a Sonnet implementer ran Steps 1–6, then a spec reviewer checked that each commit's tree equals its base plus the task's two patches (`git diff --quiet`), and a code-quality reviewer read the diff and probed old against new. Every task's tree was byte-identical to the prototype's, and every task's counts and sizes equalled the table above.
+
+| Task | Commit | Full suite (PY and FLOOR) | Replay | src lines / code | tests |
+|---|---|---|---|---|---|
+| 1 | bb6c6b4 | 956 passed, 3 skipped | 1408 / 96 | 4,173 / 1,898 | 4,393 |
+| 2 | a4f9fe8 | 955 passed, 3 skipped | 1408 / 96 | 4,194 / 1,906 | 4,412 |
+| 3 | 3e403dd | 943 passed, 3 skipped | 1404 / 100 | 4,128 / 1,881 | 4,355 |
+| 4 | c8838e7 | 943 passed, 3 skipped | 1404 / 100 | 4,099 / 1,864 | 4,346 |
+| 5 | 8772c33 | 943 passed, 3 skipped | 1404 / 100 | 4,084 / 1,852 | 4,354 |
+| 6 | f584d82 | 943 passed, 3 skipped | 1404 / 100 | 4,085 / 1,852 | 4,350 |
+| 7 | f884bd7 | 938 passed, 3 skipped (all four lanes) | 1404 / 100 | 4,059 / 1,841 | 4,325 |
+| fix-up | 40007c6 | 936 passed, 3 skipped (all four lanes) | 1404 / 100 | 4,059 / 1,839 | 4,293 |
+| final-review fix-up | 2ee96ed | 941 passed, 3 skipped (all four lanes) | 1404 / 100 | 4,062 / 1,836 | 4,293 |
+| its test | 52dc1df | 941 passed, 3 skipped (all four lanes) | 1404 / 100 | 4,062 / 1,836 | 4,295 |
+
+Against e6d1e3f (src 4,080 / 1,861, tests 4,344) the branch ends at src −18 lines / −25 code lines and tests −49 lines. Nothing grew. The full suite went from 951 to 941 tests: the removed and merged tests of Tasks 1–7 and the fix-up, plus five new `cells` wrong-kind cases.
+
+**The commit trailer of Task 6 (f584d82)** reads `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`, not Step 6's `Claude Opus 5.5`. The implementer followed its own attribution reminder over the brief. The tree is exactly the base plus both patches; the trailer was the spec review's only failing check. The commit was not amended (Conventions: never amend). The brief for Task 7 and the fix-up said to keep the plan's trailer, and both carry it.
+
+**One fix-up commit (40007c6)** gathers what the seven code-quality reviews found. Each fix was given as exact old and new text and checked by an independent verifier (every edit, the RED step, all four lanes, the replay, old-vs-new behaviour):
+* **Important:** `fold` took magnitudes in `np.result_type(a, 1.0)`, which keeps float16 under NEP 50, so `RESIDUE * peak` rounded to 0 and a valid float16 grid was refused. It now uses `np.result_type(a, np.float64)`; float64 and complex128 keep the same buffer. A 3-line test (a float16 peak of 65504 with an inactive 6e-8) failed before the fix.
+* `_wdm_array`'s shape message prints plain ints for NumPy-integer grids; `fold`'s Raises names the grid's `TypeError`.
+* Docstrings left stale by the layout change: the `transform` module's twin callers, `psd_from_lambda_blocks`'s steps 1 and 3, `wdm_covariance`'s slot notation (`cells(Nf, Nt)[:, i, j]` indexed a tuple), and one `eq45_plan` comment.
+* `eq45_gram_plan`'s loop variable no longer shadows `cells` (ruff F402); `wdm_covariance` gathers with `C[..., *cells(Nf, Nt)]`.
+* Tests: the vendored `test_W_matches_FFT_transform` and `test_W_orthogonal` (cases of `test_window_threading`'s tests), the vendored `_dense_lambda` (a copy of `build_C_wdm`) and two vendored lines that compared the oracle with itself go; `test_eq45_plan_keep_message_names_the_dtype` passes a folded-shape keep, so it is wrong in kind only; the README's Covariance example checks `(2, 2, Nf, Nt)` again.
+
+**Deviation 10 (fix-up): `testing.empirical_variance` calls the public `wilson.forward`**, not the padded `_forward` that spec §3 lists it under. The result is bit-identical (5 grids, both windows), and `testing` loses its only private import from `wilson.transform`. It is deviation 1's move again; the user can overrule it.
+
+**Behaviour that became stricter in Task 7.** `wrap_fractions(..., bad dt, bands=[])` returned an empty `(0, Nt)` array before and now raises the `dt` error, from deviation 2's added `validate_dt`.
+
+**Left open** (they join the Known open points above):
+* `assemble_lambda_full_active` accepts an `n_active` that names an inactive edge time (an odd time in band 0 or Nf). The old code accepted it too; the folded code writes those entries over cell (0, 0). Only a hand-built `n_active` can do this; a 2-line check would refuse it.
+* `wrap_fractions`'s `bands` is not validated (unchanged). A review suggested dropping its `_active_mask` for `base_atom_spectra`'s `a and m in (0, Nf)` test (−2 lines), but that would turn `bands=[-1]`, which now works by negative indexing, into silent garbage at the odd columns. It was not taken.
+
+**The final review (four lenses on e6d1e3f..40007c6, each Critical or Important finding re-checked by an independent skeptic).**
+* Numbers: 8,337 old-against-new comparisons over 9 grids (four with `Nt < Nf`, six with `Nt != 2 Nf`), both windows and leading axes, covering every public function that takes or returns a WDM array, a cell order, a mask or an N × N matrix, plus 176 dtype and layout cases and three large grids. All bit-identical after moving the old output into folded slots, except a 2 × 2 `build_C_wdm` that differs from the old padded product by 7.9e-22 (BLAS on a different operand shape; bit-exact against the old `build_C_wdm_active`).
+* Contract: the public names change only as the spec lists; padded and flat inputs are refused with the named fix; wrong-kind, grid and dt errors keep their kind and message (171 bad-grid cases).
+* Tests: mutation runs kill every DC/Nyquist swap, Nyquist-time shift, Nf/Nt transpose (all 7) and edge-scaling mutant, except equivalent ones.
+* **Important, fixed in 2ee96ed:** the README told the user to "drop the edge columns `wrap_cut_columns` names". On the folded layout a column slice is not a cut by time, because row 0's odd slot `j` holds Nyquist at time `j − 1`. On 8 × 32 at `tol = 1e-3` it kept a Nyquist atom wrapping 3.7e-3. The README and the `wrap_cut_columns` docstring now say to keep `lead <= n < Nt - trail` with `n = cells(Nf, Nt)[1]`.
+* Minor, fixed in 2ee96ed and 52dc1df:
+  * `_inverse` again zeroes the inactive edge cells, as the public `inverse` did at e6d1e3f, so it ignores them rather than requiring them to be 0. This amends deviation 2. Without it, `psd_from_lambda_blocks` with a hand-built `n_active` naming inactive edge times returned a different PSD than at e6d1e3f, since `_check_block_layout` checks sizes only. With it the result is bit-identical to e6d1e3f again. 52dc1df pins it: `test_inverse_family_is_the_oracle_to_rounding` feeds `_inverse` junk in the inactive cells.
+  * One `wilson._checks.require_array` replaces three copies of the masked, `asarray` and dtype checks (`grid._wdm_array`, `_transform._checked`, `_covariance._hermitian`), with the same messages (195 cases checked). It saves 3 code lines.
+  * The wrong-kind grid test covers `cells`, so `fold` and `unfold` lose their grid check only if a test fails.
+  * Wording: the `transform` module docstring names `_inverse_time` correctly; the Eq. 45 docstrings say "extended in time" where "padded" now means the `(Nf+1, Nt)` layout.
+* Not taken: building `meyer_cases.load_baseline`'s slot table independently of `cells` (+1 line). A DC/Nyquist swap is already caught by `test_cells_is_the_folded_slot_table` and the `cells` doctest, both written by hand, and every transpose mutant is caught by many tests.
+
+**For the user** (none blocks a merge):
+* Amend f584d82's trailer to Opus, or leave it (a plan-convention exception only you can grant; nothing is pushed).
+* Keep or overrule deviation 10 and the `_inverse` change to deviation 2.
+* The spec text that execution makes stale (Known open points above) now also includes §3's twin-caller list (deviation 10). Deviation 2's "`_inverse` keeps only its finiteness check" is amended above.
