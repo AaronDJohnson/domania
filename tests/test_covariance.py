@@ -14,13 +14,12 @@ LEVELS = np.array([[1.0, 0.6, 0.3], [0.6, 1.2, -0.4], [0.3, -0.4, 0.9]])
 DELAYS, PHASES = np.array([0.0, 7.3, -11.9]) * DT, np.array([0.0, 0.4, -1.1])
 #: A complex mixing matrix for the loop-built model.
 B = np.random.default_rng(20261114).standard_normal((K, K, 2)) @ [1.0, 1.0j]
-#: The WDM grid of the stationary case, and its active cells.
+#: The WDM grid of the stationary case.
 NF, NT = 16, 32
-MASK = wilson.grid.active_mask(NF, NT)
-#: The routes from a stationary model S(f) to a covariance; the WDM route keeps the active cells.
+#: The routes from a stationary model S(f) to a covariance.
 ROUTES = {"frequency": lambda S, N=128: frequency_covariance(S, N=N, dt=DT),
           "wdm": lambda S: wdm_covariance((lambda f, t: S(f)) if callable(S) else S, Nf=NF,
-                                          Nt=NT, dt=DT)[..., MASK]}
+                                          Nt=NT, dt=DT)}
 #: x = B(t) y for K independent channels y of PSD psd (spec 6.2), with
 #: B(t) = L0 (I + sin(2 pi t / Tp) M1 + cos(4 pi t / Tp) M2).
 L0 = np.linalg.cholesky(LEVELS)
@@ -138,17 +137,16 @@ def test_frequency_covariance_is_the_per_bin_covariance_of_the_dense_reference()
 
 
 def test_wdm_covariance_of_a_stationary_model_is_the_dense_reference():
-    """The same-cell blocks of (I_K x W) Sigma (I_K x W)^T, active edge-band cells included,
-    within 1e-12 (measured: 3.3e-15) in two windows; every block is 0 at the inactive cells; a
-    size-1 time axis gives the explicitly broadcast output, bit for bit."""
+    """The same-cell blocks of (I_K x W) Sigma (I_K x W)^T in folded order, edge-band cells
+    included, within 1e-12 (measured: 3.3e-15) in two windows; a size-1 time axis gives the
+    explicitly broadcast output, bit for bit."""
     Sigma = sigma(delayed, NF * NT, DT)
     for window in (wilson.MEYER, testing.ALT_WINDOW):
         W = testing.dense_W(NF, NT, DT, np.ones((NF, NT), bool), window=window)
         want = np.einsum("pi,abij,pj->abp", W, Sigma, W, optimize=True)
         got = wdm_covariance(lambda f, t: delayed(f), Nf=NF, Nt=NT, dt=DT, window=window)
-        assert got.shape == (K, K, NF + 1, NT) and got.dtype == np.float64
-        assert error(wilson.grid.fold(got, NF, NT).reshape(K, K, -1), want) < 1e-12
-        assert not np.any(got[..., ~MASK])
+        assert got.shape == (K, K, NF, NT) and got.dtype == np.float64
+        assert error(got.reshape(K, K, -1), want) < 1e-12
     full = wdm_covariance(lambda f, t: delayed(f + 0 * t), Nf=NF, Nt=NT, dt=DT, window=window)
     assert np.array_equal(got, full)
 
@@ -157,17 +155,16 @@ def test_wdm_covariance_of_an_evolutionary_model(monkeypatch):
     """x = B(t) y on 16 x 64, outside the columns wrap_cut_columns names: the error is below 5e-2
     at T_p = 32 dT and below 1.5e-2 at 64 dT (measured: 3.5e-2 and 9.3e-3); each diagonal
     entry, also as a K = 1 model, is noise.evolutionary_band_variance to 1e-14 (measured: bit
-    for bit) and 0 at the inactive cells; smaller chunks, with partial last chunks, change no
-    bit and keep every call within CHUNK points."""
+    for bit); smaller chunks, with partial last chunks, change no bit and keep every call
+    within CHUNK points."""
     Nf, Nt = 16, 64
-    mask = wilson.grid.active_mask(Nf, Nt)
     lead, trail = wilson.evolutionary.wrap_cut_columns(Nf, Nt, DT)
     n = wilson.grid.cells(Nf, Nt)[1].ravel()
     kept = (n >= lead) & (n < Nt - trail)
     for Tp, bound in ((32, 5e-2), (64, 1.5e-2)):
         S = modulated(Tp * Nf * DT)
         got = wdm_covariance(S, Nf=Nf, Nt=Nt, dt=DT)
-        assert error(wilson.grid.fold(got, Nf, Nt).reshape(K, K, -1)[..., kept],
+        assert error(got.reshape(K, K, -1)[..., kept],
                      same_cell(Nf, Nt, Tp * Nf * DT)[..., kept]) < bound
         for a in range(K):
             want = wilson.noise.evolutionary_band_variance(
@@ -175,8 +172,7 @@ def test_wdm_covariance_of_an_evolutionary_model(monkeypatch):
             one = wdm_covariance(lambda f, t, S=S, a=a: S(f, t)[a:a + 1, a:a + 1],
                                  Nf=Nf, Nt=Nt, dt=DT)
             for v in (got[a, a], one[0, 0]):
-                np.testing.assert_allclose(wilson.grid.fold(v, Nf, Nt), want, rtol=1e-14, atol=0)
-                assert not np.any(v[~mask])
+                np.testing.assert_allclose(v, want, rtol=1e-14, atol=0)
     points = ([], [])
 
     def counted(f, t, stationary=False):

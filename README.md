@@ -51,20 +51,21 @@ def S(f):                                       # one-sided 2 x 2 cross-spectral
     return p * np.array([[np.ones_like(c), c], [np.conj(c), np.ones_like(c)]])
 
 C = frequency_covariance(S, N=N, dt=dt)                                  # (2, 2, 513) complex
-D = wdm_covariance(lambda f, t: S(f), Nf=Nf, Nt=Nt, dt=dt)               # (2, 2, 17, 64) real
+D = wdm_covariance(lambda f, t: S(f), Nf=Nf, Nt=Nt, dt=dt)               # (2, 2, 16, 64) real
 E = wdm_covariance(lambda f, t: S(f) * (1.3 + 0.3 * np.cos(2 * np.pi * t / (N * dt))),
                    Nf=Nf, Nt=Nt, dt=dt)                                  # evolutionary
 assert np.array_equal(C, C.conj().transpose(1, 0, 2))
-assert np.array_equal(D, D.transpose(1, 0, 2, 3)) and not D[:, :, 0, 1].any()
+assert np.array_equal(D, D.transpose(1, 0, 2, 3))
 ```
 
 ## Conventions
 
 - Trailing-axis layouts: time is real `(N,)`; frequency is complex `(N // 2 + 1,)`,
-  `dt * rfft(x)`; WDM is real `(Nf + 1, Nt)` with the edge bands, `Nf` and `Nt` even and
-  `Nf * Nt == N`. The atoms have unit norm (`sum(w**2) == dt * sum(x**2)`), and the inactive
-  WDM cells (bands 0 and `Nf` at odd `n`) are 0 in every output of `transform` and
-  `wdm_covariance`.
+  `dt * rfft(x)`; WDM is real `(Nf, Nt)` folded, `Nf` and `Nt` even and `Nf * Nt == N`: row
+  `i >= 1` is band `i`, and row 0 holds band 0 (DC) at time `j` in even slots `j` and band
+  `Nf` (Nyquist) at time `j - 1` in odd ones. `wilson.grid.cells` gives each slot's band and
+  time, `.reshape(..., N)` is the flat form, and `wilson.grid.fold` and `unfold` convert from
+  and to padded `(Nf + 1, Nt)`. The atoms have unit norm (`sum(w**2) == dt * sum(x**2)`).
 - A model `S(f)` or `S(f, t)` (`t` in seconds from the first sample) returns `(K, K, ...)`,
   or `(K, K, 1)` if it is constant, with `S[b, a] = conj(S[a, b])`, oriented so that
   `E[X_a conj(X_b)] = (N dt / 2) S_ab`.
@@ -79,5 +80,6 @@ assert np.array_equal(D, D.transpose(1, 0, 2, 3)) and not D[:, :, 0, 1].any()
 ## Kernels
 
 `domainia.wilson` holds the kernels: `forward`, `inverse`, `forward_time` and `inverse_time`
-(any leading axes), the windows that `transform` and `wdm_covariance` take as `window=`
-(`MEYER`, the default, `Meyer(d)`, `RampWindow`, `SampledWindow`), and the dense references.
+(any leading axes), the layout's `grid.cells`, `grid.fold` and `grid.unfold`, the windows that
+`transform` and `wdm_covariance` take as `window=` (`MEYER`, the default, `Meyer(d)`,
+`RampWindow`, `SampledWindow`), and the dense references.

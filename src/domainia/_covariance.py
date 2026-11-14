@@ -14,7 +14,7 @@ from typing import Any
 import numpy as np
 
 from .wilson._checks import require_callable, require_dtype, require_int, validate_dt
-from .wilson.grid import active_mask, band_frequencies, delta_T, validate_grid
+from .wilson.grid import band_frequencies, cells, delta_T, validate_grid
 from .wilson.windows import MEYER, Window, sample_window
 
 __all__ = ["frequency_covariance", "wdm_covariance"]
@@ -105,11 +105,12 @@ def wdm_covariance(S: Callable[[np.ndarray, np.ndarray], Any], *, Nf: int, Nt: i
                    window: Window = MEYER) -> np.ndarray:
     """The covariance of each WDM cell's K coefficients under an evolutionary model ``S(f, t)``.
 
-    Returns ``C[a, b, m, n] = BA_m[Re H_ab(., t_n)] / 2``, float64 of shape ``(K, K, Nf + 1, Nt)``,
-    exactly symmetric in ``a, b`` and 0 at the inactive cells.  ``H = (S + S^H) / 2`` after the
-    check (:func:`_hermitian`), ``t_n = n Nf dt``, and ``BA_m`` is the phi-hat^2-weighted mean over
-    band ``m``'s frequency samples, folded at DC and Nyquist (WDM Paper II, Eq. 36), in the Wilson
-    basis of ``window``.  For K = 1 this is ``wilson.noise.evolutionary_band_variance``.
+    Returns ``C[a, b, i, j] = BA_m[Re H_ab(., t_n)] / 2`` with ``(m, n) = cells(Nf, Nt)[:, i, j]``
+    (:func:`domainia.wilson.grid.cells`), float64 of the folded shape ``(K, K, Nf, Nt)`` and
+    exactly symmetric in ``a, b``.  ``H = (S + S^H) / 2`` after the check (:func:`_hermitian`),
+    ``t_n = n Nf dt``, and ``BA_m`` is the phi-hat^2-weighted mean over band ``m``'s frequency
+    samples, reflected at DC and Nyquist (WDM Paper II, Eq. 36), in the Wilson basis of
+    ``window``.  For K = 1 this is ``wilson.noise.evolutionary_band_variance``.
 
     ``S`` gets broadcasting read-only ``f`` (bands, 1, bins) [Hz] and ``t`` (1, columns, 1) [s
     from the record's first sample]: once on band 0 and two columns, then once per chunk of at
@@ -149,5 +150,5 @@ def wdm_covariance(S: Callable[[np.ndarray, np.ndarray], Any], *, Nf: int, Nt: i
                 raise ValueError(f"{name} is {H.shape[0]} x {H.shape[0]}, but was {K} x {K}")
             C[a, b, m:m + nb, n:n + nc] = C[b, a, m:m + nb, n:n + nc] = (
                 0.5 * (H.real[a, b] * w).sum(axis=-1) / w.sum())
-    C[:, :, ~active_mask(Nf, Nt)] = 0.0
-    return C
+    m, n = cells(Nf, Nt)
+    return C[:, :, m, n]
