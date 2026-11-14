@@ -1,6 +1,6 @@
-"""``domainia.wilson``: Wilson-basis kernels on the half-shifted lattice.  With the
+"""``domania.wilson``: Wilson-basis kernels on the half-shifted lattice.  With the
 default window :data:`MEYER` they are the WDM transform.  Every kernel that samples
-the window takes ``window=`` (:mod:`domainia.wilson.windows`).
+the window takes ``window=`` (:mod:`domania.wilson.windows`).
 
 The WDM transform is a Wilson-basis time-frequency tiling with a Meyer
 scaling-function window.  Despite the name, it is **not** a wavelet
@@ -17,13 +17,13 @@ Public API
   grids (WDM Paper II, Eq. 36).
 * :class:`Window` (the protocol), :class:`Meyer`, :class:`RampWindow`,
   :class:`SampledWindow`, :data:`MEYER` (``Meyer(4)``, the WDM transform's window).
-* The submodules :mod:`domainia.wilson.grid` (grid helpers and the input checks the entry
-  points apply), :mod:`domainia.wilson.filter` (the Meyer filter),
-  :mod:`domainia.wilson.windows` (:func:`~domainia.wilson.windows.sample_window` and the
-  :class:`~domainia.wilson.windows.WindowError` of a failed window check),
-  :mod:`domainia.wilson.noise`, :mod:`domainia.wilson.matrix` (explicit matrices, small grids),
-  :mod:`domainia.wilson.stationary` (fast stationary noise covariance) and
-  :mod:`domainia.wilson.evolutionary` (kernels for evolutionary noise).
+* The submodules :mod:`domania.wilson.grid` (grid helpers and the input checks the entry
+  points apply), :mod:`domania.wilson.filter` (the Meyer filter),
+  :mod:`domania.wilson.windows` (:func:`~domania.wilson.windows.sample_window` and the
+  :class:`~domania.wilson.windows.WindowError` of a failed window check),
+  :mod:`domania.wilson.noise`, :mod:`domania.wilson.matrix` (explicit matrices, small grids),
+  :mod:`domania.wilson.stationary` (fast stationary noise covariance) and
+  :mod:`domania.wilson.evolutionary` (kernels for evolutionary noise).
 """
 
 from __future__ import annotations

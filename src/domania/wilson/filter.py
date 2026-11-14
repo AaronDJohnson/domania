@@ -44,7 +44,7 @@ def nu_d(x: Array, d: int = 4) -> Array:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> wilson.filter.nu_d(np.array([0.0, 0.5, 1.0]))
     array([0. , 0.5, 1. ])
     """
@@ -71,11 +71,11 @@ def phi_centered(Nf: int, Nt: int, dt: float, d: int = 4) -> Array:
         If ``Nf``, ``Nt`` or ``d`` is not an integer, or ``dt`` is not a real number.
     ValueError
         If the grid or ``dt`` is invalid, or if $\\Delta F = 1/(2\\,\\delta t N_f)$
-        is not a positive finite double (see :func:`domainia.wilson.grid.delta_F`).
+        is not a positive finite double (see :func:`domania.wilson.grid.delta_F`).
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> phi = wilson.filter.phi_centered(8, 16, 1.0)
     >>> phi.shape, bool(phi[8] == phi.max())   # flat top includes index Nt/2
     ((16,), True)

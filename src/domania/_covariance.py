@@ -102,7 +102,7 @@ def wdm_covariance(S: Callable[[np.ndarray, np.ndarray], Any], *, Nf: int, Nt: i
     """The covariance of each WDM cell's K coefficients under an evolutionary model ``S(f, t)``.
 
     Returns ``C[a, b, i, j] = BA_m[Re H_ab(., t_n)] / 2`` at band ``m[i, j]`` and time ``n[i, j]``
-    with ``m, n = cells(Nf, Nt)`` (:func:`domainia.wilson.grid.cells`), float64 of the folded shape
+    with ``m, n = cells(Nf, Nt)`` (:func:`domania.wilson.grid.cells`), float64 of the folded shape
     ``(K, K, Nf, Nt)`` and exactly symmetric in ``a, b``.  ``H = (S + S^H) / 2`` after the check
     (:func:`_hermitian`), ``t_n = n Nf dt``, and ``BA_m`` is the phi-hat^2-weighted mean over band
     ``m``'s frequency samples, reflected at DC and Nyquist (WDM Paper II, Eq. 36), in the Wilson

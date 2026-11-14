@@ -1,4 +1,4 @@
-"""Package-wide test configuration for ``domainia.wilson``.
+"""Package-wide test configuration for ``domania.wilson``.
 
 Puts ``tests/oracle`` on ``sys.path`` so the frozen oracle imports as the
 top-level package ``vendored_2f7136c`` (never as ``wdm``).
@@ -25,11 +25,11 @@ def rng():
 
 #: The out-of-repo oracle trees live under the directory this variable names; unset, or
 #: without the expected subdirectory, the tests that need them skip.
-ORACLE_ROOT_ENV = "DOMAINIA_ORACLE_ROOT"
+ORACLE_ROOT_ENV = "DOMANIA_ORACLE_ROOT"
 
 
 def _oracle_paths(*subpaths: str) -> list[Path]:
-    """``$DOMAINIA_ORACLE_ROOT/<subpath>`` for each ``subpath``; skips the test unless the
+    """``$DOMANIA_ORACLE_ROOT/<subpath>`` for each ``subpath``; skips the test unless the
     variable is set and every path exists.  ``test_grid_bands`` and
     ``test_evolutionary_kernels`` import it (``from .conftest import _oracle_paths``)."""
     root = os.environ.get(ORACLE_ROOT_ENV)

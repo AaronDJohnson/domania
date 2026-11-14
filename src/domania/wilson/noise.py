@@ -14,13 +14,13 @@ band average of WDM Paper II, Eq. 36:
 * :func:`evolutionary_band_variance` — the same mean of a time-varying PSD
   $S_n(f, t)$ at each time pixel, for locally-stationary noise.
 
-A Monte-Carlo estimator, :func:`domainia.testing.empirical_variance`, checks them.
+A Monte-Carlo estimator, :func:`domania.testing.empirical_variance`, checks them.
 
-Both grids are in the folded layout ``(Nf, Nt)`` (:func:`domainia.wilson.grid.cells`): row 0's
+Both grids are in the folded layout ``(Nf, Nt)`` (:func:`domania.wilson.grid.cells`): row 0's
 odd slots hold the Nyquist band.
 
 Every kernel here that reaches the window takes ``window=`` (a
-:class:`domainia.wilson.windows.Window`; default :data:`domainia.wilson.MEYER`) and
+:class:`domania.wilson.windows.Window`; default :data:`domania.wilson.MEYER`) and
 computes in the Wilson basis of that window.
 """
 
@@ -74,7 +74,7 @@ def band_averaged_variance(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> steep = lambda f: 1e-3 * (1.0 + 1e2 / (f + 1 / (2 * dt * Nf)) ** 2)
     >>> var = wilson.band_averaged_variance(Nf, Nt, dt, steep)

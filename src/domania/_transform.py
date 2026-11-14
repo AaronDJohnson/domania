@@ -5,7 +5,7 @@ The layouts, on the trailing axes of an array with any leading axes (typically `
 * ``"time"``: real ``(N,)``;
 * ``"frequency"``: complex ``(N // 2 + 1,)``, ``dt * numpy.fft.rfft(x)``;
 * ``"wdm"``: real ``(Nf, Nt)``, the Wilson coefficients of ``window`` in the folded layout
-  (:func:`domainia.wilson.grid.cells` gives each slot's band and time).
+  (:func:`domania.wilson.grid.cells` gives each slot's band and time).
 
 Every route goes through the rfft ``numpy.fft.rfft(x)``.
 """
@@ -93,9 +93,9 @@ def transform(x: Any, source: str, target: str, *, N: int, dt: float,
 
     The result is float64 (complex128 on frequency); on frequency it is exactly canonical, with
     the imaginary parts at DC and even-``N`` Nyquist 0.  A frequency input may carry a residue
-    there up to :data:`~domainia.wilson.grid.RESIDUE` of its slice's peak (``max |x|`` over the
+    there up to :data:`~domania.wilson.grid.RESIDUE` of its slice's peak (``max |x|`` over the
     last axis, for each leading index); a larger one is refused, naming the bin.  A WDM output
-    is the folded output of :func:`domainia.wilson.forward` as it is.
+    is the folded output of :func:`domania.wilson.forward` as it is.
 
     Raises ``TypeError`` for a masked or non-numeric ``x`` (bool, str, object), a non-string
     ``source``/``target``, a WDM grid that is not a sequence, a non-integer ``N``, ``Nf`` or
@@ -104,7 +104,7 @@ def transform(x: Any, source: str, target: str, *, N: int, dt: float,
     non-positive or non-finite ``dt``, complex ``x`` on time or WDM, a wrong trailing shape (for
     a padded ``(..., Nf+1, Nt)`` or a flat ``(..., N)`` WDM ``x`` the message names the fix,
     ``wilson.grid.fold`` or ``.reshape(..., Nf, Nt)``), a non-finite value, or a residue above
-    :data:`~domainia.wilson.grid.RESIDUE`; and ``WindowError``, a
+    :data:`~domania.wilson.grid.RESIDUE`; and ``WindowError``, a
     ``ValueError``, for a window inadmissible on a WDM grid.  A real ``x`` on frequency is
     taken as complex.
     """

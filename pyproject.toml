@@ -3,7 +3,7 @@ requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
-name = "domainia"
+name = "domania"
 version = "3.0.0"
 description = "Translate data arrays between time, frequency and WDM, and evaluate a noise model's per-point K x K covariance on a frequency or WDM grid."
 readme = "README.md"
@@ -21,7 +21,7 @@ dependencies = [
 test = ["pytest>=8"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/domainia"]
+packages = ["src/domania"]
 
 [tool.hatch.build.targets.sdist]
 # Only the package and its tests: the specs and plans under docs/ and any untracked folder at
@@ -31,8 +31,8 @@ only-include = ["src", "tests"]
 [tool.pytest.ini_options]
 # One config for the whole repo.  tests/ has no __init__.py; tests/wilson is a package
 # whose conftest puts tests/wilson/oracle on sys.path.  --doctest-modules applies to every collected
-# path (tests/ too); the doctests themselves live only in domainia.wilson.
-testpaths = ["tests", "src/domainia/wilson"]
+# path (tests/ too); the doctests themselves live only in domania.wilson.
+testpaths = ["tests", "src/domania/wilson"]
 pythonpath = ["src"]
 addopts = "-ra --doctest-modules -p no:cacheprovider"
 norecursedirs = [".*", "__pycache__", "oracle", "data"]

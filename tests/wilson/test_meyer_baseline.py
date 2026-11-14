@@ -1,5 +1,5 @@
 """The default window reproduces the Meyer baseline recorded at d991ac4, to 1e-12 of each
-array's scale (domainia 3.0 spec, section 6.1).
+array's scale (domania 3.0 spec, section 6.1).
 
 ``meyer_cases.mismatches`` is the one comparator, shared with ``meyer_cases.py --check``.  The
 ``meyer_cases.DROPPED`` families, of code that 3.0 deletes, are set aside; every other recorded
@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from domainia import wilson
+from domania import wilson
 
 from .meyer_cases import DROPPED, RTOL, THREADED, compute, load_baseline, mismatches
 

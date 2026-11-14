@@ -9,7 +9,7 @@ $\\hat\\phi$ (Meyer by default; any admissible window) has compact frequency
 support so only $|m - m'|\\le 1$ band pairs overlap.
 
 Every kernel here that reaches the window takes ``window=`` (a
-:class:`domainia.wilson.windows.Window`; default :data:`domainia.wilson.MEYER`) and
+:class:`domania.wilson.windows.Window`; default :data:`domania.wilson.MEYER`) and
 computes in the Wilson basis of that window.
 
 This module implements the slab-IFFT algorithm from
@@ -26,7 +26,7 @@ versus $\\mathcal O(N^3)$ for the dense $W\\,C_{\\rm time}\\,W^T$.
 :func:`build_lambda_blocks_full_active` covers **every** band pair,
 including the parity-restricted edge bands $m \\in \\{0, N_f\\}$, via
 half-slab Hermitian-extended IFFTs, with the edge $\\sqrt 2$ factors of the unit-norm
-basis (:mod:`domainia.wilson.transform`) built in.  It matches
+basis (:mod:`domania.wilson.transform`) built in.  It matches
 the dense $W\\,C_{\\rm time}\\,W^T$ at machine precision.
 
 Backward maps (Paper I Alg. 4)
@@ -82,7 +82,7 @@ def is_diagonal(matrix: NDArray[np.number], *, rtol: float = 1e-10) -> bool:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> wilson.stationary.is_diagonal(np.diag([1.0, 2.0]))
     True
     >>> wilson.stationary.is_diagonal(np.array([[1.0, 0.5], [0.5, 2.0]]))
@@ -136,7 +136,7 @@ def _normalize_noise_to_sigma2(
         If the PSD is not a real numeric array in any form: complex (even with a
         zero imaginary part), bool, str or object.  It is rejected before any
         cast, rather than truncated to its real part, as
-        :func:`domainia.wilson.grid.sanitize_psd` does.
+        :func:`domania.wilson.grid.sanitize_psd` does.
     ValueError
         If a 2D matrix input is not diagonal (i.e., the noise is not
         stationary), or if the input shape is not recognized.
@@ -179,9 +179,9 @@ def _normalize_noise_to_sigma2(
                     "The fast stationary algorithm requires off-diagonal "
                     f"entries < {rtol:g} times the max diagonal entry. "
                     "For non-stationary noise build the dense pipeline "
-                    "explicitly: W = domainia.wilson.matrix.build_W(...), "
+                    "explicitly: W = domania.wilson.matrix.build_W(...), "
                     "then W @ C @ W.T with your own (N, N) covariance. Note "
-                    "domainia.wilson.matrix.build_C_wdm does NOT accept one -- it takes a "
+                    "domania.wilson.matrix.build_C_wdm does NOT accept one -- it takes a "
                     "stationary PSD callable and builds a Toeplitz C_time."
                 )
             diag = np.real(np.diag(arr)).astype(float)
@@ -197,7 +197,7 @@ def _normalize_noise_to_sigma2(
 
 def _reject_complex_psd(values: NDArray[np.generic], context: str) -> None:
     """``TypeError`` for a PSD that is not a real numeric array (complex, bool, str or
-    object), with :func:`domainia.wilson.grid.sanitize_psd`'s message.
+    object), with :func:`domania.wilson.grid.sanitize_psd`'s message.
 
     Checked on the raw input, before the ``float`` casts / ``np.real`` above
     would discard the imaginary part.
@@ -408,7 +408,7 @@ def build_lambda_blocks_full_active(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> psd = lambda f: 1e-3 * np.ones_like(f)
     >>> diag, offd, n_active = wilson.stationary.build_lambda_blocks_full_active(
@@ -561,7 +561,7 @@ def build_K_full_active(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> flat = lambda f: 1e-3 * np.ones_like(f)
     >>> K_diag, K_off = wilson.stationary.build_K_full_active(8, 16, 1.0, flat)
     >>> len(K_diag), len(K_off), K_diag[0].shape
@@ -619,7 +619,7 @@ def psd_from_K(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> flat = lambda f: 1e-3 * np.ones_like(f)
     >>> K_diag, _ = wilson.stationary.build_K_full_active(8, 16, 1.0, flat)
     >>> wilson.stationary.psd_from_K(K_diag, 8, 16, 1.0).shape
@@ -716,10 +716,10 @@ def apply_lambda_from_psd(
     Parameters
     ----------
     x_wmn : ndarray, float, shape (Nf, Nt)
-        Input WDM coefficients, folded (:func:`domainia.wilson.transform.forward`).
+        Input WDM coefficients, folded (:func:`domania.wilson.transform.forward`).
     Sn_rfft : ndarray, float, shape (N//2 + 1,)
         One-sided PSD evaluated on the ``rfftfreq(N, dt)`` grid.  ``inf`` samples are
-        zero power (:func:`domainia.wilson.grid.sanitize_psd`).
+        zero power (:func:`domania.wilson.grid.sanitize_psd`).
 
     Returns
     -------
@@ -736,7 +736,7 @@ def apply_lambda_from_psd(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> N = Nf * Nt
     >>> x = wilson.forward_time(np.random.default_rng(0).standard_normal(N), Nf, Nt, dt)
@@ -806,7 +806,7 @@ def psd_from_lambda_blocks(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> flat = lambda f: 1e-3 * np.ones_like(f)
     >>> d, o, na = wilson.stationary.build_lambda_blocks_full_active(
     ...     8, 16, 1.0, flat
@@ -848,7 +848,7 @@ def assemble_lambda_full_active(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> flat = lambda f: 1e-3 * np.ones_like(f)
     >>> d, o, na = wilson.stationary.build_lambda_blocks_full_active(
     ...     8, 16, 1.0, flat

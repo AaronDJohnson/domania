@@ -11,15 +11,15 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import domainia
-from domainia import wilson
-from domainia.testing import ALT_WINDOW, colored_noise, empirical_variance, smoothstep
-from domainia.wilson import MEYER, Meyer, RampWindow, SampledWindow
-from domainia.wilson.windows import WindowError
+import domania
+from domania import wilson
+from domania.testing import ALT_WINDOW, colored_noise, empirical_variance, smoothstep
+from domania.wilson import MEYER, Meyer, RampWindow, SampledWindow
+from domania.wilson.windows import WindowError
 
-from .meyer_cases import THREADED, domainia_cases, psd, psd_ft, wilson_cases
+from .meyer_cases import THREADED, domania_cases, psd, psd_ft, wilson_cases
 
-#: Source files (relative to src/domainia) whose every consumer call must pass ``window=``:
+#: Source files (relative to src/domania) whose every consumer call must pass ``window=``:
 #: every module of the package but UNSCANNED.  ``wilson/filter.py`` and ``wilson/windows.py``
 #: must never be scanned: they are where the Meyer samples come from (``phi_centered``) and
 #: where ``.sample`` is called, behind ``sample_window``'s validation.
@@ -198,13 +198,13 @@ def _missing_window(path: Path) -> list[tuple[int, str, str]]:
 
 @pytest.mark.parametrize("rel", SCANNED)
 def test_no_kernel_call_drops_the_window(rel):
-    assert _missing_window(Path(domainia.__file__).parent / rel) == []
+    assert _missing_window(Path(domania.__file__).parent / rel) == []
 
 
 def test_the_scan_covers_every_module_but_filter_and_windows():
     """A new module anywhere in the package is scanned unless it is added to UNSCANNED on
     purpose."""
-    root = Path(domainia.__file__).parent
+    root = Path(domania.__file__).parent
     modules = {p.relative_to(root).as_posix() for p in root.rglob("*.py")}
     assert UNSCANNED <= modules
     assert modules - UNSCANNED <= set(SCANNED)
@@ -261,14 +261,14 @@ _PASS_ON = "    return forward(x, Nf, Nt, dt, window=window)\n"
     ("def f(x, window=wilson.MEYER, other=Meyer(8)):\n" + _PASS_ON, False),
     ("h = lambda x, window=MEYER: forward(x, Nf, Nt, dt, window=window)\n", False),
     ("from .windows import MEYER, Meyer, RampWindow, SampledWindow, Window\n", False),
-    ("import domainia.wilson.windows as windows\nMEYER = windows.Meyer()\n", False),
+    ("import domania.wilson.windows as windows\nMEYER = windows.Meyer()\n", False),
     ("ALT_WINDOW = SampledWindow(wide_profile, 'wide-smoothstep')\n", False),
     ("@dataclass(frozen=True)\nclass D:\n    window: Window = MEYER\n", False),
     ("@dataclass(frozen=True)\nclass D:\n    window: Window = field(default=MEYER, kw_only=True)\n",
      False),
     ("def f(x, *, window=MEYER):\n    if window is MEYER:\n        return fast(x)\n" + _PASS_ON, False),
     ("def f(x, *, window=MEYER):\n    return window == wilson.MEYER or window != Meyer(4)\n", False),
-    # The domainia layer's patterns: the window travels as data, checked but never rebuilt.
+    # The domania layer's patterns: the window travels as data, checked but never rebuilt.
     ("class D:\n    def __init__(self, *, window: Window = MEYER):\n        self.window = window\n", False),
     ("class D:\n    @classmethod\n    def full(cls, grid, *, window=MEYER):\n"
      "        return cls(grid, window=window)\n", False),
@@ -299,19 +299,19 @@ def test_every_kernel_validates_the_window_it_is_given(case):
         case({"window": InadmissibleWindow()})
 
 
-#: The domainia-layer cases: ``kw`` goes to every window-taking call.
-_DCASES = domainia_cases(wilson, 8, 16, 1.0)
+#: The domania-layer cases: ``kw`` goes to every window-taking call.
+_DCASES = domania_cases(wilson, 8, 16, 1.0)
 
 
 @pytest.mark.parametrize("case", [c for _, c in _DCASES], ids=[n for n, _ in _DCASES])
-def test_every_domainia_consumer_samples_the_window_it_is_given(case):
+def test_every_domania_consumer_samples_the_window_it_is_given(case):
     w = CountingWindow(ALT_WINDOW)
     case({"window": w})
     assert w.calls > 0
 
 
 @pytest.mark.parametrize("case", [c for _, c in _DCASES], ids=[n for n, _ in _DCASES])
-def test_every_domainia_consumer_validates_the_window_it_is_given(case):
+def test_every_domania_consumer_validates_the_window_it_is_given(case):
     with pytest.raises(WindowError, match="partition of unity"):
         case({"window": InadmissibleWindow()})
 

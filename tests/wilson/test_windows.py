@@ -1,4 +1,4 @@
-"""Admissible Wilson windows: Meyer(d), RampWindow, SampledWindow (domainia 2.0 spec, section 2)."""
+"""Admissible Wilson windows: Meyer(d), RampWindow, SampledWindow (domania 2.0 spec, section 2)."""
 
 from __future__ import annotations
 
@@ -10,11 +10,11 @@ from functools import partial
 import numpy as np
 import pytest
 
-from domainia import wilson
-from domainia.testing import ALT_WINDOW, smoothstep, wide_profile
-from domainia.wilson import MEYER, Meyer, RampWindow, SampledWindow, Window
-from domainia.wilson.filter import nu_d, phi_centered
-from domainia.wilson.windows import WindowError, require_window, sample_window
+from domania import wilson
+from domania.testing import ALT_WINDOW, smoothstep, wide_profile
+from domania.wilson import MEYER, Meyer, RampWindow, SampledWindow, Window
+from domania.wilson.filter import nu_d, phi_centered
+from domania.wilson.windows import WindowError, require_window, sample_window
 
 GRIDS = [(8, 16, 1.0), (16, 32, 0.25), (32, 8, 2.0), (64, 256, 2.0**-10)]
 

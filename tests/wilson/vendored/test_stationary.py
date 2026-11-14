@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from domainia.wilson.matrix import build_C_wdm
-from domainia.wilson.stationary import (
+from domania.wilson.matrix import build_C_wdm
+from domania.wilson.stationary import (
     assemble_lambda_full_active,
     build_lambda_blocks_full_active,
     is_diagonal,

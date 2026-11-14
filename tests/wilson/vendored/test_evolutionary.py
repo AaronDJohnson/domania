@@ -5,15 +5,15 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-# The frozen wdm_dev oracle (tests/wilson/oracle/wdm_dev_ev) against domainia.wilson's dense
+# The frozen wdm_dev oracle (tests/wilson/oracle/wdm_dev_ev) against domania.wilson's dense
 # references: its packed grid, atoms and time mask against build_W and forward_time, its band
 # average and exact covariance against band_averaged_variance, build_C_time and build_C_wdm.
 # The oracle packs the cells in band order; tests/wilson/test_evolutionary_kernels.py checks
 # the kernels against it.
 from wdm_dev_ev import evolutionary as ev
-from domainia.wilson.grid import _active_mask, cells
-from domainia.wilson.matrix import build_W
-from domainia.wilson.transform import forward_time
+from domania.wilson.grid import _active_mask, cells
+from domania.wilson.matrix import build_W
+from domania.wilson.transform import forward_time
 
 NF, NT, DT = 8, 16, 0.5
 N = NF * NT
@@ -57,8 +57,8 @@ def test_apply_mask_and_energy_fraction_match_the_dense_mask(rng):
 # General S(f, t): band average and exact covariance
 # ---------------------------------------------------------------------------
 
-from domainia.wilson.matrix import build_C_time, build_C_wdm  # noqa: E402
-from domainia.wilson.noise import band_averaged_variance  # noqa: E402
+from domania.wilson.matrix import build_C_time, build_C_wdm  # noqa: E402
+from domania.wilson.noise import band_averaged_variance  # noqa: E402
 
 T_REC = N * DT
 F_NYQ = 0.5 / DT

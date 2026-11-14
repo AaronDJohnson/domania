@@ -1,4 +1,4 @@
-"""domainia.transform: data arrays between time, frequency and WDM (domainia 3.0 spec,
+"""domania.transform: data arrays between time, frequency and WDM (domania 3.0 spec,
 sections 2 and 6.2)."""
 
 from __future__ import annotations
@@ -9,8 +9,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from domainia import transform, wilson
-from domainia.testing import ALT_WINDOW
+from domania import transform, wilson
+from domania.testing import ALT_WINDOW
 
 REFERENCE = Path(__file__).resolve().parent / "data" / "translate_reference.npz"
 KINDS = ("time", "frequency", "wdm")
@@ -123,7 +123,7 @@ def test_every_refusal():
         (t, "time", "wdm", {"target_wdm": (4, 16)}, ValueError, "N=128"),
         (t, "time", "wdm", {"N": 128.0}, TypeError, "N must be an integer"),
         (t, "time", "wdm", {"N": 0}, ValueError, "N must be positive"),
-        (t, "time", "frequency", {"window": "garbage"}, TypeError, "window must be a domainia.wilson"),
+        (t, "time", "frequency", {"window": "garbage"}, TypeError, "window must be a domania.wilson"),
         (t, "time", "wdm", {"dt": 0.0}, ValueError, "dt must be"),
         (t[:-1], "time", "wdm", {}, ValueError, r"shape \(127,\)"),
         (w.T, "wdm", "time", {}, ValueError, r"shape \(16, 8\)"),

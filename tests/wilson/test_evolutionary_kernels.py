@@ -1,4 +1,4 @@
-"""The stateless WDM Paper II kernels (domainia.wilson.evolutionary, domainia.wilson.noise).
+"""The stateless WDM Paper II kernels (domania.wilson.evolutionary, domania.wilson.noise).
 
 Every kernel is checked against its source: the frozen wdm_dev oracle
 (``wdm_dev_ev``), the block builder of the WDM Paper II toy models in a lineage-A
@@ -20,10 +20,10 @@ import numpy as np
 import pytest
 from wdm_dev_ev import evolutionary as ev
 
-from domainia.wilson import evolutionary as E
-from domainia.wilson.grid import cells
-from domainia.wilson.matrix import build_C_wdm, build_W
-from domainia.wilson.noise import evolutionary_band_variance
+from domania.wilson import evolutionary as E
+from domania.wilson.grid import cells
+from domania.wilson.matrix import build_C_wdm, build_W
+from domania.wilson.noise import evolutionary_band_variance
 
 from .conftest import _oracle_paths
 
@@ -31,7 +31,7 @@ NF, NT, DT = 8, 16, 0.5
 N = NF * NT
 T_REC = N * DT
 F_NYQ = 0.5 / DT
-#: The lineage-A source trees under $DOMAINIA_ORACLE_ROOT (vendored wdm first).
+#: The lineage-A source trees under $DOMANIA_ORACLE_ROOT (vendored wdm first).
 LINEAGE_A = ("toy_models/vendor/wdm/src", "wdm_paper_2/toy_models/src")
 #: max|got - ref| over max|ref| against the omega-era sources (float64).
 ORACLE_RTOL = 1e-14

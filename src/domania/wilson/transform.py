@@ -8,14 +8,14 @@ indices are served by Hermitian symmetry on read (forward) or
 discarded (inverse, where they are redundant by Hermitian symmetry of
 the real WDM wavelets).
 
-Every kernel here takes ``window=`` (a :class:`domainia.wilson.windows.Window`;
-default :data:`domainia.wilson.MEYER`, the Meyer window of the WDM transform) and
+Every kernel here takes ``window=`` (a :class:`domania.wilson.windows.Window`;
+default :data:`domania.wilson.MEYER`, the Meyer window of the WDM transform) and
 computes in the Wilson basis of that window: $\\hat\\phi_c$ below is the window's
-centred samples, from :func:`domainia.wilson.windows.sample_window`.  The formulas
+centred samples, from :func:`domania.wilson.windows.sample_window`.  The formulas
 and the edge normalisation are the same for every admissible window.
 
 The public kernels take and return the folded layout ``(..., Nf, Nt)``
-(:func:`domainia.wilson.grid.cells`).  ``forward`` and ``inverse`` compute through private
+(:func:`domania.wilson.grid.cells`).  ``forward`` and ``inverse`` compute through private
 twins on the padded ``(..., Nf+1, Nt)`` grid, where row ``m`` is band ``m`` (``_forward`` and
 ``_inverse``).  The code that builds or probes the padded grid calls them, or ``_inverse_time``
 (``_inverse`` then the inverse rfft): ``base_atom_spectra``, ``matrix.build_W``,
@@ -100,7 +100,7 @@ __all__ = [
 def _parity(m: int | np.integer, n_arr: NDArray[np.integer]) -> tuple[BoolArray, Array]:
     """``((m+n) even, (-1)^{(m+1)n})`` for one band.
 
-    :func:`domainia.wilson.stationary._carriers` holds the 2-D form of the same rule.
+    :func:`domania.wilson.stationary._carriers` holds the 2-D form of the same rule.
     """
     even = (m + n_arr) % 2 == 0
     sign = 1.0 - 2.0 * (((m + 1) * n_arr) % 2)
@@ -148,7 +148,7 @@ def _scatter_interior_bands(
     $N_t/2$, which the sequential loop handles correctly.
 
     ``X`` is ``(..., N//2+1)`` and ``wmn_work`` ``(..., Nf+1, Nt)``.  There is always an
-    interior band: :func:`domainia.wilson.grid.validate_grid` requires ``Nf`` even, so
+    interior band: :func:`domania.wilson.grid.validate_grid` requires ``Nf`` even, so
     ``Nf >= 2``.
     """
     n_arr = np.arange(Nt)
@@ -283,7 +283,7 @@ def forward(
     ValueError
         If ``Nf`` or ``Nt`` is not positive and even, if the last axis of
         ``x_rfft`` does not have length ``N//2 + 1``, or if it holds a ``nan`` or
-        ``inf`` (:func:`domainia.wilson.grid.validate_finite`).
+        ``inf`` (:func:`domania.wilson.grid.validate_finite`).
 
     Notes
     -----
@@ -293,7 +293,7 @@ def forward(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> x = np.random.default_rng(0).standard_normal(Nf * Nt)
     >>> w = wilson.forward(np.fft.rfft(x), Nf, Nt, dt)
@@ -358,12 +358,12 @@ def inverse(
     ValueError
         If the grid is invalid, if ``wmn`` does not end in ``(Nf, Nt)`` (for a padded
         ``(..., Nf+1, Nt)`` or a flat ``(..., N)`` array the message names the fix,
-        :func:`domainia.wilson.grid.fold` or ``.reshape(..., Nf, Nt)``), or if it holds a
-        ``nan`` or ``inf`` (see :func:`domainia.wilson.grid.validate_finite`).
+        :func:`domania.wilson.grid.fold` or ``.reshape(..., Nf, Nt)``), or if it holds a
+        ``nan`` or ``inf`` (see :func:`domania.wilson.grid.validate_finite`).
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> x = np.random.default_rng(0).standard_normal(Nf * Nt)
     >>> w = wilson.forward(np.fft.rfft(x), Nf, Nt, dt)
@@ -406,7 +406,7 @@ def forward_time(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> x = np.random.default_rng(0).standard_normal(Nf * Nt)
     >>> wilson.forward_time(x, Nf, Nt, dt).shape
@@ -451,7 +451,7 @@ def inverse_time(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> Nf, Nt, dt = 8, 16, 1.0
     >>> x = np.random.default_rng(0).standard_normal(Nf * Nt)
     >>> w = wilson.forward_time(x, Nf, Nt, dt)

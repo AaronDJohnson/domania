@@ -24,16 +24,16 @@ Everything here is a pure function of ``(grid, spectrum, arrays)``.
   - :func:`eq45_direct` -- the direct sum, the oracle.
 
 Every kernel here that reaches the window takes ``window=`` (a
-:class:`domainia.wilson.windows.Window`; default :data:`domainia.wilson.MEYER`) and
+:class:`domania.wilson.windows.Window`; default :data:`domania.wilson.MEYER`) and
 computes in the Wilson basis of that window.  For Eq. (45) that is :func:`eq45_plan`:
 the plan's atoms (``plan.base``) carry the window to every builder downstream.
 
 PSDs are callables ``Sn(f, t)``: elementwise, broadcasting, argument order
 ``(f, t)`` (WDM Paper II writes :math:`S(t, f)`), samples through
-:func:`domainia.wilson.grid.sanitize_psd`.  Cell times are :math:`t_n = n\Delta T`.
+:func:`domania.wilson.grid.sanitize_psd`.  Cell times are :math:`t_n = n\Delta T`.
 
 WDM arrays are folded ``(..., Nf, Nt)`` and dense matrices index the cells in folded flat order
-(:func:`domainia.wilson.grid.cells`); the Eq. (45) blocks are per band, time ascending.
+(:func:`domania.wilson.grid.cells`); the Eq. (45) blocks are per band, time ascending.
 """
 
 from __future__ import annotations
@@ -185,7 +185,7 @@ def wrap_cut_columns(Nf: int, Nt: int, dt: float, tol: float = 1e-3, *,
 
     Examples
     --------
-    >>> from domainia import wilson
+    >>> from domania import wilson
     >>> wilson.evolutionary.wrap_cut_columns(64, 256, 2**-10)
     (6, 5)
     """

@@ -1,4 +1,4 @@
-"""domainia.wilson.noise, domainia.wilson.stationary and the noise helpers of domainia.testing
+"""domania.wilson.noise, domania.wilson.stationary and the noise helpers of domania.testing
 against the frozen oracle.
 
 Bit for bit up to v0.11.0.  The Hz window of v0.12.0 (Paper I eq:Meyer-def: phi flat
@@ -16,10 +16,10 @@ import pytest
 import vendored_2f7136c.noise as onoise
 import vendored_2f7136c.stationary as ostat
 
-import domainia.wilson.noise as noise
-import domainia.wilson.stationary as stat
-from domainia import testing
-from domainia.wilson.grid import cells, unfold
+import domania.wilson.noise as noise
+import domania.wilson.stationary as stat
+from domania import testing
+from domania.wilson.grid import cells, unfold
 
 GRIDS = [(4, 8, 1.0), (8, 16, 0.5), (8, 32, 1.7), (16, 32, 2.0**-10)]
 #: max|got - ref| over max|ref| against the omega-era oracle.

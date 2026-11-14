@@ -1,5 +1,5 @@
-"""``domainia.wilson`` refuses a wrong kind with ``TypeError`` and a wrong value with ``ValueError``,
-as the rest of domainia does."""
+"""``domania.wilson`` refuses a wrong kind with ``TypeError`` and a wrong value with ``ValueError``,
+as the rest of domania does."""
 
 from __future__ import annotations
 
@@ -10,10 +10,10 @@ from fractions import Fraction
 import numpy as np
 import pytest
 
-import domainia
-from domainia import testing, wilson
-from domainia.wilson.filter import nu_d, phi_centered
-from domainia.wilson.grid import _require_int, cells, n_samples, validate_dt, validate_grid
+import domania
+from domania import testing, wilson
+from domania.wilson.filter import nu_d, phi_centered
+from domania.wilson.grid import _require_int, cells, n_samples, validate_dt, validate_grid
 
 
 @pytest.mark.parametrize(("args", "match"), [
@@ -253,7 +253,7 @@ def test_float32_input_is_computed_in_double():
         "time_domain_covariance": lambda dt: E.time_domain_covariance(60, dt, evo),
         "draw_noise": lambda dt: E.draw_noise(60, dt, evo, np.random.default_rng(0)),
         "exact_covariance": lambda dt: E.exact_covariance(6, 10, dt, evo),
-        "wdm_covariance": lambda dt: domainia.wdm_covariance(lambda f, t: psd(f)[None, None],
+        "wdm_covariance": lambda dt: domania.wdm_covariance(lambda f, t: psd(f)[None, None],
                                                              Nf=6, Nt=10, dt=dt),
     }
     calls = {slot: (call, good) for slot, (call, good, _) in _REAL_ARRAYS.items()} | {
@@ -292,9 +292,9 @@ class _UnhashableRamp:
      "module-level function or a frozen dataclass instance"),
     (lambda: wilson.windows.require_window(wilson.Meyer),
      "window must be a Window instance, got the class Meyer: pass an instance, e.g. Meyer() or "
-     "domainia.wilson.MEYER"),
+     "domania.wilson.MEYER"),
     (lambda: wilson.windows.require_window("meyer"),
-     "window must be a domainia.wilson Window (Meyer, RampWindow, SampledWindow), got str"),
+     "window must be a domania.wilson Window (Meyer, RampWindow, SampledWindow), got str"),
 ], ids=["name", "callable", "hashable", "class", "non-window"])
 def test_the_window_kind_messages_take_the_got_form(make, message):
     with pytest.raises(TypeError, match=_exact(message)):

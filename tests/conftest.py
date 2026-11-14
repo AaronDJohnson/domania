@@ -1,4 +1,4 @@
-"""Test configuration for domainia: the rng fixture."""
+"""Test configuration for domania: the rng fixture."""
 
 from __future__ import annotations
 

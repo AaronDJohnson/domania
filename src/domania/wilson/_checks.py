@@ -1,4 +1,4 @@
-"""Argument checks shared by :mod:`domainia.wilson` and the rest of domainia.
+"""Argument checks shared by :mod:`domania.wilson` and the rest of domania.
 
 One rule for the whole package: an argument whose *type* (or an array whose *dtype*) can
 never be valid in that place raises ``TypeError``; the right type with a wrong value (range,
@@ -7,7 +7,7 @@ shape, finiteness, integrality, an unknown option string) raises ``ValueError``.
 Every kind message has the form ``"{name} must be <kind>, got <type or dtype>"``.
 
 Private: this module imports only the standard library and NumPy, so both
-``domainia.wilson`` and the core modules can import it without a cycle.
+``domania.wilson`` and the core modules can import it without a cycle.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ def require_int(name: str, value: object) -> int:
 
     ``bool``, ``np.bool_`` and every float (``2.0`` included) are refused.
 
-    >>> from domainia.wilson._checks import require_int
+    >>> from domania.wilson._checks import require_int
     >>> require_int("n", 3)
     3
     >>> require_int("n", 3.0)
@@ -50,7 +50,7 @@ def require_real(name: str, value: object) -> float:
     of any shape, 0-d included. Range and finiteness are the caller's ``ValueError``; a real
     too large for a float (``10**400``) raises ``ValueError`` here.
 
-    >>> from domainia.wilson._checks import require_real
+    >>> from domania.wilson._checks import require_real
     >>> require_real("dt", 1)
     1.0
     >>> require_real("dt", "0.5")
@@ -71,7 +71,7 @@ def require_instance(name: str, value: object, cls: type | tuple[type, ...], exp
     ``expected`` is the phrase after "must be", article included
     (``"a Window"``, ``"a string"``).
 
-    >>> from domainia.wilson._checks import require_instance
+    >>> from domania.wilson._checks import require_instance
     >>> require_instance("src", 3, str, "a string domain")
     Traceback (most recent call last):
     TypeError: src must be a string domain, got int
@@ -84,7 +84,7 @@ def require_instance(name: str, value: object, cls: type | tuple[type, ...], exp
 def require_callable(name: str, value: object) -> Any:
     """Return ``value``; ``TypeError`` unless it is callable.
 
-    >>> from domainia.wilson._checks import require_callable
+    >>> from domania.wilson._checks import require_callable
     >>> require_callable("psd", 1.0)
     Traceback (most recent call last):
     TypeError: psd must be callable, got float
@@ -101,7 +101,7 @@ def require_dtype(name: str, a: object, kinds: str, expected: str) -> None:
     phrase after "must be", article included (``"a real numeric array"``, with
     :data:`REAL_KINDS`).
 
-    >>> import numpy as np; from domainia.wilson._checks import require_dtype, REAL_KINDS
+    >>> import numpy as np; from domania.wilson._checks import require_dtype, REAL_KINDS
     >>> require_dtype("x", np.zeros(2), REAL_KINDS, "a real numeric array")
     >>> require_dtype("x", np.zeros(2, complex), REAL_KINDS, "a real numeric array")
     Traceback (most recent call last):
@@ -137,7 +137,7 @@ def validate_dt(dt: object) -> None:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> wilson.grid.validate_dt(0.5)
     >>> wilson.grid.validate_dt(0.0)
     Traceback (most recent call last):
@@ -157,7 +157,7 @@ def validate_finite(values: object, context: str) -> None:
 
     One non-finite sample makes every coefficient of the transform ``nan``, silently, because
     each band goes through an FFT.  Stricter than
-    :func:`domainia.wilson.grid.sanitize_psd`, which maps an infinite PSD sample to 0: an
+    :func:`domania.wilson.grid.sanitize_psd`, which maps an infinite PSD sample to 0: an
     infinite *data* sample has no physical reading.
 
     Raises
@@ -167,7 +167,7 @@ def validate_finite(values: object, context: str) -> None:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> wilson.grid.validate_finite([1.0, 2.0], 'x')      # all finite: fine
     >>> wilson.grid.validate_finite([1.0, np.nan], 'x')   # doctest: +ELLIPSIS
     Traceback (most recent call last):

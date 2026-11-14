@@ -1,6 +1,6 @@
-# domainia
+# domania
 
-domainia does two things, in float64 NumPy. `transform` translates data arrays between the
+domania does two things, in float64 NumPy. `transform` translates data arrays between the
 time, frequency and WDM (Wilson-Daubechies-Meyer) domains. `frequency_covariance` and
 `wdm_covariance` evaluate a K × K noise model as its covariance at each frequency bin or WDM
 cell. It computes no likelihood: the caller does.
@@ -13,14 +13,14 @@ PYTHONDONTWRITEBYTECODE=1 python -P -m pytest -q
 ```
 
 Three oracle tests compare against source trees outside this repository; they skip unless
-`DOMAINIA_ORACLE_ROOT` names the directory that holds them (the skip message lists the
+`DOMANIA_ORACLE_ROOT` names the directory that holds them (the skip message lists the
 subdirectories each one expects).
 
 ## Data
 
 ```python
 import numpy as np
-from domainia import transform
+from domania import transform
 
 Nf, Nt, dt = 6, 12, 0.3
 N = Nf * Nt
@@ -41,7 +41,7 @@ assert np.allclose(transform(dt * np.fft.fft(x)[:, : N // 2 + 1], "frequency", "
 
 ```python
 import numpy as np
-from domainia import frequency_covariance, wdm_covariance
+from domania import frequency_covariance, wdm_covariance
 
 dt, N, Nf, Nt = 5.0, 1024, 16, 64
 
@@ -82,7 +82,7 @@ assert D.shape == E.shape == (2, 2, Nf, Nt) and np.array_equal(D, D.transpose(1,
 
 ## Kernels
 
-`domainia.wilson` holds the kernels: `forward`, `inverse`, `forward_time` and `inverse_time`
+`domania.wilson` holds the kernels: `forward`, `inverse`, `forward_time` and `inverse_time`
 (any leading axes), the layout's `grid.cells`, `grid.fold` and `grid.unfold`, the windows that
 `transform` and `wdm_covariance` take as `window=` (`MEYER`, the default, `Meyer(d)`,
 `RampWindow`, `SampledWindow`), and the dense references.

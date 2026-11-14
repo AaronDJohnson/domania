@@ -2,7 +2,7 @@
 
 The WDM forward transform is a linear map $w = W\\,x$ where $W$ is a
 real $N \\times N$ matrix whose rows are the folded slots in flat order (slot $(i, j)$ is
-row $i\\,N_t + j$; :func:`~domainia.wilson.grid.cells` gives its band and time).  $W$ is
+row $i\\,N_t + j$; :func:`~domania.wilson.grid.cells` gives its band and time).  $W$ is
 orthogonal **up to the sampling scale**:
 
 $$W W^T = W^T W = \\delta t\\,I,$$
@@ -12,9 +12,9 @@ $x = W^T w / \\delta t$.  The $\\delta t$ is the same factor that
 appears in Parseval ($\\sum w^2 = \\delta t \\sum x^2$); $W$ is
 exactly orthogonal only when $\\delta t = 1$.
 
-Every builder takes ``window=`` (default :data:`domainia.wilson.MEYER`) and returns the
+Every builder takes ``window=`` (default :data:`domania.wilson.MEYER`) and returns the
 matrix of that window's Wilson basis; the identities above hold for every admissible
-window (:mod:`domainia.wilson.windows`).
+window (:mod:`domania.wilson.windows`).
 
 This module exposes:
 
@@ -28,7 +28,7 @@ This module exposes:
 
 These functions are $O(N^2)$ in memory and $O(N^3)$ in compute: references for
 small $N$ (roughly $N \\lesssim 2048$); the FFT-based transforms are in
-:mod:`domainia.wilson.transform`.
+:mod:`domania.wilson.transform`.
 """
 
 from __future__ import annotations
@@ -73,7 +73,7 @@ def build_W(
     """Build the $N \\times N$ WDM transform matrix for ``window``.
 
     Row $p = i\\,N_t + j$ is the basis function $g_{mn}$ of folded slot $(i, j)$ sampled in
-    time ($(m, n)$ from :func:`~domainia.wilson.grid.cells`), so $W$ is *defined* by "column
+    time ($(m, n)$ from :func:`~domania.wilson.grid.cells`), so $W$ is *defined* by "column
     $k_0$ is the flattened WDM transform of a delta at sample $k_0$".  It is *built* from the
     lattice's shift-covariance instead, which agrees with the definition to rounding.
 
@@ -91,7 +91,7 @@ def build_W(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> W = wilson.matrix.build_W(4, 8, 1.0)
     >>> W.shape, bool(np.allclose(W @ W.T, 1.0 * np.eye(32)))
     ((32, 32), True)
@@ -141,7 +141,7 @@ def build_C_time(N: int, dt: float, Sn_func: PsdFunc) -> Array:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> C = wilson.matrix.build_C_time(32, 1.0, lambda f: 1e-3 * np.ones_like(f))
     >>> C.shape, bool(np.allclose(C, C.T))
     ((32, 32), True)
@@ -198,7 +198,7 @@ def build_C_wdm(
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> C = wilson.matrix.build_C_wdm(4, 8, 1.0, lambda f: 1e-3 * np.ones_like(f))
     >>> C.shape, float(np.round(np.diag(C)[0], 6))   # ~ S_n / 2
     ((32, 32), 0.0005)
@@ -222,7 +222,7 @@ def rfft_to_real(x_rfft: CArray, N: int) -> Array:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> x = np.random.default_rng(0).standard_normal(32)
     >>> packed = wilson.matrix.rfft_to_real(np.fft.rfft(x), 32)
     >>> packed.shape
@@ -255,7 +255,7 @@ def real_to_rfft(x_real: Array, N: int) -> CArray:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> x = np.random.default_rng(0).standard_normal(32)
     >>> packed = wilson.matrix.rfft_to_real(np.fft.rfft(x), 32)
     >>> back = wilson.matrix.real_to_rfft(packed, 32)

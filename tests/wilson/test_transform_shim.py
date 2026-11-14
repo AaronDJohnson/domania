@@ -15,8 +15,8 @@ import numpy as np
 import pytest
 import vendored_2f7136c.transform as oracle
 
-import domainia.wilson.transform as T
-from domainia.wilson.grid import cells, unfold
+import domania.wilson.transform as T
+from domania.wilson.grid import cells, unfold
 
 GRIDS = [(2, 2, 1.0), (4, 8, 1.0), (8, 16, 0.5), (8, 32, 1.7), (16, 32, 2.0**-10),
          (32, 64, 10.0), (64, 256, 2.0**-10), (6, 10, 0.3)]

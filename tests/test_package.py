@@ -1,4 +1,4 @@
-"""domainia 3.0 identity: version, public names, no JAX on import, no release leftovers."""
+"""domania 3.0 identity: version, public names, no JAX on import, no release leftovers."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ import sys
 import tomllib
 from pathlib import Path
 
-import domainia
-from domainia import wilson
+import domania
+from domania import wilson
 
 REPO = Path(__file__).resolve().parents[1]
 SRC = REPO / "src"
@@ -24,7 +24,7 @@ WILSON_PUBLIC = {"Grid", "forward", "inverse", "forward_time", "inverse_time",
 
 
 def test_the_version_is_3_0_0_everywhere():
-    assert domainia.__version__ == "3.0.0"
+    assert domania.__version__ == "3.0.0"
     assert tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["version"] == "3.0.0"
 
 
@@ -43,7 +43,7 @@ def test_the_project_metadata():
     """The package ships ``py.typed`` and says so; ``test`` is the only extra."""
     project = tomllib.loads((REPO / "pyproject.toml").read_text())["project"]
     assert "Typing :: Typed" in project["classifiers"]
-    assert (SRC / "domainia" / "py.typed").is_file()
+    assert (SRC / "domania" / "py.typed").is_file()
     assert project["optional-dependencies"] == {"test": ["pytest>=8"]}
 
 
@@ -52,11 +52,11 @@ def test_the_public_names():
     The folded layout has no inactive cells, so ``wilson.grid`` has no ``active_mask`` and
     ``wilson.matrix`` no ``active_W`` or ``build_C_wdm_active``: ``build_W`` and
     ``build_C_wdm`` are already ``N x N``."""
-    assert set(domainia.__all__) == PUBLIC
+    assert set(domania.__all__) == PUBLIC
     assert set(wilson.__all__) == WILSON_PUBLIC
-    assert all(hasattr(domainia, name) for name in domainia.__all__)
+    assert all(hasattr(domania, name) for name in domania.__all__)
     assert all(hasattr(wilson, name) for name in wilson.__all__)
-    assert not hasattr(domainia, "MEYER") and not hasattr(wilson, "active_mask")
+    assert not hasattr(domania, "MEYER") and not hasattr(wilson, "active_mask")
     assert wilson.MEYER is wilson.windows.MEYER and wilson.Grid is wilson.grid.Grid
     assert set(wilson.grid.__all__) == {"Grid", "band_frequencies", "cells", "delta_F", "delta_T",
                                         "endpoint_weights", "fold", "n_samples", "sanitize_psd",
@@ -79,32 +79,32 @@ def test_importing_every_module_resolves_to_src_and_does_not_import_jax():
     env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PYTHONSAFEPATH")}
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["PYTHONPATH"] = str(SRC)
-    code = ("import importlib, json, pkgutil, sys, domainia\n"
-            "mods = [m.name for m in pkgutil.walk_packages(domainia.__path__, 'domainia.')]\n"
+    code = ("import importlib, json, pkgutil, sys, domania\n"
+            "mods = [m.name for m in pkgutil.walk_packages(domania.__path__, 'domania.')]\n"
             "for name in mods:\n"
             "    importlib.import_module(name)\n"
             "jax = sorted(k for k in sys.modules if k.split('.')[0] in ('jax', 'jaxlib'))\n"
-            "print(json.dumps({'file': domainia.__file__, 'modules': mods, 'jax': jax}))")
+            "print(json.dumps({'file': domania.__file__, 'modules': mods, 'jax': jax}))")
     out = subprocess.run([sys.executable, "-P", "-c", code], env=env, cwd=str(REPO),
                          capture_output=True, text=True)
     assert out.returncode == 0, out.stderr
     info = json.loads(out.stdout.strip().splitlines()[-1])
     assert Path(info["file"]).resolve().is_relative_to(SRC.resolve())
-    assert {"domainia._transform", "domainia.wilson", "domainia.testing"} <= set(info["modules"])
-    assert not {"domainia.wilson.backend", "domainia.wilson.special"} & set(info["modules"])
+    assert {"domania._transform", "domania.wilson", "domania.testing"} <= set(info["modules"])
+    assert not {"domania.wilson.backend", "domania.wilson.special"} & set(info["modules"])
     assert info["jax"] == []
 
 
-def test_importing_domainia_leaves_the_unlisted_modules_unimported():
-    """The package docstring's promise: a fresh ``import domainia`` does not import
-    domainia.testing."""
+def test_importing_domania_leaves_the_unlisted_modules_unimported():
+    """The package docstring's promise: a fresh ``import domania`` does not import
+    domania.testing."""
     env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PYTHONSAFEPATH")}
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["PYTHONPATH"] = str(SRC)
-    code = ("import json, sys, domainia\n"
-            "print(json.dumps(sorted(k for k in sys.modules if k.startswith('domainia.'))))")
+    code = ("import json, sys, domania\n"
+            "print(json.dumps(sorted(k for k in sys.modules if k.startswith('domania.'))))")
     out = subprocess.run([sys.executable, "-P", "-c", code], env=env, cwd=str(REPO),
                          capture_output=True, text=True)
     assert out.returncode == 0, out.stderr
     loaded = set(json.loads(out.stdout.strip().splitlines()[-1]))
-    assert "domainia._transform" in loaded and "domainia.testing" not in loaded
+    assert "domania._transform" in loaded and "domania.testing" not in loaded

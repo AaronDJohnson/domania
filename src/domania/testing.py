@@ -19,11 +19,11 @@ of the selected cells.
 The oracles follow the package's rule: a wrong kind (a ``mask`` that is not boolean) raises
 ``TypeError``, a wrong value (a wrong shape) ``ValueError``.
 
-Test windows (``domainia.wilson.windows``):
+Test windows (``domania.wilson.windows``):
 
-* :func:`smoothstep`: a non-Meyer ramp for :class:`~domainia.wilson.RampWindow`.
+* :func:`smoothstep`: a non-Meyer ramp for :class:`~domania.wilson.RampWindow`.
 * :func:`wide_profile`, :data:`ALT_WINDOW`: a non-Meyer admissible profile and the
-  :class:`~domainia.wilson.SampledWindow` built from it.
+  :class:`~domania.wilson.SampledWindow` built from it.
 """
 
 from __future__ import annotations
@@ -34,11 +34,11 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from domainia import wilson
-from domainia.wilson._checks import require_callable, require_dtype, require_int
-from domainia.wilson.evolutionary import eq45_direct, eq45_plan
-from domainia.wilson.grid import n_samples, sanitize_psd, validate_dt, validate_grid
-from domainia.wilson.windows import MEYER, SampledWindow, Window
+from domania import wilson
+from domania.wilson._checks import require_callable, require_dtype, require_int
+from domania.wilson.evolutionary import eq45_direct, eq45_plan
+from domania.wilson.grid import n_samples, sanitize_psd, validate_dt, validate_grid
+from domania.wilson.windows import MEYER, SampledWindow, Window
 
 __all__ = ["ALT_WINDOW", "colored_noise", "dense_W", "empirical_variance", "eq45_dense",
            "smoothstep", "wdm_congruence", "wide_profile"]
@@ -143,7 +143,7 @@ def empirical_variance(
     """Monte-Carlo estimate of $\\langle w_{mn}^2 \\rangle$, folded ``(Nf, Nt)``: the mean
     squared WDM coefficients of ``n_realizations`` draws of :func:`colored_noise` from
     ``numpy.random.default_rng(seed)``.  It checks
-    :func:`domainia.wilson.band_averaged_variance`."""
+    :func:`domania.wilson.band_averaged_variance`."""
     validate_grid(Nf, Nt)
     validate_dt(dt)
     if require_int("n_realizations", n_realizations) < 1:

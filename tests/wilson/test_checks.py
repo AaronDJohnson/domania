@@ -1,4 +1,4 @@
-"""The shared argument checks of ``domainia.wilson._checks``: each helper
+"""The shared argument checks of ``domania.wilson._checks``: each helper
 returns the value it accepts and refuses every other kind with ``TypeError`` and the message
 ``"{name} must be <kind>, got <type or dtype>"``; a wrong value is the caller's ``ValueError``."""
 
@@ -11,9 +11,9 @@ from fractions import Fraction
 import numpy as np
 import pytest
 
-from domainia import wilson
-from domainia.wilson import grid
-from domainia.wilson._checks import (
+from domania import wilson
+from domania.wilson import grid
+from domania.wilson._checks import (
     REAL_KINDS,
     require_callable,
     require_dtype,
@@ -23,8 +23,8 @@ from domainia.wilson._checks import (
     validate_dt,
     validate_finite,
 )
-from domainia.wilson.filter import nu_d
-from domainia.testing import colored_noise
+from domania.wilson.filter import nu_d
+from domania.testing import colored_noise
 
 
 def _exact(message):
@@ -77,10 +77,10 @@ def test_require_real_refuses_a_real_too_large_for_a_float_with_value_error(valu
 
 def test_require_instance_checks_against_the_class_passed_in():
     g = wilson.Grid(8, 16, 1.0)
-    assert require_instance("grid", g, wilson.Grid, "a domainia.wilson.Grid") is g
+    assert require_instance("grid", g, wilson.Grid, "a domania.wilson.Grid") is g
     assert require_instance("x", 2.5, (int, float), "a Python int or float") == 2.5
-    with pytest.raises(TypeError, match=_exact("grid must be a domainia.wilson.Grid, got tuple")):
-        require_instance("grid", (8, 16, 1.0), wilson.Grid, "a domainia.wilson.Grid")
+    with pytest.raises(TypeError, match=_exact("grid must be a domania.wilson.Grid, got tuple")):
+        require_instance("grid", (8, 16, 1.0), wilson.Grid, "a domania.wilson.Grid")
     with pytest.raises(TypeError, match=_exact("x must be a Python int or float, got str")):
         require_instance("x", "2.5", (int, float), "a Python int or float")
 

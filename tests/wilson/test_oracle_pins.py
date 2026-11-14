@@ -40,7 +40,7 @@ def test_oracle_imports_as_its_own_package_without_wdm():
         "import sys\n"
         "import vendored_2f7136c.transform, vendored_2f7136c.noise\n"
         "import vendored_2f7136c.stationary, vendored_2f7136c.filter, vendored_2f7136c.grid\n"
-        "loaded = any(k.split('.')[0] in ('wdm', 'domainia') for k in sys.modules)\n"
+        "loaded = any(k.split('.')[0] in ('wdm', 'domania') for k in sys.modules)\n"
         "print(loaded, vendored_2f7136c.transform.__file__)",
         ORACLE.parent,
     )

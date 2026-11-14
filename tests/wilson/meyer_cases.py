@@ -1,7 +1,7 @@
-"""Replay cases for the Meyer baseline (domainia 2.0 spec, section 5; 3.0 spec, section 6.1).
+"""Replay cases for the Meyer baseline (domania 2.0 spec, section 5; 3.0 spec, section 6.1).
 
 Every public function that consumes the window, on fixed grids and seeded inputs.
-``wilson_cases`` covers the kernels and ``domainia_cases`` the cases recorded on the domainia
+``wilson_cases`` covers the kernels and ``domania_cases`` the cases recorded on the domania
 layer.  Each case is ``(name, fn)``: ``fn(kw)`` calls the function with the extra keywords
 ``kw`` (``{}``, or ``{"window": ...}``).
 
@@ -13,11 +13,13 @@ can never re-record it.  Re-recording means checking out 24c4e55 and running its
 ``wilson/tests/meyer_cases.py --write`` there.
 
 The gate is ``tests/wilson/test_meyer_baseline.py``: it recomputes every case through
-``domainia.wilson`` and compares with :func:`mismatches`, to :data:`RTOL` of each array's
-scale.  The :data:`DROPPED` families, of code that domainia 3.0 deletes, are set aside.  The
+``domania.wilson`` and compares with :func:`mismatches`, to :data:`RTOL` of each array's
+scale.  The :data:`DROPPED` families, of code that domania 3.0 deletes, are set aside.  The
 cases of deleted classes keep their recorded names and are computed by the kept kernels
-(:func:`domainia_cases`).  ``python tests/wilson/meyer_cases.py --check`` is the same replay
+(:func:`domania_cases`).  ``python tests/wilson/meyer_cases.py --check`` is the same replay
 as a script, with the same comparator.
+The baseline was recorded before the package was renamed, so the keys of the
+``domania_cases`` layer keep the old prefix ``domainia::``.
 """
 
 from __future__ import annotations
@@ -38,7 +40,7 @@ BASELINE = Path(__file__).resolve().parent / "data" / "meyer_baseline.npz"
 #: Case-name prefixes whose kernels take ``window=``.  The single source for
 #: ``test_meyer_baseline.py`` and ``test_window_threading.py``.
 THREADED = ("transform.", "matrix.", "stationary.", "noise.", "evolutionary.")
-#: Baseline key prefixes of code that domainia 3.0 deletes: maps (54 keys), inner_product (24),
+#: Baseline key prefixes of code that domania 3.0 deletes: maps (54 keys), inner_product (24),
 #: the band-limited entry points (18) and the active-cell matrices (4), which the folded layout
 #: made ``build_W`` and ``build_C_wdm``.  They are not replayed.
 DROPPED = ("domainia::TimeToWDM.", "domainia::WDMToTime.", "domainia::FourierToWDM.",
@@ -79,7 +81,7 @@ def load_baseline() -> dict[str, np.ndarray]:
     section 5): :data:`FOLDED` is gathered into the folded slots, without ``wilson.grid.fold``'s
     check of the inactive cells, and :data:`BAND_ORDER` and :data:`DENSE` are permuted into
     folded (flat) order."""
-    from domainia.wilson.grid import cells
+    from domania.wilson.grid import cells
 
     with np.load(BASELINE) as z:
         out = {k: z[k] for k in z.files}
@@ -149,9 +151,9 @@ def _seed(Nf: int, Nt: int, dt: float) -> int:
 
 
 def wilson_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
-    """The kernel window consumers of ``wl`` (``domainia.wilson``), and
+    """The kernel window consumers of ``wl`` (``domania.wilson``), and
     ``testing.empirical_variance`` under its recorded name."""
-    from domainia import testing
+    from domania import testing
 
     N = Nf * Nt
     T = N * dt
@@ -211,13 +213,13 @@ def wilson_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
     return cases
 
 
-def domainia_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
-    """The cases recorded on the domainia layer, under their recorded names.  The classes
+def domania_cases(wl: Any, Nf: int, Nt: int, dt: float) -> list[Case]:
+    """The cases recorded on the domania layer, under their recorded names.  The classes
     that recorded them are computed by the kernels they wrapped: ``EvolutionaryCovariance``
     by ``eq45_plan`` (``P = 24``) + ``eq45_coeffs_interp`` + ``eq45_blocks_cheb`` and by
     ``eq45_direct``, ``BandAveragedVariance`` by ``noise.evolutionary_band_variance``.  ``kw``
     goes to every window-taking call."""
-    from domainia import testing
+    from domania import testing
 
     N = Nf * Nt
     rng = np.random.default_rng(7 + _seed(Nf, Nt, dt))
@@ -264,7 +266,7 @@ def flatten(key: str, value: Any) -> dict[str, np.ndarray]:
     return {key: np.asarray(value)}
 
 
-def compute(wl: Any, wilson_kw: dict, domainia_kw: dict, *,
+def compute(wl: Any, wilson_kw: dict, domania_kw: dict, *,
             only: tuple[str, ...] | None = None) -> dict[str, np.ndarray]:
     """Every case on every grid and ``dt``.  ``only`` keeps the cases whose name starts
     with one of the prefixes (``"transform."``, ...)."""
@@ -273,7 +275,7 @@ def compute(wl: Any, wilson_kw: dict, domainia_kw: dict, *,
         for dt in DTS:
             tag = f"{Nf}x{Nt}::dt={dt!r}"
             for layer, cases, kw in (("wilson", wilson_cases(wl, Nf, Nt, dt), wilson_kw),
-                                     ("domainia", domainia_cases(wl, Nf, Nt, dt), domainia_kw)):
+                                     ("domainia", domania_cases(wl, Nf, Nt, dt), domania_kw)):
                 for name, case in cases:
                     if only is None or name.startswith(only):
                         out.update(flatten(f"{layer}::{name}::{tag}", case(kw)))
@@ -281,7 +283,7 @@ def compute(wl: Any, wilson_kw: dict, domainia_kw: dict, *,
 
 
 def main() -> None:
-    """``--check``: replay the baseline through the current ``domainia.wilson``, with
+    """``--check``: replay the baseline through the current ``domania.wilson``, with
     :func:`mismatches` (the gate is ``tests/wilson/test_meyer_baseline.py``)."""
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--check", action="store_true", required=True,
@@ -290,7 +292,7 @@ def main() -> None:
     src = str(Path(__file__).resolve().parents[2] / "src")
     if src not in sys.path:
         sys.path.insert(0, src)
-    from domainia import wilson
+    from domania import wilson
 
     out = compute(wilson, {}, {})
     stored = load_baseline()

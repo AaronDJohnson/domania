@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from domainia.wilson.matrix import build_C_time, build_C_wdm, real_to_rfft, rfft_to_real
+from domania.wilson.matrix import build_C_time, build_C_wdm, real_to_rfft, rfft_to_real
 
 
 def test_C_time_symmetric(simple_grid, lisa_psd):

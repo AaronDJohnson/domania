@@ -63,7 +63,7 @@ class Grid:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> g = wilson.Grid(Nf=8, Nt=16, dt=1.0)
     >>> g.N, g.dF, g.dT
     (128, 0.0625, 8.0)
@@ -128,7 +128,7 @@ def validate_grid(Nf: int, Nt: int) -> None:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> wilson.grid.validate_grid(8, 16)          # even and positive: fine
     >>> wilson.grid.validate_grid(9, 16)
     Traceback (most recent call last):
@@ -150,7 +150,7 @@ def sanitize_psd(values: object, context: str) -> Array:
 
     An infinite sample means "this bin carries no measurable power" (sensitivity curves
     return ``inf`` at ``f = 0``), so it maps to ``0.0``; that keeps
-    :func:`domainia.wilson.matrix.build_C_time` finite and positive semi-definite.  ``nan``
+    :func:`domania.wilson.matrix.build_C_time` finite and positive semi-definite.  ``nan``
     has no physical reading and a negative PSD is a bug in the model, so both raise.
 
     Returns
@@ -167,7 +167,7 @@ def sanitize_psd(values: object, context: str) -> Array:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> wilson.grid.sanitize_psd([1e-3, np.inf], 'demo')   # inf -> no power
     array([0.001, 0.   ])
     >>> wilson.grid.sanitize_psd([-1.0], 'demo')
@@ -206,7 +206,7 @@ def n_samples(Nf: int, Nt: int) -> int:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> wilson.grid.n_samples(8, 16)
     128
     """
@@ -232,7 +232,7 @@ def delta_F(Nf: int, dt: float) -> float:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> wilson.grid.delta_F(8, 1.0)
     0.0625
     >>> wilson.grid.delta_F(0, 1.0)
@@ -260,7 +260,7 @@ def delta_T(Nf: int, dt: float) -> float:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> wilson.grid.delta_T(8, 1.0)
     8.0
     """
@@ -274,7 +274,7 @@ def band_frequencies(Nf: int, dt: float) -> Array:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> f = wilson.grid.band_frequencies(8, 1.0)
     >>> f.shape, float(f[0]), float(f[-1])   # DC .. Nyquist
     ((9,), 0.0, 0.5)
@@ -291,7 +291,7 @@ def time_pixel_centers(Nf: int, Nt: int, dt: float) -> Array:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> wilson.grid.time_pixel_centers(8, 4, 1.0)
     array([ 0.,  8., 16., 24.])
     """
@@ -317,7 +317,7 @@ def cells(Nf: int, Nt: int) -> tuple[np.ndarray, np.ndarray]:
 
     Examples
     --------
-    >>> from domainia import wilson
+    >>> from domania import wilson
     >>> m, n = wilson.grid.cells(4, 4)
     >>> m[0].tolist(), n[0].tolist()
     ([0, 4, 0, 4], [0, 0, 2, 2])
@@ -363,7 +363,7 @@ def fold(P: object, Nf: int, Nt: int) -> np.ndarray:
 
     Examples
     --------
-    >>> import numpy as np; from domainia import wilson
+    >>> import numpy as np; from domania import wilson
     >>> R = np.arange(32.0).reshape(4, 8)
     >>> P = wilson.grid.unfold(R, 4, 8)
     >>> P.shape, bool(np.array_equal(wilson.grid.fold(P, 4, 8), R))
@@ -403,7 +403,7 @@ def endpoint_weights(n_rfft: int) -> Array:
 
     Examples
     --------
-    >>> from domainia import wilson
+    >>> from domania import wilson
     >>> wilson.grid.endpoint_weights(5)
     array([0.5, 1. , 1. , 1. , 0.5])
     """

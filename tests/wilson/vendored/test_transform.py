@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from domainia.wilson.grid import cells, unfold
-from domainia.wilson.transform import forward, forward_time, inverse, inverse_time
+from domania.wilson.grid import cells, unfold
+from domania.wilson.transform import forward, forward_time, inverse, inverse_time
 
 
 def test_roundtrip_normalized(simple_grid, white_noise):
@@ -86,7 +86,7 @@ def _forward_reference(x_rfft, Nf, Nt, dt):
     with the shipped implementation beyond the window, so it is a genuine
     oracle for the batched fast path rather than a restatement of it.
     """
-    from domainia.wilson.filter import phi_centered
+    from domania.wilson.filter import phi_centered
 
     N = Nf * Nt
     phi_c = phi_centered(Nf, Nt, dt)       # Hz window, flat value 1/sqrt(Delta F)

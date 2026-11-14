@@ -11,15 +11,15 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from domainia import wilson
-from domainia.wilson.filter import phi_centered
-from domainia.wilson.grid import Grid, _active_mask, cells, endpoint_weights, fold, unfold
-from domainia.wilson.matrix import build_W
-from domainia.wilson.transform import atom_spectrum, base_atom_spectra, forward_time
+from domania import wilson
+from domania.wilson.filter import phi_centered
+from domania.wilson.grid import Grid, _active_mask, cells, endpoint_weights, fold, unfold
+from domania.wilson.matrix import build_W
+from domania.wilson.transform import atom_spectrum, base_atom_spectra, forward_time
 
 from .conftest import _oracle_paths
 
-#: The galactic-binary toy model's tree under $DOMAINIA_ORACLE_ROOT.
+#: The galactic-binary toy model's tree under $DOMANIA_ORACLE_ROOT.
 GB_SUBDIR = "toy_models/galactic_binary"
 #: (Nf, Nt, dt): small grids plus the three galactic-binary analysis grids (N // NT, NT, 5 s).
 ATOM_GRIDS = [(4, 8, 1.0), (16, 32, 0.5), (6570, 240, 5.0), (7200, 438, 5.0), (7008, 900, 5.0)]
@@ -107,7 +107,7 @@ WINDOW_GRIDS = [(8, 16, 1.0), (16, 32, 0.5), (8, 32, 1.7), (64, 256, 2.0**-10), 
 
 def _phi_hz_june(Nf, Nt, dt, d=4):
     """June ``wdm/filter.py`` arithmetic, verbatim (the pre-``grid.delta_F`` phi_hz body)."""
-    from domainia.wilson.filter import nu_d
+    from domania.wilson.filter import nu_d
 
     T = Nf * Nt * dt
     f = (np.arange(Nt) - Nt // 2) / T
@@ -151,7 +151,7 @@ def test_unrepresentable_delta_F_raises_instead_of_returning_zeros(dt):
 
 
 def test_delta_F_rejects_unrepresentable_widths():
-    from domainia.wilson.grid import delta_F
+    from domania.wilson.grid import delta_F
 
     assert delta_F(8, 1.0) == 0.0625
     with pytest.raises(ValueError, match="not representable"):
@@ -161,7 +161,7 @@ def test_delta_F_rejects_unrepresentable_widths():
 
 
 def test_rfft_packing_rejects_odd_N():
-    from domainia.wilson.matrix import real_to_rfft, rfft_to_real
+    from domania.wilson.matrix import real_to_rfft, rfft_to_real
 
     x = np.random.default_rng(0).standard_normal(32)
     assert np.allclose(real_to_rfft(rfft_to_real(np.fft.rfft(x), 32), 32), np.fft.rfft(x))

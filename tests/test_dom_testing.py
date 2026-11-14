@@ -1,4 +1,4 @@
-"""The dense oracles of ``domainia.testing`` against independent constructions."""
+"""The dense oracles of ``domania.testing`` against independent constructions."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ import re
 import numpy as np
 import pytest
 
-from domainia import wilson
-from domainia.wilson.evolutionary import exact_covariance, time_domain_covariance
-from domainia import testing as T
+from domania import wilson
+from domania.wilson.evolutionary import exact_covariance, time_domain_covariance
+from domania import testing as T
 
 # The WDM Paper II toy models' test configuration: 8 x 16 cells, dt = 1/16, f_min = 0.5,
 # f_ref = 1.

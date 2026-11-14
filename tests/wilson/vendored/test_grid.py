@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from domainia.wilson.grid import (
+from domania.wilson.grid import (
     band_frequencies,
     delta_F,
     delta_T,

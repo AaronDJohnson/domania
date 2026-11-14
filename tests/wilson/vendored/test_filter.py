@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from domainia.wilson.filter import nu_d, phi_centered
+from domania.wilson.filter import nu_d, phi_centered
 
 
 def test_nu_d_endpoints():

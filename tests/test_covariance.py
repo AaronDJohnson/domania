@@ -1,11 +1,11 @@
-"""Per-point K x K noise covariance from a model (domainia 3.0 spec, sections 3 and 6.2)."""
+"""Per-point K x K noise covariance from a model (domania 3.0 spec, sections 3 and 6.2)."""
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
 
-from domainia import frequency_covariance, testing, wdm_covariance, wilson
+from domania import frequency_covariance, testing, wdm_covariance, wilson
 
 K, DT = 3, 5.0
 #: Unequal levels: real, symmetric and positive definite.
@@ -183,7 +183,7 @@ def test_wdm_covariance_of_an_evolutionary_model(monkeypatch):
     # 25 bins per band on NF x NT: one call on 2 columns, then 1 band x 5 columns or 2 bands x
     # 32 columns per call; 5 or all 17 bands of a stationary model per call.
     for chunk, calls in ((125, [1 + 17 * 7, 1 + 4]), (2000, [1 + 9, 1 + 1])):
-        monkeypatch.setattr("domainia._covariance.CHUNK", chunk)
+        monkeypatch.setattr("domania._covariance.CHUNK", chunk)
         for s, C, p in zip(models, want, points):
             p.clear()
             assert np.array_equal(wdm_covariance(s, Nf=NF, Nt=NT, dt=DT), C)
@@ -267,7 +267,7 @@ def test_every_refusal(monkeypatch):
                             ValueError, r"must have shape \(K, K, 17, 1, 25\)")):
         with pytest.raises(err, match=match):
             wdm_covariance(**{"S": lambda f, t: delayed(f), "Nf": NF, "Nt": NT, "dt": DT, **kw})
-    monkeypatch.setattr("domainia._covariance.CHUNK", 125)            # 1 band x 5 columns a call
+    monkeypatch.setattr("domania._covariance.CHUNK", 125)            # 1 band x 5 columns a call
     late = lambda f, t: plus(0, 1, 1e-9 * (f.min() > 0.02) * (t >= 7 * NF * DT))(f + 0 * t)
     with pytest.raises(ValueError, match=r"\[chunk from band 4, column 5\] at point \(0, 2, 0\)"):
         wdm_covariance(late, Nf=NF, Nt=NT, dt=DT)

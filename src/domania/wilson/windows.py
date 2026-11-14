@@ -9,7 +9,7 @@ A Wilson basis on the half-shifted lattice is orthonormal when its window
    stays exact and every band covariance block-tridiagonal);
 3. a partition of unity on the lattice,
    :math:`\\hat\\phi(f)^2 + \\hat\\phi(f - \\Delta F)^2 = 1/\\Delta F` on :math:`[0, \\Delta F]`
-   (the Hz normalisation of :func:`domainia.wilson.filter.phi_centered`).
+   (the Hz normalisation of :func:`domania.wilson.filter.phi_centered`).
 
 The WDM transform is the Wilson basis with the Meyer window, :data:`MEYER`.  Every
 kernel that samples the window takes ``window=`` and samples it through
@@ -19,7 +19,7 @@ condition, the window and the worst bin) when a condition fails.
 
 Examples
 --------
->>> import numpy as np; from domainia import wilson
+>>> import numpy as np; from domania import wilson
 >>> phi = wilson.MEYER.sample(8, 16, 1.0)
 >>> bool(np.array_equal(phi, wilson.filter.phi_centered(8, 16, 1.0)))
 True
@@ -163,7 +163,7 @@ def _meyer_geometry(Nf: int, Nt: int, dt: float) -> tuple[np.ndarray, float, flo
 class Meyer(_Admissible):
     """The Meyer window: flat to dF/4, ``cos(pi/2 nu_d)`` rolloff to 3 dF/4, ``nu_d = I_x(d, d)``.
 
-    ``Meyer(d).sample`` is :func:`domainia.wilson.filter.phi_centered`
+    ``Meyer(d).sample`` is :func:`domania.wilson.filter.phi_centered`
     ``(Nf, Nt, float(dt), d)``: ``sample`` converts any real ``dt`` to a Python float first.
     ``Meyer()`` (d = 4) is the WDM transform's window.
     """
@@ -277,9 +277,9 @@ def require_window(obj: Any) -> Window:
     """
     if isinstance(obj, type):
         raise TypeError(f"window must be a Window instance, got the class {obj.__qualname__}: "
-                        f"pass an instance, e.g. Meyer() or domainia.wilson.MEYER")
+                        f"pass an instance, e.g. Meyer() or domania.wilson.MEYER")
     return require_instance("window", obj, Window,
-                            "a domainia.wilson Window (Meyer, RampWindow, SampledWindow)")
+                            "a domania.wilson Window (Meyer, RampWindow, SampledWindow)")
 
 
 def sample_window(window: Any, Nf: int, Nt: int, dt: float) -> Array:
