@@ -62,7 +62,3 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          # Attestations would write this repo's name and workflow into the public Sigstore log.
-          # Turn them on (delete these two lines) once the repo is public.
-          attestations: false

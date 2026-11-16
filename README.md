@@ -5,16 +5,11 @@ time, frequency and WDM (Wilson-Daubechies-Meyer) domains. `frequency_covariance
 `wdm_covariance` evaluate a K × K noise model as its covariance at each frequency bin or WDM
 cell. It computes no likelihood: the caller does.
 
-## Install and test
+## Install
 
 ```bash
-pip install -e ".[test]"
-PYTHONDONTWRITEBYTECODE=1 python -P -m pytest -q
+pip install domania
 ```
-
-Three oracle tests compare against source trees outside this repository; they skip unless
-`DOMANIA_ORACLE_ROOT` names the directory that holds them (the skip message lists the
-subdirectories each one expects).
 
 ## Data
 
@@ -86,3 +81,16 @@ assert D.shape == E.shape == (2, 2, Nf, Nt) and np.array_equal(D, D.transpose(1,
 (any leading axes), the layout's `grid.cells`, `grid.fold` and `grid.unfold`, the windows that
 `transform` and `wdm_covariance` take as `window=` (`MEYER`, the default, `Meyer(d)`,
 `RampWindow`, `SampledWindow`), and the dense references.
+
+## Development
+
+From a clone of https://github.com/AaronDJohnson/domania:
+
+```bash
+pip install -e ".[test]"
+PYTHONDONTWRITEBYTECODE=1 python -P -m pytest -q
+```
+
+Three oracle tests compare against source trees outside this repository; they skip unless
+`DOMANIA_ORACLE_ROOT` names the directory that holds them (the skip message lists the
+subdirectories each one expects).
