@@ -1,0 +1,68 @@
+name: Release
+
+# Publishing a GitHub release whose tag is v<version> builds the sdist and wheel and uploads them
+# to PyPI through trusted publishing (no token). Run it by hand to build and check without
+# uploading.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Build
+        run: |
+          python -m pip install build twine
+          python -m build
+          python -m twine check --strict dist/*
+      - name: The wheel installs and imports, and its version matches the tag
+        env:
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install dist/*.whl
+          version=$(cd "$RUNNER_TEMP" && venv/bin/python -c "import domania; print(domania.__version__)")
+          echo "built domania $version"
+          if [ "$EVENT" = release ] && [ "$TAG" != "v$version" ]; then
+            echo "::error::release tag $TAG does not match the package version $version"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/project/domania/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # Attestations would write this repo's name and workflow into the public Sigstore log.
+          # Turn them on (delete these two lines) once the repo is public.
+          attestations: false
